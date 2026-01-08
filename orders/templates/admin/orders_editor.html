@@ -1,0 +1,143 @@
+{% extends 'admin/admin_base.html' %}
+
+{% block title %}Редактор заказов | Админка{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Стили из твоего примера */
+    .form-section { background:#111520; border-radius:10px; padding:16px; margin-bottom:16px; border:1px solid var(--border-color); }
+    .form-section h3 { color:var(--text-main); margin-bottom:16px; font-size:14px; font-weight:500; }
+    .info-field { padding:10px 14px; background:rgba(108,140,255,.05); border:1px solid var(--border-color); border-radius:8px; font-size:13px; color:var(--text-main); font-family:'Courier New', monospace; word-break: break-all; }
+    .form-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+    .form-group { margin-bottom:16px; }
+    .form-group label { display:block; margin-bottom:6px; color:var(--text-muted); font-size:12px; font-weight:500; }
+    .button-group { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+    
+    /* Доп. стили для алертов */
+    .alert { padding: 12px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; border: 1px solid transparent; }
+    .alert-success { background: rgba(88,214,141,0.1); color: #58d68d; border-color: rgba(88,214,141,0.2); }
+    .alert-danger { background: rgba(255,108,108,0.1); color: #ff6c6c; border-color: rgba(255,108,108,0.2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="section">
+    
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}success{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="form-section">
+        <h3>🔍 Поиск заказа по External ID</h3>
+        <form method="GET" action="{% url 'admin_orders_editor' %}">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Биржевой ID (external_id)</label>
+                    <input class="form-control" type="text" name="order_id_search" 
+                           value="{{ request.GET.order_id_search|default:'' }}" placeholder="Введите номер ордера...">
+                </div>
+                <div class="form-group">
+                    <label>Биржа</label>
+                    <select class="form-select" name="exchange_type_search">
+                        <option value="1">Bybit</option>
+                        <option value="2">HTX</option>
+                        <option value="3">MEXC</option>
+                    </select>
+                </div>
+                <div class="form-group d-flex align-items-end">
+                    <button type="submit" class="btn btn-outline-blue w-100" style="height: 38px;">Найти</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if order %}
+    <div class="form-section">
+        <h3>📝 Редактирование деталей заказа</h3>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="target_order_pk" value="{{ order.pk }}">
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>External ID (Биржа)</label>
+                    <div class="info-field">{{ order.external_id }}</div>
+                </div>
+                <div class="form-group">
+                    <label>Пользователь</label>
+                    <div class="info-field">{{ order.user.username }}</div>
+                </div>
+                <div class="form-group">
+                    <label>Тип операции</label>
+                    <select class="form-select" name="operation_type">
+                        <option value="BUY" {% if order.operation_type == 'BUY' %}selected{% endif %}>Покупка (BUY)</option>
+                        <option value="SELL" {% if order.operation_type == 'SELL' %}selected{% endif %}>Продажа (SELL)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Цена (Price)</label>
+                    <input class="form-control" type="number" name="price" step="0.01" value="{{ order.price|stringformat:'.2f' }}">
+                </div>
+                <div class="form-group">
+                    <label>Сумма (Amount RUB)</label>
+                    <input class="form-control" type="number" name="amount" step="0.01" value="{{ order.amount|stringformat:'.2f' }}">
+                </div>
+                <div class="form-group">
+                    <label>Объем (Cost/Quantity)</label>
+                    <input class="form-control" type="number" name="cost" step="0.00000001" value="{{ order.cost|stringformat:'.8f' }}">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Комиссия</label>
+                    <input class="form-control" type="number" name="commission" step="0.01" value="{{ order.commission|default:'0.00' }}">
+                </div>
+                <div class="form-group">
+                    <label>Тип комиссии</label>
+                    <select class="form-select" name="commission_type">
+                        <option value="PERCENT" {% if order.commission_type == 'PERCENT' %}selected{% endif %}>Процент</option>
+                        <option value="MONEY" {% if order.commission_type == 'MONEY' %}selected{% endif %}>Деньги</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Дата создания</label>
+                    <input class="form-control" type="datetime-local" name="created_at" value="{{ order.created_at|date:'Y-m-d\TH:i' }}">
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" name="save_order" class="btn btn-outline-blue px-4">💾 Сохранить изменения</button>
+                {% if order.screenshot %}
+                <a href="{{ order.screenshot.url }}" class="btn btn-outline-success" target="_blank">📷 Посмотреть скриншот</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+    {% endif %}
+
+    <div class="form-section">
+        <h3>📊 Экспорт в Excel</h3>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Пользователь (ID)</label>
+                <input class="form-control" type="number" placeholder="Введите ID">
+            </div>
+            <div class="form-group">
+                <label>Дата с</label>
+                <input class="form-control" type="date">
+            </div>
+            <div class="form-group d-flex align-items-end">
+                <button class="btn btn-outline-success w-100" style="height: 38px;">📥 Скачать отчет</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

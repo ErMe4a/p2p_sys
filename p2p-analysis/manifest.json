@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "p2p-analysis",
+  "version": "1.0",
+  "description": "Adds an analytics dropdown menu to Bybit P2P order pages.",
+  "permissions": ["activeTab", "storage", "downloads", "tabs", "tabCapture"],
+  "host_permissions": ["*://*.bybit.com/*", "*://*.htx.com/*", "*://*.htx.com.gt/*", "*://*.mexc.com/*", "http://127.0.0.1:8000/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.bybit.com/*"],
+      "js": ["auth.js", "order_api.js", "order_list.js", "content.js"],
+      "css": ["style.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["*://*.htx.com/*", "*://*.htx.com.gt/*"],
+      "js": ["auth.js", "order_api.js", "htx.js", "htx_order_list.js"],
+      "css": ["style.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.mexc.com/*"],
+      "js": ["auth.js", "order_api.js", "mexc.js", "mexc_order_list.js"],
+      "css": ["style.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_title": "p2p-analysis",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

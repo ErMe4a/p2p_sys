@@ -1,0 +1,864 @@
+/* ========================================
+   P2P Analytics Floating Widget Styles
+   ======================================== */
+
+/* Floating widget container - fixed on right side at bottom (default) */
+.p2p-analytics-widget {
+    position: fixed;
+    bottom: 8px;
+    right: 0;
+    z-index: 10000;
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* Widget collapsed state - slide off screen (right side) */
+.p2p-analytics-widget.collapsed {
+    transform: translateX(calc(100% - 24px));
+}
+
+/* Widget on LEFT side (for merchant-admin pages) */
+.p2p-analytics-widget.p2p-analytics-widget--left {
+    right: auto;
+    left: 0;
+    flex-direction: row-reverse; /* Toggle button on the right side of panel */
+}
+
+/* Toggle button adjustments for left position */
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle {
+    border-radius: 0 6px 6px 0;
+    box-shadow: 2px -2px 12px rgba(0, 0, 0, 0.15);
+}
+
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle:hover {
+    box-shadow: 3px -3px 16px rgba(0, 0, 0, 0.2);
+}
+
+/* Arrow direction for left widget */
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle svg {
+    transform: rotate(180deg);
+}
+
+.p2p-analytics-widget.p2p-analytics-widget--left.collapsed .p2p-analytics-widget-toggle svg {
+    transform: rotate(0deg);
+}
+
+/* Panel adjustments for left position */
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-panel {
+    border-radius: 0 6px 6px 0;
+    box-shadow: 4px -4px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* Left widget collapsed state - slide off screen to the left */
+.p2p-analytics-widget.p2p-analytics-widget--left.collapsed {
+    transform: translateX(calc(-100% + 24px));
+}
+
+/* Toggle button for collapse/expand */
+.p2p-analytics-widget-toggle {
+    width: 24px;
+    height: 48px;
+    background: linear-gradient(135deg, var(--bds-brand-700-normal, #f7a600) 0%, var(--bds-brand-800-pressed, #d18400) 100%);
+    border: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: -2px -2px 12px rgba(0, 0, 0, 0.15);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.p2p-analytics-widget-toggle:hover {
+    background: linear-gradient(135deg, var(--bds-brand-800-pressed, #d18400) 0%, var(--bds-brand-700-normal, #f7a600) 100%);
+    box-shadow: -3px -3px 16px rgba(0, 0, 0, 0.2);
+}
+
+.p2p-analytics-widget-toggle svg {
+    width: 14px;
+    height: 14px;
+    fill: #ffffff;
+    transition: transform 0.3s ease;
+}
+
+.p2p-analytics-widget.collapsed .p2p-analytics-widget-toggle svg {
+    transform: rotate(180deg);
+}
+
+/* Main widget panel */
+.p2p-analytics-widget-panel {
+    width: 175px;
+    max-height: calc(100vh - 30px);
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    border-radius: 6px 0 0 6px;
+    box-shadow: -4px -4px 20px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Widget header */
+.p2p-analytics-widget-header {
+    padding: 5px 8px;
+    background: linear-gradient(135deg, var(--bds-brand-700-normal, #f7a600) 0%, var(--bds-brand-800-pressed, #d18400) 100%);
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.p2p-analytics-widget-header svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+}
+
+/* Widget content (scrollable) */
+.p2p-analytics-widget-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0;
+}
+
+/* Custom scrollbar for widget content */
+.p2p-analytics-widget-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.p2p-analytics-widget-content::-webkit-scrollbar-track {
+    background: var(--bds-gray-bg-subtle, #f5f5f5);
+}
+
+.p2p-analytics-widget-content::-webkit-scrollbar-thumb {
+    background: var(--bds-gray-ele-border, #d9d9d9);
+    border-radius: 3px;
+}
+
+.p2p-analytics-widget-content::-webkit-scrollbar-thumb:hover {
+    background: var(--bds-gray-t3-sub, rgba(0, 0, 0, 0.45));
+}
+
+/* Dropdown container inside widget */
+.p2p-analytics-dropdown-container {
+    position: relative;
+    display: block; 
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0;
+}
+
+/* Unified form section styles */
+.p2p-analytics-form-section {
+    margin: 0;
+    padding: 6px 8px;
+    border: none;
+    border-radius: 0;
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* Form title styles (for section headers like "Реквизиты") */
+.p2p-analytics-form-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    margin: 0 0 6px 0;
+    line-height: 1.4;
+}
+
+/* Check content styles (no additional styling needed, inherits from form section) */
+.p2p-analytics-check-content {
+    margin: 8px 0 6px 0;
+}
+
+/* Input wrapper styles */
+.p2p-analytics-input-wrapper {
+    margin: 5px 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Label styles (unified with form titles) */
+.p2p-analytics-label {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    line-height: 1.4;
+}
+
+/* Input field styles */
+.p2p-analytics-input {
+    width: 100%;
+    padding: 4px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+    border-radius: 4px;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    box-sizing: border-box;
+}
+
+.p2p-analytics-input:focus {
+    border-color: var(--bds-brand-700-normal, #f7a600);
+    box-shadow: 0 0 0 2px rgba(247, 166, 0, 0.2);
+    outline: none;
+}
+
+.p2p-analytics-input::placeholder {
+    color: var(--bds-gray-t3-sub, rgba(0, 0, 0, 0.45));
+}
+
+/* Readonly input styles */
+.p2p-analytics-input-readonly,
+.p2p-analytics-input[readonly],
+.p2p-analytics-input:disabled,
+.p2p-analytics-input[disabled] {
+    background-color: var(--bds-gray-bg-subtle, #f5f5f5) !important;
+    color: var(--bds-gray-t2-body, rgba(0, 0, 0, 0.65)) !important;
+    cursor: not-allowed !important;
+    border-color: var(--bds-gray-ele-line, #e0e0e0) !important;
+    pointer-events: none;
+}
+
+.p2p-analytics-input-readonly:focus,
+.p2p-analytics-input[readonly]:focus,
+.p2p-analytics-input:disabled:focus,
+.p2p-analytics-input[disabled]:focus {
+    border-color: var(--bds-gray-ele-line, #e0e0e0) !important;
+    box-shadow: none !important;
+}
+
+/* Checkbox wrapper styles */
+.p2p-analytics-checkbox-wrapper {
+    margin: 5px 0;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Checkbox styles */
+.p2p-analytics-checkbox {
+    width: 12px;
+    height: 12px;
+    margin-right: 5px;
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+    border-radius: 2px;
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    appearance: none;
+    -webkit-appearance: none;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.p2p-analytics-checkbox:checked {
+    background-color: var(--bds-brand-700-normal, #f7a600);
+    border-color: var(--bds-brand-700-normal, #f7a600);
+}
+
+.p2p-analytics-checkbox:checked::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 0px;
+    width: 4px;
+    height: 7px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+
+.p2p-analytics-checkbox:focus {
+    box-shadow: 0 0 0 2px rgba(247, 166, 0, 0.2);
+    outline: none;
+}
+
+/* Disabled checkbox styles */
+.p2p-analytics-checkbox:disabled,
+.p2p-analytics-checkbox-disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    background-color: var(--bds-gray-bg-subtle, #f5f5f5);
+}
+
+.p2p-analytics-checkbox:disabled + .p2p-analytics-checkbox-label,
+.p2p-analytics-checkbox-disabled + .p2p-analytics-checkbox-label {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* Checkbox label styles */
+.p2p-analytics-checkbox-label {
+    font-size: 11px;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    cursor: pointer;
+    user-select: none;
+    line-height: 1.4;
+    margin: 0;
+    display: block;
+}
+
+/* Check warning message styles */
+.p2p-analytics-check-warning {
+    font-size: 10px;
+    color: var(--bds-gray-t3-sub, rgba(0, 0, 0, 0.45));
+    margin: 4px 0 6px 0;
+    padding: 4px 8px;
+    background-color: var(--bds-gray-bg-subtle, #fafafa);
+    border: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+    border-radius: 4px;
+    line-height: 1.4;
+}
+
+/* Check success message styles */
+.p2p-analytics-check-success {
+    font-size: 10px;
+    color: var(--bds-green-700, #52c41a);
+    font-weight: 600;
+    margin: 4px 0 6px 0;
+    padding: 4px 8px;
+    background-color: var(--bds-green-50, #f6ffed);
+    border: 1px solid var(--bds-green-200, #b7eb8f);
+    border-radius: 4px;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.p2p-analytics-check-success::before {
+    content: '✓';
+    font-size: 10px;
+    font-weight: bold;
+}
+
+/* Conditional inputs container */
+.p2p-analytics-conditional-inputs {
+    margin-top: 4px;
+    padding-top: 0;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Button styles - aiming for a default Bybit/Ant Design look */
+.p2p-analytics-button {
+    /* Inherit from Bybit's .ant-btn-default or similar neutral style */
+    background-color: var(--bds-gray-bg-card, #ffffff); /* White background */
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9); /* Grey border */
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88)); /* Dark text */
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.015); /* Subtle shadow like Ant buttons */
+    
+    padding: 4px 8px; /* Compact padding */
+    font-size: 11px;
+    line-height: 1.4; /* Compact line-height */
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    
+    display: flex; /* Changed to flex for better alignment */
+    justify-content: space-between; /* Pushes text and arrow apart */
+    align-items: center;
+    width: 100%; /* Button takes full width of its container */
+    text-align: left;
+    box-sizing: border-box;
+    margin: 4px 0; /* Add margin for spacing */
+}
+
+.p2p-analytics-submit-button {
+    background-color: var(--bds-brand-700-normal, #f7a600); /* Bybit's orange accent on hover */
+    border-color: var(--bds-brand-700-normal, #f7a600);
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88)); /* Dark text */
+    font-weight: bold;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.015); /* Subtle shadow like Ant buttons */
+    
+    padding: 5px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    
+    display: block; /* Changed to block for centering with margin */
+    width: 100%; /* Button takes full width of its container */
+    text-align: center; /* Center text within the button */
+    box-sizing: border-box;
+    margin-left: auto; /* Center the button block */
+    margin-right: auto; /* Center the button block */
+    margin-top: 0; /* Remove top margin since button is now at the top */
+    margin-bottom: 8px; /* Add bottom margin for spacing from next element */
+}
+
+.p2p-analytics-submit-button:hover {
+    background-color: var(--bds-brand-800-pressed, #d18400);
+    border-color: var(--bds-brand-800-pressed, #d18400);
+}
+
+/* Delete button styled like submit, but red */
+.p2p-analytics-delete-button {
+    background-color: var(--bds-red-700, #ff4d4f);
+    border: 1px solid var(--bds-red-700, #ff4d4f);
+    color: #ffffff;
+    font-weight: bold;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.015);
+
+    padding: 5px 8px;
+    font-size: 11px;
+    line-height: 1.4;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+
+    display: block;
+    width: 100%;
+    text-align: center;
+    box-sizing: border-box;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 4px;
+    margin-bottom: 6px;
+}
+
+.p2p-analytics-delete-button:hover {
+    background-color: var(--bds-red-800, #d9363e);
+    border-color: var(--bds-red-800, #d9363e);
+}
+
+.p2p-analytics-button:hover {
+    color: var(--bds-brand-700-normal, #f7a600); /* Bybit's orange accent on hover */
+    border-color: var(--bds-brand-700-normal, #f7a600);
+    /* background-color: #fff; */ /* Keep background white or slightly off-white if desired */
+}
+
+.p2p-analytics-button:active,
+.p2p-analytics-button-active {
+    color: var(--bds-brand-800-pressed, #d18400);
+    border-color: var(--bds-brand-800-pressed, #d18400);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    /* background-color: #fff; */
+}
+
+/* Style for the menu when the button is active (menu is open) */
+.p2p-analytics-button-active + .p2p-analytics-menu {
+    border-left-color: var(--bds-brand-800-pressed, #d18400);
+    border-right-color: var(--bds-brand-800-pressed, #d18400);
+    border-bottom-color: var(--bds-brand-800-pressed, #d18400);
+    /* border-top remains none and margin-top: -1px helps alignment */
+}
+
+.p2p-analytics-button-text {
+    flex-grow: 1; /* Allows text to take available space */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.p2p-analytics-button svg path {
+    fill: currentColor; /* Arrow color will match button text color */
+}
+
+/* Dropdown Menu styles - consistent with Bybit's neutral theme */
+.p2p-analytics-menu {
+    position: absolute;
+    top: 100%; 
+    left: 0;
+    right: 0; /* Makes menu take full width of the container */
+    background-color: var(--bds-gray-bg-card, #ffffff); 
+    border: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+    border-top: none; /* Often dropdowns attached to buttons don't have a top border */
+    border-radius: 0 0 4px 4px; /* Rounded bottom corners */
+    box-shadow: var(--bds-shadow-l1, 0 2px 8px rgba(0, 0, 0, 0.1));
+    z-index: 1050; 
+    min-width: 100%; /* Ensure it's at least as wide as the button */
+    box-sizing: border-box;
+    padding: 2px 0; 
+    margin-top: -1px; /* Overlap border with button slightly if border-top removed */
+    max-height: 150px; /* Prevent overly long dropdowns */
+    overflow-y: auto; /* Add scroll for many items */
+}
+
+.p2p-analytics-menu-item {
+    padding: 4px 8px; 
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+}
+
+.p2p-analytics-menu-item:hover {
+    background-color: var(--bds-trans-hover, rgba(0, 0, 0, 0.04)); 
+}
+
+/* Input group styles (input with integrated suffix) */
+.p2p-analytics-input-group {
+    position: relative;
+    display: flex;
+    width: 100%;
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+    border-radius: 4px;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    background-color: var(--bds-gray-bg-card, #ffffff);
+}
+
+.p2p-analytics-input-group:focus-within {
+    border-color: var(--bds-brand-700-normal, #f7a600);
+    box-shadow: 0 0 0 2px rgba(247, 166, 0, 0.2);
+}
+
+.p2p-analytics-input-group .p2p-analytics-commission-input {
+    border: none;
+    border-radius: 0;
+    border-top-left-radius: 4px;
+    border-bottom-left-radius: 4px;
+    box-shadow: none;
+    flex: 1;
+    outline: none;
+}
+
+.p2p-analytics-input-group .p2p-analytics-commission-input:focus {
+    border: none;
+    box-shadow: none;
+}
+
+.p2p-analytics-input-suffix {
+    display: flex;
+    align-items: center;
+    border-left: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+    background-color: var(--bds-gray-bg-subtle, #fafafa);
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    min-width: 32px;
+    padding: 0;
+}
+
+.p2p-analytics-input-suffix:hover {
+    background-color: var(--bds-trans-hover, rgba(0, 0, 0, 0.04));
+}
+
+.p2p-analytics-suffix-button {
+    background: none;
+    border: none;
+    padding: 4px 0;
+    font-size: 11px;
+    color: var(--bds-gray-t2-body, rgba(0, 0, 0, 0.65));
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s cubic-bezier(0.645, 0.045, 0.355, 1);
+    border-radius: 0;
+    border-top-right-radius: 4px;
+    border-bottom-right-radius: 4px;
+    width: 100%;
+    height: 100%;
+    min-width: 32px;
+}
+
+.p2p-analytics-suffix-button:hover {
+    color: var(--bds-brand-700-normal, #f7a600);
+}
+
+.p2p-analytics-suffix-button-active {
+    color: var(--bds-brand-700-normal, #f7a600);
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    border-bottom-right-radius: 0;
+}
+
+/* Style for the input group when suffix dropdown is active */
+.p2p-analytics-input-group:has(.p2p-analytics-suffix-button-active),
+.p2p-analytics-input-group-active {
+    border-color: var(--bds-brand-700-normal, #f7a600);
+    box-shadow: 0 0 0 2px rgba(247, 166, 0, 0.2);
+}
+
+.p2p-analytics-suffix-text {
+    flex-shrink: 0;
+    font-weight: 500;
+}
+
+.p2p-analytics-suffix-menu {
+    position: absolute;
+    top: calc(100% - 1px);
+    right: 0;
+    background-color: var(--bds-gray-bg-card, #ffffff);
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+    border-top: 1px solid var(--bds-brand-700-normal, #f7a600);
+    border-radius: 4px;
+    box-shadow: var(--bds-shadow-l1, 0 2px 8px rgba(0, 0, 0, 0.1));
+    z-index: 1050;
+    box-sizing: border-box;
+    padding: 2px 0;
+    width: 32px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+/* Ensure suffix menu items match the overall style */
+.p2p-analytics-suffix-menu .p2p-analytics-menu-item {
+    padding: 3px 0;
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+    text-align: center;
+    font-weight: 500;
+    width: 100%;
+    box-sizing: border-box;
+    display: block;
+}
+
+.p2p-analytics-suffix-menu .p2p-analytics-menu-item:hover {
+    background-color: var(--bds-trans-hover, rgba(0, 0, 0, 0.04));
+}
+
+/* Commission container styles - REMOVE OLD STYLES */
+
+/* Separator styles */
+.p2p-analytics-separator {
+    height: 1px;
+    background-color: var(--bds-gray-ele-line, #e0e0e0);
+    margin: 6px 0;
+    width: 100%;
+}
+
+/* Order list integration */
+.p2p-analytics-order-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 600;
+    border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+    background: var(--bds-gray-bg-subtle, #fafafa);
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+    white-space: nowrap;
+}
+
+.p2p-analytics-order-badge--ok {
+    border-color: var(--bds-green-200, #b7eb8f);
+    background: var(--bds-green-50, #f6ffed);
+    color: var(--bds-green-700, #52c41a);
+}
+
+.p2p-analytics-order-badge--warn {
+    border-color: var(--bds-brand-200, #ffe58f);
+    background: var(--bds-brand-50, #fffbe6);
+    color: var(--bds-brand-700-normal, #f7a600);
+}
+
+.p2p-analytics-order-badge__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.p2p-analytics-order-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Badges wrapper in order list - Positioned to the RIGHT of the table row */
+.p2p-analytics-badges-wrapper {
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+    z-index: 10;
+    pointer-events: none; /* Prevent interference with row clicks */
+}
+
+/* Expand the container to make room */
+.my-order .fixed-width {
+    width: 96% !important;
+    max-width: 1600px !important;
+    min-width: 1200px !important;
+}
+
+/* Add padding to the row to reserve space for badges */
+.my-order .table .row {
+    padding-right: 150px !important;
+    position: relative;
+    box-sizing: border-box;
+}
+
+/* Restore badge interaction */
+.p2p-analytics-badge-item {
+    pointer-events: auto;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* Individual badge item with icon and label - HORIZONTAL */
+.p2p-analytics-badge-item {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 2px;
+}
+
+/* Badge icon wrapper */
+.p2p-analytics-badge-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+
+.p2p-analytics-badge-item:hover .p2p-analytics-badge-icon {
+    transform: scale(1.05);
+}
+
+/* Badge label text */
+.p2p-analytics-badge-label {
+    font-size: 14px;
+    line-height: 1.5715;
+    white-space: nowrap;
+    font-weight: 400;
+    color: var(--bds-gray-t1-title, rgba(0, 0, 0, 0.88));
+}
+
+/* ========================================
+   Dark Mode Support for Widget
+   ======================================== */
+
+/* Detect dark mode via Bybit's theme attribute or prefers-color-scheme */
+[data-theme="dark"] .p2p-analytics-widget-panel,
+.dark .p2p-analytics-widget-panel,
+html[theme="dark"] .p2p-analytics-widget-panel {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .p2p-analytics-form-section,
+.dark .p2p-analytics-form-section,
+html[theme="dark"] .p2p-analytics-form-section {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+}
+
+[data-theme="dark"] .p2p-analytics-input,
+.dark .p2p-analytics-input,
+html[theme="dark"] .p2p-analytics-input {
+    background-color: var(--bds-gray-bg-subtle, #2a2a2a);
+    border-color: var(--bds-gray-ele-border, #3a3a3a);
+    color: var(--bds-gray-t1-title, #ffffff);
+}
+
+[data-theme="dark"] .p2p-analytics-button,
+.dark .p2p-analytics-button,
+html[theme="dark"] .p2p-analytics-button {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+    border-color: var(--bds-gray-ele-border, #3a3a3a);
+    color: var(--bds-gray-t1-title, #ffffff);
+}
+
+[data-theme="dark"] .p2p-analytics-menu,
+.dark .p2p-analytics-menu,
+html[theme="dark"] .p2p-analytics-menu {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+    border-color: var(--bds-gray-ele-border, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-menu-item,
+.dark .p2p-analytics-menu-item,
+html[theme="dark"] .p2p-analytics-menu-item {
+    color: var(--bds-gray-t1-title, #ffffff);
+}
+
+[data-theme="dark"] .p2p-analytics-input-group,
+.dark .p2p-analytics-input-group,
+html[theme="dark"] .p2p-analytics-input-group {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+    border-color: var(--bds-gray-ele-border, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-input-suffix,
+.dark .p2p-analytics-input-suffix,
+html[theme="dark"] .p2p-analytics-input-suffix {
+    background-color: var(--bds-gray-bg-subtle, #2a2a2a);
+    border-color: var(--bds-gray-ele-line, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-suffix-menu,
+.dark .p2p-analytics-suffix-menu,
+html[theme="dark"] .p2p-analytics-suffix-menu {
+    background-color: var(--bds-gray-bg-card, #1e1e1e);
+    border-color: var(--bds-gray-ele-border, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-label,
+[data-theme="dark"] .p2p-analytics-form-title,
+[data-theme="dark"] .p2p-analytics-checkbox-label,
+.dark .p2p-analytics-label,
+.dark .p2p-analytics-form-title,
+.dark .p2p-analytics-checkbox-label,
+html[theme="dark"] .p2p-analytics-label,
+html[theme="dark"] .p2p-analytics-form-title,
+html[theme="dark"] .p2p-analytics-checkbox-label {
+    color: var(--bds-gray-t1-title, #ffffff);
+}
+
+[data-theme="dark"] .p2p-analytics-separator,
+.dark .p2p-analytics-separator,
+html[theme="dark"] .p2p-analytics-separator {
+    background-color: var(--bds-gray-ele-line, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-check-warning,
+.dark .p2p-analytics-check-warning,
+html[theme="dark"] .p2p-analytics-check-warning {
+    background-color: var(--bds-gray-bg-subtle, #2a2a2a);
+    border-color: var(--bds-gray-ele-line, #3a3a3a);
+}
+
+[data-theme="dark"] .p2p-analytics-widget-content::-webkit-scrollbar-track,
+.dark .p2p-analytics-widget-content::-webkit-scrollbar-track,
+html[theme="dark"] .p2p-analytics-widget-content::-webkit-scrollbar-track {
+    background: var(--bds-gray-bg-subtle, #2a2a2a);
+}
+
+[data-theme="dark"] .p2p-analytics-widget-content::-webkit-scrollbar-thumb,
+.dark .p2p-analytics-widget-content::-webkit-scrollbar-thumb,
+html[theme="dark"] .p2p-analytics-widget-content::-webkit-scrollbar-thumb {
+    background: var(--bds-gray-ele-border, #3a3a3a);
+}

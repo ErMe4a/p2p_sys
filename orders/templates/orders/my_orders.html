@@ -1,0 +1,361 @@
+{% extends 'base.html' %}
+{% load l10n %}
+
+{% block content %}
+
+<style>
+    /* === ОСНОВНАЯ ЦВЕТОВАЯ СХЕМА === */
+    :root {
+        --bg-main: #0c0e16;       /* Фон страницы */
+        --bg-card: #161a25;       /* Фон карточек */
+        --input-bg: #0f111a;      /* Фон инпутов */
+        --border-color: #262c3d;  /* Цвет рамок */
+        --accent-blue: #3d5afe;   /* Акцентный синий */
+        --text-muted: #848e9c;    /* Серый текст */
+        --text-main: #eaecef;     /* Белый текст */
+        --success: #00c087;       /* Зеленый */
+        --danger: #f84960;        /* Красный */
+    }
+
+    body { background-color: var(--bg-main); color: var(--text-main); font-family: 'Inter', sans-serif; }
+
+    /* === ВКЛАДКИ === */
+    .nav-tabs-custom { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); }
+    .nav-tab { color: var(--text-muted); text-decoration: none; padding: 12px 16px; font-size: 14px; border-bottom: 2px solid transparent; transition: 0.2s; }
+    .nav-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); font-weight: 600; }
+
+    /* === КОНТЕЙНЕРЫ === */
+    .form-section { background: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; }
+    .table-container { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+
+    /* === СТИЛИ ФОРМЫ (CLEAN STYLE) === */
+    /* Убираем "Floating", делаем классику */
+    .form-label {
+        color: var(--text-muted);
+        font-size: 12px;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .form-control, .form-select {
+        background-color: var(--input-bg) !important;
+        border: 1px solid var(--border-color) !important;
+        color: #fff !important;
+        font-size: 14px;
+        border-radius: 6px;
+        height: 42px; /* Фиксированная высота для аккуратности */
+        padding: 8px 12px;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--accent-blue) !important;
+        box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
+    }
+
+    /* Стили для группы комиссии */
+    .commission-group { display: flex; }
+    .commission-group .form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+    .commission-select { 
+        width: 70px; 
+        background-color: rgba(61, 90, 254, 0.1) !important; 
+        border: 1px solid var(--border-color) !important; 
+        color: var(--accent-blue) !important; 
+        font-weight: bold; 
+        text-align: start;
+        border-top-left-radius: 0; 
+        border-bottom-left-radius: 0;
+        cursor: pointer;
+    }
+
+    /* === ТАБЛИЦА === */
+    .table { margin-bottom: 0; color: var(--text-main); font-size: 13px; }
+    .table thead th { background: rgba(255,255,255,0.02); color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding: 12px 15px; font-size: 11px; text-transform: uppercase; vertical-align: middle; }
+    .table td { border-bottom: 1px solid var(--border-color); padding: 10px 15px; vertical-align: middle; }
+
+    /* === КНОПКИ === */
+    .btn-create { 
+        background-color: var(--accent-blue); 
+        color: #fff; 
+        border: none; 
+        height: 42px; /* Высота как у полей */
+        border-radius: 6px; 
+        width: 100%; 
+        font-weight: 600; 
+        margin-top: 23px; /* Компенсация высоты лейбла */
+    }
+    .btn-create:hover { background-color: #304ffe; }
+
+    .btn-action { background: #1e2330; border: 1px solid var(--border-color); color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 4px; transition: 0.2s; cursor: pointer; }
+    .btn-action:hover { background: #2d3446; }
+    .btn-delete { background: #3d2428; border: 1px solid #5a2d2d; color: #ff8080; }
+    
+    .status-buy { color: var(--success); font-weight: 600; }
+    .status-sell { color: var(--danger); font-weight: 600; }
+    .badge-exchange { background: #2b3139; color: #929aa5; border: 1px solid #474d57; font-size: 11px; padding: 4px 8px; border-radius: 4px; }
+
+    /* === МОДАЛКА === */
+    .modal-content { background: var(--bg-card); border: 1px solid var(--border-color); }
+    .modal-header { border-bottom: 1px solid var(--border-color); }
+    .modal-footer { border-top: none; }
+    .btn-close { filter: invert(1); }
+    .btn-save-modal { background-color: var(--accent-blue); color: white; border-radius: 6px; border: none; font-weight: 600; }
+    .btn-cancel-modal { background-color: #2b3139; color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
+</style>
+
+<div class="form-section">
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        
+        <div class="row mb-3">
+            <div class="col-12">
+                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера">
+            </div>
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
+                <input type="text" name="price" class="form-control" placeholder="Курс">
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="amount" class="form-control" placeholder="Количество">
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="cost" class="form-control" placeholder="Стоимость">
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="operation_type">
+                    <option value="BUY">Покупка</option>
+                    <option value="SELL">Продажа</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="exchange">
+                    <option value="Bybit">Bybit</option>
+                    <option value="HTX">HTX</option>
+                    <option value="MEXC">MEXC</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="row g-3 align-items-start">
+            <div class="col-md-3">
+                <select class="form-select" name="details">
+                    <option selected disabled value="">Выберите банк...</option>
+                    {% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <div class="commission-group">
+                    <input type="number" name="commission_value" class="form-control" step="1" placeholder="0">
+                    <select class="form-select commission-select" name="commission_type">
+                        <option value="PERCENT">%</option>
+                        <option value="RUB">₽</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}">
+            </div>
+            
+            <div class="col-md-2 pt-4"> 
+                <div class="d-flex gap-3 align-items-center h-100 ps-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkDocs">
+                        <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
+                        <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-2">
+                <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
+            </div>
+        </div>
+
+        <div id="fileInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Прикрепить скриншот</label>
+            <input type="file" name="screenshot" class="form-control">
+        </div>
+    </form>
+</div>
+
+<div class="table-container shadow-sm">
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Тип</th><th>Биржа</th><th>Курс</th><th>Кол-во</th><th>Стоимость</th><th>Комис.</th><th>Тип</th><th>№ Ордера</th><th>Создан</th><th class="text-end">Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            
+            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
+            
+            <tr>
+                <td class="fw-bold">{{ order.id }}</td>
+                <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
+                <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
+                
+                <td>{{ formatted_price }}</td>
+                <td>{{ formatted_amount }}</td>
+                <td>{{ formatted_cost }}</td>
+                <td>{{ formatted_comm }}</td>
+                
+                <td class="text-muted">{% if order.commission_type == 'PERCENT' %}%{% else %}₽{% endif %}</td>
+                <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
+                <td class="small text-muted" style="line-height: 1.2;">
+                    {{ order_date }}<br>{{ order_time }}
+                </td>
+                <td>
+                    <div class="d-flex gap-1 justify-content-end align-items-center">
+                        <button class="btn btn-action" 
+                            onclick="openEditModal(
+                                '{{ order.id }}', 
+                                '{{ order.operation_type }}', 
+                                '{{ order.exchange_type }}', 
+                                '{{ order.bank_detail.name|escapejs }}', 
+                                '{{ formatted_price }}', 
+                                '{{ formatted_amount }}', 
+                                '{{ formatted_cost }}', 
+                                '{{ formatted_comm }}', 
+                                '{{ order.commission_type }}', 
+                                '{{ order.external_id|escapejs }}', 
+                                '{{ order_date }}T{{ order_time }}'
+                            )">
+                            Изм.
+                        </button>
+
+                        {% if order.screenshot %}
+                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Смотреть">📷</a>
+                        {% else %}
+                            <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить">📷</button>
+                            <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
+                                {% csrf_token %}
+                                <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
+                            </form>
+                        {% endif %}
+
+                        <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
+                    </div>
+                </td>
+            </tr>
+            
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg" style="border-radius: 12px;">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Редактирование ордера #<span id="display_id"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Тип операции</label>
+                            <select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Биржа</label>
+                            <select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option></select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Реквизиты</label>
+                            <select class="form-select" name="details" id="modal_details">{% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}</select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Курс</label>
+                            <input type="text" name="price" id="modal_price" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Количество</label>
+                            <input type="text" name="amount" id="modal_amount" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Стоимость</label>
+                            <input type="text" name="cost" id="modal_cost" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Комиссия</label>
+                            <div class="commission-group">
+                                <input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1">
+                                <select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Номер ордера</label>
+                            <input type="text" name="external_id" id="modal_ext_id" class="form-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Дата и время</label>
+                            <input type="datetime-local" name="created_at" id="modal_date" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer pb-3 pt-3 justify-content-between">
+                    <button type="button" class="btn btn-cancel-modal px-4 py-2" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-save-modal px-4 py-2">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Показ поля для файла при создании
+    document.getElementById('checkScreen').addEventListener('change', function() {
+        document.getElementById('fileInputWrapper').style.display = this.checked ? 'block' : 'none';
+    });
+
+    function openEditModal(id, opType, exchange, details, price, amount, cost, commVal, commType, extId, date) {
+        // 1. Ссылка на форму и ID
+        document.getElementById('editForm').action = "/edit/" + id + "/";
+        document.getElementById('display_id').innerText = id;
+
+        // 2. Умная установка банка (Details)
+        const detailsSelect = document.getElementById('modal_details');
+        
+        // Сначала пробуем просто установить значение
+        detailsSelect.value = details;
+
+        // Если значение не установилось (такого банка нет в списке <option>)
+        if (detailsSelect.value !== details && details !== 'None' && details !== '') {
+            // Создаем новый вариант выбора динамически
+            let newOpt = new Option(details, details);
+            detailsSelect.add(newOpt);
+            detailsSelect.value = details;
+        }
+
+        // 3. Заполнение остальных полей
+        document.getElementById('modal_op_type').value = opType;
+        document.getElementById('modal_exchange').value = exchange;
+        document.getElementById('modal_price').value = price;
+        document.getElementById('modal_amount').value = amount;
+        document.getElementById('modal_cost').value = cost;
+        document.getElementById('modal_comm_val').value = commVal;
+        document.getElementById('modal_comm_type').value = commType;
+        document.getElementById('modal_ext_id').value = extId;
+        document.getElementById('modal_date').value = date; 
+        
+        // 4. Показ модалки
+        new bootstrap.Modal(document.getElementById('editModal')).show();
+    }
+
+    // Триггер для быстрой загрузки скриншота
+    function triggerUpload(orderId) {
+        const fileInput = document.getElementById('file-input-' + orderId);
+        if (fileInput) fileInput.click();
+    }
+</script>
+{% endblock %}

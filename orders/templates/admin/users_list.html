@@ -1,0 +1,203 @@
+{% extends 'admin/admin_base.html' %}
+
+{% block title %}Пользователи | Админка{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-control { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
+    .api-label { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; background: var(--bg-input); border: 1px solid var(--border-color); }
+    .api-label.active { color: #58d68d; border-color: rgba(88,214,141,0.3); }
+    .api-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: #3a3a4a; }
+    .api-dot.active { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
+    
+    .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
+    .form-section-inner h4 { font-size: 0.85rem; margin-bottom: 12px; color: var(--accent-blue); display: flex; align-items: center; gap: 8px; }
+    .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; }
+    .indicator.ok { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
+
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+    .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card-custom">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="m-0">Управление пользователями</h5>
+        <button class="btn btn-sm btn-outline-blue px-3" onclick="openAddUserModal()">+ Добавить пользователя</button>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table table-hover align-middle" style="color: var(--text-main); border-color: var(--border-color);">
+            <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted);">
+                <tr>
+                    <th>ID</th>
+                    <th>Логин</th>
+                    <th>Bybit</th>
+                    <th>HTX</th>
+                    <th>Evotor</th>
+                    <th class="text-end">Действия</th>
+                </tr>
+            </thead>
+            <tbody style="font-size: 0.85rem;">
+                {% for u in users %}
+                <tr>
+                    <td class="text-muted">{{ u.id }}</td>
+                    <td class="fw-bold">{{ u.username }}</td>
+                    <td>
+                        <span class="api-label {% if u.bybit_api_key %}active{% endif %}">
+                            <span class="api-dot {% if u.bybit_api_key %}active{% endif %}"></span>
+                            {% if u.bybit_api_key %}✓{% else %}—{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="api-label {% if u.htx_access_key %}active{% endif %}">
+                            <span class="api-dot {% if u.htx_access_key %}active{% endif %}"></span>
+                            {% if u.htx_access_key %}✓{% else %}—{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="api-label {% if u.evotor_login %}active{% endif %}">
+                            <span class="api-dot {% if u.evotor_login %}active{% endif %}"></span>
+                            {% if u.evotor_login %}✓{% else %}—{% endif %}
+                        </span>
+                    </td>
+                    <td class="text-end">
+                        <button class="btn btn-sm btn-outline-secondary" 
+                                onclick="openEditUserModal('{{ u.id }}', '{{ u.username }}', '{{ u.bybit_api_key|default:'' }}', '{{ u.bybit_api_secret|default:'' }}', '{{ u.htx_access_key|default:'' }}', '{{ u.htx_private_key|default:'' }}', '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}')">
+                            ✏️
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1">📊</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal-overlay" id="addUserModal">
+    <div class="modal-content-custom" style="max-width: 500px;">
+        <div class="modal-header-custom">
+            <span>Новый пользователь</span>
+            <button class="btn-close btn-close-white" onclick="closeAddUserModal()"></button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_user">
+            <div class="form-row mb-3">
+                <div class="form-group">
+                    <label>Логин *</label>
+                    <input class="form-control" type="text" name="username" required>
+                </div>
+                <div class="form-group">
+                    <label>Пароль *</label>
+                    <input class="form-control" type="password" name="password" required>
+                </div>
+            </div>
+            <div style="display:flex; gap:12px; justify-content:flex-end;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeAddUserModal()">Отмена</button>
+                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Создать</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="editUserModal">
+    <div class="modal-content-custom">
+        <div class="modal-header-custom">
+            <span>Редактирование: <strong id="editUserLoginLabel" class="text-primary"></strong></span>
+            <button class="btn-close btn-close-white" onclick="closeEditUserModal()"></button>
+        </div>
+        <form id="editUserForm" method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_user">
+            <input type="hidden" name="user_id" id="editUserId">
+            
+            <div class="form-section-inner">
+                <h4><span id="bybitInd" class="indicator"></span> Bybit API</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input class="form-control" type="text" name="bybit_key" id="editBybitKey">
+                    </div>
+                    <div class="form-group">
+                        <label>API Secret</label>
+                        <input class="form-control" type="text" name="bybit_secret" id="editBybitSecret">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section-inner">
+                <h4><span id="htxInd" class="indicator"></span> HTX API</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Access Key</label>
+                        <input class="form-control" type="text" name="htx_key" id="editHtxKey">
+                    </div>
+                    <div class="form-group">
+                        <label>Private Key</label>
+                        <input class="form-control" type="text" name="htx_secret" id="editHtxSecret">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section-inner">
+                <h4><span id="evoInd" class="indicator"></span> Evotor</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Логин</label>
+                        <input class="form-control" type="text" name="evotor_login" id="editEvoLogin">
+                    </div>
+                    <div class="form-group">
+                        <label>Пароль</label>
+                        <input class="form-control" type="password" name="evotor_password" id="editEvoPass">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:10px;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeEditUserModal()">Отмена</button>
+                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function openAddUserModal() { document.getElementById('addUserModal').classList.add('active'); }
+    function closeAddUserModal() { document.getElementById('addUserModal').classList.remove('active'); }
+
+    function openEditUserModal(id, login, bKey, bSec, hKey, hSec, eLog, ePass) {
+        document.getElementById('editUserId').value = id;
+        document.getElementById('editUserLoginLabel').innerText = login;
+        
+        // Заполняем поля
+        document.getElementById('editBybitKey').value = bKey;
+        document.getElementById('editBybitSecret').value = bSec;
+        document.getElementById('editHtxKey').value = hKey;
+        document.getElementById('editHtxSecret').value = hSec;
+        document.getElementById('editEvoLogin').value = eLog;
+        document.getElementById('editEvoPass').value = ePass;
+
+        // Обновляем индикаторы (лампочки)
+        document.getElementById('bybitInd').className = bKey ? 'indicator ok' : 'indicator';
+        document.getElementById('htxInd').className = hKey ? 'indicator ok' : 'indicator';
+        document.getElementById('evoInd').className = eLog ? 'indicator ok' : 'indicator';
+
+        document.getElementById('editUserModal').classList.add('active');
+    }
+
+    function closeEditUserModal() { document.getElementById('editUserModal').classList.remove('active'); }
+
+    // Закрытие по клику вне модалки
+    window.onclick = function(e) {
+        if (e.target.classList.contains('modal-overlay')) {
+            closeAddUserModal();
+            closeEditUserModal();
+        }
+    }
+</script>
+{% endblock %}
