@@ -21,6 +21,18 @@ from django.http import JsonResponse
 from django.db.models import Sum, Q
 from django.contrib.auth.models import User  # Или твоя модель пользователя
 from .models import Order # Убедись, что импорт правильный
+
+
+from django.db.models import Sum, Q
+from django.contrib.auth.decorators import user_passes_test
+
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.http import JsonResponse
+from django.db.models import Sum, Q
+from django.contrib.auth import get_user_model # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
+from .models import Order 
+
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 @login_required
@@ -306,76 +318,74 @@ def admin_orders_editor(request):
 
 
 
+# Получаем правильную модель пользователя (твою orders.User)
+User = get_user_model()
 
-# 1. Открытие страницы
-@login_required(login_url='admin_login')
+# Проверка: пускаем только Суперюзера (Админа)
+def is_admin(user):
+    return user.is_superuser
+
+@login_required
+@user_passes_test(is_admin, login_url='/')
 def admin_turnover_control(request):
-    # Проверка на админа (по желанию)
-    if not request.user.is_superuser:
-        return redirect('home') # Или куда ты перенаправляешь обычных юзеров
     return render(request, 'admin/turnover_control.html')
 
-# 2. API Поиска пользователя
+# API: Живой поиск по ВСЕМ пользователям
 @login_required
+@user_passes_test(is_admin)
 def api_search_users(request):
     query = request.GET.get('q', '').strip()
-    if not query:
+    if len(query) < 1:
         return JsonResponse([], safe=False)
     
-    # Ищем по логину ИЛИ по ID
-    users = User.objects.filter(Q(username__icontains=query) | Q(id__icontains=query))[:10]
+    # Теперь User.objects ссылается на твою таблицу orders_user
+    users = User.objects.filter(
+        Q(username__icontains=query) | Q(id__icontains=query)
+    )[:10]
     
-    # Формируем список для JS
     results = [{'id': u.id, 'username': u.username} for u in users]
     return JsonResponse(results, safe=False)
 
-# 3. API Расчета статистики и получения заказов
+# API: Получение статистики
 @login_required
+@user_passes_test(is_admin)
 def api_get_turnover(request, user_id):
     start_date = request.GET.get('start')
     end_date = request.GET.get('end')
     
-    # Фильтруем заказы конкретного пользователя за период
-    # created_at__date__range включает обе даты (с 00:00 до 23:59)
     orders = Order.objects.filter(
         user_id=user_id, 
         created_at__date__range=[start_date, end_date]
     ).order_by('-created_at')
     
-    # Разделяем на покупки и продажи
     buy_orders = orders.filter(operation_type='BUY')
     sell_orders = orders.filter(operation_type='SELL')
     
-    # Считаем суммы (если заказов нет, вернется None, поэтому "or 0")
     buy_sum = buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0
     sell_sum = sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0
     
-    # Вспомогательная функция для красивых чисел (10 000.00)
-    def format_money(val):
+    def fmt(val):
         return f"{val:,.2f}".replace(',', ' ').replace('.', ',')
 
-    # Собираем данные для таблицы (чтобы не отправлять лишнее)
-    def serialize_orders(qs):
+    def serialize(qs):
         return [{
-            'id': o.pk, # или o.order_id, если есть внешнее поле
+            'id': o.pk, 
             'amount': float(o.amount),
-            'cost': float(o.cost) if hasattr(o, 'cost') else 0, # USDT/Crypto объем
+            'cost': float(o.cost) if hasattr(o, 'cost') else 0,
             'date': o.created_at.strftime('%d.%m %H:%M')
         } for o in qs]
 
     data = {
-        'buy_sum': format_money(buy_sum),
+        'buy_sum': fmt(buy_sum),
         'buy_count': buy_orders.count(),
-        'sell_sum': format_money(sell_sum),
+        'sell_sum': fmt(sell_sum),
         'sell_count': sell_orders.count(),
-        'total_sum': format_money(buy_sum + sell_sum),
-        'profit': format_money(sell_sum - buy_sum),
-        'buy_orders': serialize_orders(buy_orders),
-        'sell_orders': serialize_orders(sell_orders),
+        'total_sum': fmt(buy_sum + sell_sum),
+        'profit': fmt(sell_sum - buy_sum),
+        'buy_orders': serialize(buy_orders),
+        'sell_orders': serialize(sell_orders),
     }
-    
     return JsonResponse(data)
-
 
 
 @login_required
