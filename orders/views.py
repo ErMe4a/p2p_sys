@@ -1,37 +1,27 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from .services import sync_bybit_orders
-from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.response import Response
-from django.contrib.auth import authenticate
-from rest_framework.authtoken.models import Token
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework.response import Response
-from django.db import transaction
+
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import AuthenticationForm
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
-
 from .models import Order, BankDetail, UnprocessedOrder, User
-
-from django.views.decorators.csrf import csrf_exempt
-
-
+from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
-from .models import Order, BankDetail # ОБЯЗАТЕЛЬНО добавь импорт BankDetail
+from .models import Order, BankDetail 
 import datetime
-
 from django.http import JsonResponse, HttpResponse
-from .models import Order, User # Предположим, модель называется Order
-import json
+from .models import Order, User 
 
-
-
-#ПОЛЬЗАК ПАНЕЛЬ
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.db.models import Sum, Q
+from django.contrib.auth.models import User  # Или твоя модель пользователя
+from .models import Order # Убедись, что импорт правильный
+#ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 @login_required
 def my_orders_list(request):
@@ -179,7 +169,7 @@ def unprocessed_orders_list(request):
 
 
 
-#АДМИН ПАНЕЛЬ
+#АДМИН ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 @login_required
 def admin_users_list(request):
@@ -265,41 +255,132 @@ def admin_orders_editor(request):
         return redirect('my_orders')
 
     order = None
+    user_details = None
     search_id = request.GET.get('order_id_search')
     
-    # 1. ПОИСК ЗАКАЗА (используем external_id, как в твоей модели)
     if search_id:
+        search_id = search_id.strip()
         order = Order.objects.filter(external_id=search_id).first()
-
-    # 2. СОХРАНЕНИЕ ИЗМЕНЕНИЙ
-    if request.method == 'POST' and 'save_order' in request.POST:
-        target_id = request.POST.get('target_order_pk')
-        current_order = Order.objects.get(pk=target_id)
-        
-        # Обновляем поля согласно твоему списку
-        current_order.operation_type = request.POST.get('type') # operation_type вместо type
-        current_order.price = request.POST.get('price')
-        current_order.amount = request.POST.get('amount')
-        current_order.cost = request.POST.get('quantity') # Вероятно, quantity у тебя это cost
-        current_order.commission = request.POST.get('commission')
-        current_order.commission_type = request.POST.get('commission_type')
-        current_order.exchange_type = request.POST.get('exchange_type')
-        
-        date_raw = request.POST.get('created_at')
-        if date_raw:
-            current_order.created_at = date_raw
+        if not order and search_id.isdigit():
+            order = Order.objects.filter(id=search_id).first()
             
-        current_order.save()
-        return redirect(f'/p2p-admin/orders/?order_id_search={current_order.external_id}')
+        if order:
+            # Получаем все реквизиты владельца этого заказа, чтобы выбрать банк по имени
+            from .models import BankDetail # Убедись, что модель импортирована
+            user_details = BankDetail.objects.filter(user=order.user)
+        else:
+            messages.error(request, f"Заказ '{search_id}' не найден.")
 
-    return render(request, 'admin/orders_editor.html', {'order': order})
+    if request.method == 'POST' and 'save_order' in request.POST:
+        target_pk = request.POST.get('target_order_pk')
+        try:
+            current_order = Order.objects.get(pk=target_pk)
+            
+            # Обновляем все параметры
+            current_order.external_id = request.POST.get('external_id')
+            current_order.exchange_type = request.POST.get('exchange_type')
+            current_order.bank_detail_id = request.POST.get('bank_detail_id') # Сохраняем выбранный банк
+            current_order.operation_type = request.POST.get('operation_type')
+            current_order.price = request.POST.get('price')
+            current_order.amount = request.POST.get('amount')
+            current_order.cost = request.POST.get('cost')
+            current_order.commission = request.POST.get('commission')
+            current_order.commission_type = request.POST.get('commission_type')
+            
+            date_raw = request.POST.get('created_at')
+            if date_raw:
+                current_order.created_at = date_raw
+            
+            current_order.save()
+            messages.success(request, "Изменения успешно сохранены.")
+            return redirect('admin_orders_editor') 
+            
+        except Order.DoesNotExist:
+            messages.error(request, "Ошибка: заказ не найден.")
 
-@login_required
+    return render(request, 'admin/orders_editor.html', {
+        'order': order,
+        'user_details': user_details
+    })
+
+
+
+
+
+# 1. Открытие страницы
+@login_required(login_url='admin_login')
 def admin_turnover_control(request):
-    if not request.user.is_superuser: return redirect('my_orders')
+    # Проверка на админа (по желанию)
+    if not request.user.is_superuser:
+        return redirect('home') # Или куда ты перенаправляешь обычных юзеров
     return render(request, 'admin/turnover_control.html')
+
+# 2. API Поиска пользователя
+@login_required
+def api_search_users(request):
+    query = request.GET.get('q', '').strip()
+    if not query:
+        return JsonResponse([], safe=False)
+    
+    # Ищем по логину ИЛИ по ID
+    users = User.objects.filter(Q(username__icontains=query) | Q(id__icontains=query))[:10]
+    
+    # Формируем список для JS
+    results = [{'id': u.id, 'username': u.username} for u in users]
+    return JsonResponse(results, safe=False)
+
+# 3. API Расчета статистики и получения заказов
+@login_required
+def api_get_turnover(request, user_id):
+    start_date = request.GET.get('start')
+    end_date = request.GET.get('end')
+    
+    # Фильтруем заказы конкретного пользователя за период
+    # created_at__date__range включает обе даты (с 00:00 до 23:59)
+    orders = Order.objects.filter(
+        user_id=user_id, 
+        created_at__date__range=[start_date, end_date]
+    ).order_by('-created_at')
+    
+    # Разделяем на покупки и продажи
+    buy_orders = orders.filter(operation_type='BUY')
+    sell_orders = orders.filter(operation_type='SELL')
+    
+    # Считаем суммы (если заказов нет, вернется None, поэтому "or 0")
+    buy_sum = buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0
+    sell_sum = sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0
+    
+    # Вспомогательная функция для красивых чисел (10 000.00)
+    def format_money(val):
+        return f"{val:,.2f}".replace(',', ' ').replace('.', ',')
+
+    # Собираем данные для таблицы (чтобы не отправлять лишнее)
+    def serialize_orders(qs):
+        return [{
+            'id': o.pk, # или o.order_id, если есть внешнее поле
+            'amount': float(o.amount),
+            'cost': float(o.cost) if hasattr(o, 'cost') else 0, # USDT/Crypto объем
+            'date': o.created_at.strftime('%d.%m %H:%M')
+        } for o in qs]
+
+    data = {
+        'buy_sum': format_money(buy_sum),
+        'buy_count': buy_orders.count(),
+        'sell_sum': format_money(sell_sum),
+        'sell_count': sell_orders.count(),
+        'total_sum': format_money(buy_sum + sell_sum),
+        'profit': format_money(sell_sum - buy_sum),
+        'buy_orders': serialize_orders(buy_orders),
+        'sell_orders': serialize_orders(sell_orders),
+    }
+    
+    return JsonResponse(data)
+
+
 
 @login_required
 def admin_statistics(request):
     if not request.user.is_superuser: return redirect('my_orders')
     return render(request, 'admin/statistics.html')
+
+
