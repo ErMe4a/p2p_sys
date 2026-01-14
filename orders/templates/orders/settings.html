@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+{% block content %}
+<style>
+    .settings-container {
+        max-width: 900px;
+        margin: 20px auto;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 30px;
+    }
+
+    /* Декоративные заголовки разделов с линиями */
+    .section-divider {
+        display: flex;
+        align-items: center;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin: 30px 0 20px;
+    }
+    .section-divider::before, .section-divider::after {
+        content: '';
+        flex: 1;
+        border-bottom: 1px solid var(--border);
+    }
+    .section-divider:not(:empty)::before { margin-right: 15px; }
+    .section-divider:not(:empty)::after { margin-left: 15px; }
+
+    .field-label {
+        font-size: 0.8rem;
+        color: #fff;
+        margin-bottom: 6px;
+        display: block;
+    }
+
+    .form-control, .form-select {
+        height: 42px;
+        font-size: 0.9rem;
+        margin-bottom: 15px;
+    }
+
+    .btn-save {
+        background: #2b344d;
+        border: 1px solid #3d6eff;
+        color: #fff;
+        padding: 8px 25px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        transition: 0.3s;
+    }
+    .btn-save:hover { background: #3d6eff; }
+    
+    .footer-link {
+        text-align: center;
+        font-size: 0.75rem;
+        color: #4b526d;
+        margin-top: 20px;
+    }
+</style>
+
+<div class="settings-container shadow-sm">
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="section-divider">Онлайн-касса</div>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="field-label">API логин Эвотора</label>
+                <input type="text" name="evotor_login" class="form-control" value="{{ user.evotor_login|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">API пароль Эвотора</label>
+                <input type="password" name="evotor_password" class="form-control" value="{{ user.evotor_password|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Идентификатор группы ККТ</label>
+                <input type="text" name="kkt_id" class="form-control" value="{{ user.kkt_id|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Email</label>
+                <input type="email" name="email" class="form-control" value="{{ user.email|default:'' }}">
+            </div>
+            <div class="col-12">
+                <label class="field-label">Место расчетов</label>
+                <input type="text" name="payment_address" class="form-control" value="{{ user.payment_address|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Тип налогообложения</label>
+                <select name="tax_type" class="form-select">
+                    <option value="OCH" {% if user.tax_type == 'OCH' %}selected{% endif %}>OCH</option>
+                    <option value="USN_INCOME" {% if user.tax_type == 'USN_INCOME' %}selected{% endif %}>УСН доход</option>
+                    <option value="USN_INCOME_OUTCOME" {% if user.tax_type == 'USN_INCOME_OUTCOME' %}selected{% endif %}>УСН доход-расход</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">ИНН</label>
+                <input type="text" name="inn" class="form-control" value="{{ user.inn|default:'' }}">
+            </div>
+        </div>
+
+        <div class="section-divider">HTX API</div>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="field-label">HTX Access Key</label>
+                <input type="text" name="htx_key" class="form-control" value="{{ user.htx_access_key|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">HTX Private Key</label>
+                <input type="password" name="htx_secret" class="form-control" value="{{ user.htx_private_key|default:'' }}">
+            </div>
+        </div>
+
+        <div class="section-divider">MEXC API</div>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="field-label">MEXC API Key</label>
+                <input type="text" name="mexc_key" class="form-control" value="{{ user.mexc_api_key|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">MEXC API Secret</label>
+                <input type="password" name="mexc_secret" class="form-control" value="{{ user.mexc_api_secret|default:'' }}">
+            </div>
+        </div>
+
+        <div class="section-divider">Bybit API</div>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="field-label">Bybit API Key</label>
+                <input type="text" name="bybit_key" class="form-control" value="{{ user.bybit_api_key|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Bybit API Secret</label>
+                <input type="password" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
+            </div>
+        </div>
+
+        <div class="mt-4">
+            <button type="submit" class="btn btn-save">Сохранить настройки</button>
+        </div>
+    </form>
+</div>
+
+<div class="footer-link">
+    t.me/+crR3oCuIaJFjZWZi
+</div>
+{% endblock %}

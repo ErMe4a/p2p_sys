@@ -1,0 +1,517 @@
+/* =========================================================
+   P2P Analytics — FULL CSS (фикс под Bybit chat header)
+   Работает и для старого floating .p2p-analytics-widget
+   и для твоего нового #p2p-analytics-floating-widget (static)
+   ========================================================= */
+
+/* -------------------------
+   0) HARD FIX: чтобы дропдаун НЕ обрезался шапкой чата
+   (Bybit часто ставит overflow:hidden в капшене)
+   ------------------------- */
+.im-container-caption,
+.im-container-caption__info,
+.header,
+.header-title-new,
+.content-wrapper,
+.content,
+.content-wrapper-left {
+  overflow: visible !important;
+}
+
+/* -------------------------
+   1) ТВОЙ НОВЫЙ STATIC WIDGET (тот что вставляешь под Maxim MSK)
+   ------------------------- */
+#p2p-analytics-floating-widget.p2p-analytics-floating-widget {
+  position: static !important;
+  display: block !important;
+  width: 360px !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+
+  margin-top: 10px !important;
+  border-radius: 12px !important;
+  overflow: visible !important;          /* важно для меню */
+  z-index: 9999 !important;
+}
+
+/* если Bybit сжимает блоки внутри caption — убираем */
+.im-container-caption__info {
+  min-width: 0 !important;
+}
+
+/* чтобы виджет визуально был как отдельный блок под ником */
+#p2p-analytics-floating-widget .p2p-analytics-widget-panel,
+#p2p-analytics-floating-widget .p2p-analytics-form-section {
+  width: 100% !important;
+}
+
+/* -------------------------
+   2) БАЗА: старый floating widget (если где-то ещё нужен)
+   ------------------------- */
+.p2p-analytics-widget {
+  position: fixed;
+  bottom: 8px;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  transition: transform 0.3s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+.p2p-analytics-widget.collapsed { transform: translateX(calc(100% - 24px)); }
+
+/* LEFT mode */
+.p2p-analytics-widget.p2p-analytics-widget--left {
+  right: auto;
+  left: 0;
+  flex-direction: row-reverse;
+}
+.p2p-analytics-widget.p2p-analytics-widget--left.collapsed {
+  transform: translateX(calc(-100% + 24px));
+}
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle {
+  border-radius: 0 6px 6px 0;
+  box-shadow: 2px -2px 12px rgba(0,0,0,.15);
+}
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle:hover {
+  box-shadow: 3px -3px 16px rgba(0,0,0,.2);
+}
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-toggle svg { transform: rotate(180deg); }
+.p2p-analytics-widget.p2p-analytics-widget--left.collapsed .p2p-analytics-widget-toggle svg { transform: rotate(0deg); }
+.p2p-analytics-widget.p2p-analytics-widget--left .p2p-analytics-widget-panel {
+  border-radius: 0 6px 6px 0;
+  box-shadow: 4px -4px 20px rgba(0,0,0,.12);
+}
+
+/* toggle */
+.p2p-analytics-widget-toggle {
+  width: 24px;
+  height: 48px;
+  background: linear-gradient(135deg, var(--bds-brand-700-normal, #f7a600) 0%, var(--bds-brand-800-pressed, #d18400) 100%);
+  border: none;
+  border-radius: 6px 0 0 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: -2px -2px 12px rgba(0,0,0,.15);
+  transition: all .2s ease;
+  flex-shrink: 0;
+}
+.p2p-analytics-widget-toggle:hover {
+  background: linear-gradient(135deg, var(--bds-brand-800-pressed, #d18400) 0%, var(--bds-brand-700-normal, #f7a600) 100%);
+  box-shadow: -3px -3px 16px rgba(0,0,0,.2);
+}
+.p2p-analytics-widget-toggle svg {
+  width: 14px;
+  height: 14px;
+  fill: #fff;
+  transition: transform .3s ease;
+}
+.p2p-analytics-widget.collapsed .p2p-analytics-widget-toggle svg { transform: rotate(180deg); }
+
+/* panel */
+.p2p-analytics-widget-panel {
+  width: 175px;
+  max-height: calc(100vh - 30px);
+  background-color: var(--bds-gray-bg-card, #fff);
+  border-radius: 6px 0 0 6px;
+  box-shadow: -4px -4px 20px rgba(0,0,0,.12);
+  overflow: visible; /* важно чтобы меню не резалось */
+  display: flex;
+  flex-direction: column;
+}
+
+/* header */
+.p2p-analytics-widget-header {
+  padding: 5px 8px;
+  background: linear-gradient(135deg, var(--bds-brand-700-normal, #f7a600) 0%, var(--bds-brand-800-pressed, #d18400) 100%);
+  color: #fff;
+  font-weight: 600;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.p2p-analytics-widget-header svg { width: 12px; height: 12px; fill: currentColor; }
+
+/* content */
+.p2p-analytics-widget-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0;
+}
+.p2p-analytics-widget-content::-webkit-scrollbar { width: 6px; }
+.p2p-analytics-widget-content::-webkit-scrollbar-track { background: var(--bds-gray-bg-subtle, #f5f5f5); }
+.p2p-analytics-widget-content::-webkit-scrollbar-thumb { background: var(--bds-gray-ele-border, #d9d9d9); border-radius: 3px; }
+.p2p-analytics-widget-content::-webkit-scrollbar-thumb:hover { background: var(--bds-gray-t3-sub, rgba(0,0,0,.45)); }
+
+/* -------------------------
+   3) FORM + DROPDOWN (главный фикс “менюшка маленькая”)
+   ------------------------- */
+.p2p-analytics-form-section {
+  margin: 0;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 0;
+  background-color: var(--bds-gray-bg-card, #fff);
+  transition: all .2s cubic-bezier(0.645, 0.045, 0.355, 1);
+  overflow: visible; /* важно */
+}
+
+.p2p-analytics-form-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--bds-gray-t1-title, rgba(0,0,0,.88));
+  margin: 0 0 6px 0;
+  line-height: 1.4;
+}
+
+.p2p-analytics-dropdown-container,
+.p2p-analytics-input-wrapper {
+  position: relative;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: visible; /* важно */
+}
+
+/* КНОПКА выбора банка */
+.p2p-analytics-button {
+  background-color: var(--bds-gray-bg-card, #fff);
+  border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+  color: var(--bds-gray-t1-title, rgba(0,0,0,.88));
+  box-shadow: 0 2px 0 rgba(0,0,0,.015);
+  padding: 8px 10px;              /* было 4px 8px -> теперь нормально */
+  font-size: 13px;                /* крупнее */
+  line-height: 1.4;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .2s cubic-bezier(0.645, 0.045, 0.355, 1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  box-sizing: border-box;
+  margin: 6px 0;
+}
+
+.p2p-analytics-button:hover {
+  color: var(--bds-brand-700-normal, #f7a600);
+  border-color: var(--bds-brand-700-normal, #f7a600);
+}
+
+.p2p-analytics-button:active,
+.p2p-analytics-button-active {
+  color: var(--bds-brand-800-pressed, #d18400);
+  border-color: var(--bds-brand-800-pressed, #d18400);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* ТЕКСТ внутри кнопки */
+.p2p-analytics-button-text {
+  flex-grow: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ДРОПДАУН: строго под кнопкой и ровно её ширины */
+.p2p-analytics-menu {
+  position: absolute !important;
+  top: calc(100% - 1px) !important;
+  left: 0 !important;
+  right: 0 !important;
+
+  width: 100% !important;
+  min-width: 100% !important;
+
+  background-color: var(--bds-gray-bg-card, #fff);
+  border: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+  z-index: 999999 !important;   /* поверх всего */
+  box-sizing: border-box;
+  padding: 4px 0;
+  margin-top: 0;
+  max-height: 240px;            /* чтобы не выглядело “мелким” */
+  overflow-y: auto;
+}
+
+.p2p-analytics-menu-item {
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--bds-gray-t1-title, rgba(0,0,0,.88));
+  cursor: pointer;
+  transition: background-color .2s ease;
+  white-space: nowrap;
+}
+.p2p-analytics-menu-item:hover {
+  background-color: var(--bds-trans-hover, rgba(0,0,0,.04));
+}
+
+/* -------------------------
+   4) INPUTS (чуть крупнее в шапке чата)
+   ------------------------- */
+.p2p-analytics-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bds-gray-t1-title, rgba(0,0,0,.88));
+  line-height: 1.4;
+}
+
+.p2p-analytics-input {
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--bds-gray-t1-title, rgba(0,0,0,.88));
+  background-color: var(--bds-gray-bg-card, #fff);
+  border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+  border-radius: 8px;
+  transition: all .2s cubic-bezier(0.645, 0.045, 0.355, 1);
+  box-sizing: border-box;
+}
+.p2p-analytics-input:focus {
+  border-color: var(--bds-brand-700-normal, #f7a600);
+  box-shadow: 0 0 0 3px rgba(247,166,0,.18);
+  outline: none;
+}
+.p2p-analytics-input::placeholder { color: var(--bds-gray-t3-sub, rgba(0,0,0,.45)); }
+
+/* readonly/disabled */
+.p2p-analytics-input-readonly,
+.p2p-analytics-input[readonly],
+.p2p-analytics-input:disabled,
+.p2p-analytics-input[disabled] {
+  background-color: var(--bds-gray-bg-subtle, #f5f5f5) !important;
+  color: var(--bds-gray-t2-body, rgba(0,0,0,.65)) !important;
+  cursor: not-allowed !important;
+  border-color: var(--bds-gray-ele-line, #e0e0e0) !important;
+  pointer-events: none;
+}
+
+/* -------------------------
+   5) SUBMIT / DELETE buttons (крупнее)
+   ------------------------- */
+.p2p-analytics-submit-button {
+  background-color: var(--bds-brand-700-normal, #f7a600);
+  border: 1px solid var(--bds-brand-700-normal, #f7a600);
+  color: #111;
+  font-weight: 800;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.2;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 10px 0;
+}
+.p2p-analytics-submit-button:hover {
+  background-color: var(--bds-brand-800-pressed, #d18400);
+  border-color: var(--bds-brand-800-pressed, #d18400);
+}
+
+.p2p-analytics-delete-button {
+  background-color: var(--bds-red-700, #ff4d4f);
+  border: 1px solid var(--bds-red-700, #ff4d4f);
+  color: #fff;
+  font-weight: 800;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.2;
+  border-radius: 10px;
+  cursor: pointer;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 6px 0 8px 0;
+}
+.p2p-analytics-delete-button:hover {
+  background-color: var(--bds-red-800, #d9363e);
+  border-color: var(--bds-red-800, #d9363e);
+}
+
+/* -------------------------
+   6) INPUT GROUP / suffix (проценты/рубли)
+   ------------------------- */
+.p2p-analytics-input-group {
+  position: relative;
+  display: flex;
+  width: 100%;
+  border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+  border-radius: 10px;
+  transition: all .2s cubic-bezier(0.645, 0.045, 0.355, 1);
+  background-color: var(--bds-gray-bg-card, #fff);
+  overflow: visible; /* чтобы suffix-menu не резался */
+}
+.p2p-analytics-input-group:focus-within {
+  border-color: var(--bds-brand-700-normal, #f7a600);
+  box-shadow: 0 0 0 3px rgba(247,166,0,.18);
+}
+.p2p-analytics-input-group .p2p-analytics-commission-input {
+  border: none;
+  border-radius: 10px 0 0 10px;
+  box-shadow: none;
+  flex: 1;
+  outline: none;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.p2p-analytics-input-suffix {
+  display: flex;
+  align-items: center;
+  border-left: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+  background-color: var(--bds-gray-bg-subtle, #fafafa);
+  border-radius: 0 10px 10px 0;
+  min-width: 44px;
+  padding: 0;
+  overflow: visible;
+}
+
+.p2p-analytics-suffix-button {
+  background: none;
+  border: none;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--bds-gray-t2-body, rgba(0,0,0,.65));
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+}
+.p2p-analytics-suffix-button:hover { color: var(--bds-brand-700-normal, #f7a600); }
+
+.p2p-analytics-suffix-menu {
+  position: absolute;
+  top: calc(100% - 1px);
+  right: 0;
+  background-color: var(--bds-gray-bg-card, #fff);
+  border: 1px solid var(--bds-gray-ele-border, #d9d9d9);
+  border-top: 1px solid var(--bds-brand-700-normal, #f7a600);
+  border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(0,0,0,.12);
+  z-index: 999999 !important;
+  padding: 4px 0;
+  width: 52px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.p2p-analytics-suffix-menu .p2p-analytics-menu-item {
+  padding: 10px 0;
+  text-align: center;
+  font-weight: 700;
+}
+
+/* -------------------------
+   7) separator + texts
+   ------------------------- */
+.p2p-analytics-separator {
+  height: 1px;
+  background-color: var(--bds-gray-ele-line, #e0e0e0);
+  margin: 10px 0;
+  width: 100%;
+}
+
+.p2p-analytics-check-warning {
+  font-size: 12px;
+  color: var(--bds-gray-t3-sub, rgba(0,0,0,.55));
+  margin: 6px 0 8px 0;
+  padding: 10px 12px;
+  background-color: var(--bds-gray-bg-subtle, #fafafa);
+  border: 1px solid var(--bds-gray-ele-line, #e0e0e0);
+  border-radius: 10px;
+  line-height: 1.4;
+}
+
+.p2p-analytics-check-success {
+  font-size: 12px;
+  color: var(--bds-green-700, #52c41a);
+  font-weight: 700;
+  margin: 6px 0 8px 0;
+  padding: 10px 12px;
+  background-color: var(--bds-green-50, #f6ffed);
+  border: 1px solid var(--bds-green-200, #b7eb8f);
+  border-radius: 10px;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.p2p-analytics-check-success::before {
+  content: "✓";
+  font-size: 12px;
+  font-weight: 900;
+}
+
+/* -------------------------
+   8) DARK MODE (Bybit)
+   ------------------------- */
+[data-theme="dark"] #p2p-analytics-floating-widget,
+.dark #p2p-analytics-floating-widget,
+html[theme="dark"] #p2p-analytics-floating-widget {
+  background: #1e1e1e !important;
+}
+
+[data-theme="dark"] .p2p-analytics-form-section,
+.dark .p2p-analytics-form-section,
+html[theme="dark"] .p2p-analytics-form-section {
+  background-color: #1e1e1e;
+}
+
+[data-theme="dark"] .p2p-analytics-input,
+.dark .p2p-analytics-input,
+html[theme="dark"] .p2p-analytics-input {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+  color: #fff;
+}
+
+[data-theme="dark"] .p2p-analytics-button,
+.dark .p2p-analytics-button,
+html[theme="dark"] .p2p-analytics-button {
+  background-color: #1e1e1e;
+  border-color: #3a3a3a;
+  color: #fff;
+}
+
+[data-theme="dark"] .p2p-analytics-menu,
+.dark .p2p-analytics-menu,
+html[theme="dark"] .p2p-analytics-menu {
+  background-color: #1e1e1e;
+  border-color: #3a3a3a;
+}
+
+[data-theme="dark"] .p2p-analytics-menu-item,
+.dark .p2p-analytics-menu-item,
+html[theme="dark"] .p2p-analytics-menu-item {
+  color: #fff;
+}
+
+[data-theme="dark"] .p2p-analytics-label,
+[data-theme="dark"] .p2p-analytics-form-title,
+[data-theme="dark"] .p2p-analytics-checkbox-label,
+.dark .p2p-analytics-label,
+.dark .p2p-analytics-form-title,
+.dark .p2p-analytics-checkbox-label,
+html[theme="dark"] .p2p-analytics-label,
+html[theme="dark"] .p2p-analytics-form-title,
+html[theme="dark"] .p2p-analytics-checkbox-label {
+  color: #fff;
+}
+
+[data-theme="dark"] .p2p-analytics-separator,
+.dark .p2p-analytics-separator,
+html[theme="dark"] .p2p-analytics-separator {
+  background-color: #3a3a3a;
+}

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}P2P Аналитика{% endblock %}</title>
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- ЦВЕТОВЫЕ ТЕМЫ --- */
+        :root[data-bs-theme="dark"] {
+            --bg-body: #0f111a;       /* Основной фон (почти черный) */
+            --bg-card: #161926;       /* Фон карточек (темно-синий) */
+            --bg-input: #1c2030;      /* Фон полей ввода */
+            --border-color: #2d313f;  /* Цвет рамок */
+            --text-main: #ffffff;     /* Основной текст */
+            --text-muted: #9499ad;    /* Вторичный текст */
+            --accent-blue: #3d6eff;   /* Акцентный синий */
+            --nav-link-color: #9499ad;
+        }
+
+        :root[data-bs-theme="light"] {
+            --bg-body: #f0f2f5;
+            --bg-card: #ffffff;
+            --bg-input: #ffffff;
+            --border-color: #dee2e6;
+            --text-main: #212529;
+            --text-muted: #6c757d;
+            --accent-blue: #0d6efd;
+            --nav-link-color: #495057;
+        }
+
+        /* --- ГЛОБАЛЬНЫЕ НАСТРОЙКИ --- */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            transition: background-color 0.3s, color 0.3s;
+            zoom: 1.05; /* Увеличение масштаба интерфейса на 5% */
+        }
+
+        /* Расширенный контейнер для вместимости таблиц */
+        .container {
+            max-width: 1400px !important;
+            padding: 0 15px;
+        }
+
+        /* --- НАВИГАЦИЯ --- */
+        .top-nav {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 10px 20px;
+            margin-top: 15px;
+            margin-bottom: 8px; /* Минимальный отступ до контента */
+        }
+
+        .nav-pills .nav-link {
+            color: var(--nav-link-color);
+            font-weight: 500;
+            font-size: 0.9rem;
+            padding: 8px 18px;
+            margin-right: 5px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .nav-pills .nav-link:hover {
+            color: var(--accent-blue);
+            background: rgba(61, 110, 255, 0.05);
+        }
+
+        .nav-pills .nav-link.active {
+            background-color: var(--accent-blue) !important;
+            color: #fff !important;
+        }
+
+        /* --- БЛОКИ КОНТЕНТА (Формы, Таблицы, Настройки) --- */
+        .form-section, .table-container, .settings-container, .card-custom {
+            background-color: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 15px 20px;
+            margin-bottom: 8px !important; /* Плотная склейка блоков */
+        }
+
+        /* --- ПОЛЯ ВВОДА И КНОПКИ --- */
+        .form-control, .form-select {
+            background-color: var(--bg-input) !important;
+            border: 1px solid var(--border-color) !important;
+            color: var(--text-main) !important;
+            font-size: 0.9rem;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--accent-blue) !important;
+            box-shadow: 0 0 0 0.2rem rgba(61, 110, 255, 0.25);
+        }
+
+        .form-control::placeholder {
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+
+        /* Маленькие кнопки действий в таблице */
+        .btn-action {
+            background-color: var(--bg-input);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+            transition: 0.2s;
+            cursor: pointer;
+        }
+        .btn-action:hover {
+            border-color: var(--accent-blue);
+            color: var(--accent-blue);
+        }
+
+        /* Основная кнопка (синяя рамка) */
+        .btn-outline-blue {
+            background-color: rgba(61, 110, 255, 0.1);
+            border: 1px solid var(--accent-blue);
+            color: var(--text-main);
+        }
+        /* В светлой теме текст кнопки делаем синим для читаемости */
+        [data-bs-theme="light"] .btn-outline-blue {
+            color: var(--accent-blue);
+        }
+        .btn-outline-blue:hover {
+            background-color: var(--accent-blue);
+            color: #fff !important;
+        }
+
+        /* --- ХЕДЕР СПРАВА --- */
+        .user-badge {
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .theme-toggle {
+            background: none;
+            border: none;
+            font-size: 1.3rem;
+            padding: 0 5px;
+            cursor: pointer;
+            line-height: 1;
+            color: var(--text-muted);
+        }
+        .theme-toggle:hover {
+            color: var(--accent-blue);
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header class="top-nav d-flex justify-content-between align-items-center shadow-sm">
+        <nav class="nav nav-pills">
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_orders' %}active{% endif %}" 
+               href="{% url 'my_orders' %}">Мои ордеры</a>
+            
+            <a class="nav-link {% if request.resolver_match.url_name == 'unprocessed_orders' %}active{% endif %}" 
+               href="{% url 'unprocessed_orders' %}">Необработанные ордеры</a>
+            
+            <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" 
+               href="{% url 'settings' %}">Настройки</a>
+            
+            <a class="nav-link" href="#">ЭЦП</a>
+        </nav>
+
+        <div class="d-flex align-items-center gap-3">
+            <button id="themeSwitcher" class="theme-toggle" title="Сменить тему">☀️</button>
+            
+            <span class="user-badge">{{ user.username }}</span>
+            
+            <form action="{% url 'logout' %}" method="post" class="m-0">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-sm btn-outline-danger" style="font-size: 0.8rem; padding: 4px 10px;">Выйти</button>
+            </form>
+        </div>
+    </header>
+
+    {% if messages %}
+        <div class="alert-container mb-2">
+            {% for message in messages %}
+                <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible fade show py-2" role="alert" style="font-size: 0.9rem;">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close" style="padding: 10px;"></button>
+                </div>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    const themeSwitcher = document.getElementById('themeSwitcher');
+    const htmlElem = document.documentElement;
+
+    // 1. При загрузке страницы проверяем сохраненную тему
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    htmlElem.setAttribute('data-bs-theme', savedTheme);
+    updateIcon(savedTheme);
+
+    // 2. Обработчик клика по солнышку
+    themeSwitcher.addEventListener('click', () => {
+        const currentTheme = htmlElem.getAttribute('data-bs-theme');
+        // Если была темная -> ставим светлую, и наоборот
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        // Применяем тему и сохраняем в память браузера
+        htmlElem.setAttribute('data-bs-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateIcon(newTheme);
+    });
+
+    // Функция обновления иконки
+    function updateIcon(theme) {
+        // Если тема темная - показываем Солнце (предлагаем включить светлую)
+        // Если тема светлая - показываем Луну
+        themeSwitcher.innerText = theme === 'dark' ? '☀️' : '🌙';
+    }
+</script>
+
+</body>
+</html>
