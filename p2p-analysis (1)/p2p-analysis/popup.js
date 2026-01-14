@@ -1,5 +1,5 @@
 // API endpoint
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://p2p-analysis.app';
 
 // Safe guards for extension context
 function isExtensionContextValid() {

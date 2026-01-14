@@ -1,7 +1,7 @@
 // Authentication helper functions for content script
 
 // API endpoint
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://p2p-analysis.app';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -83,7 +83,7 @@ function createAuthHeaders(authData) {
     };
     
     if (authData && authData.token) {
-        headers['Authorization'] = `Token ${authData.token}`;
+        headers['Authorization'] = `${authData.tokenType} ${authData.token}`;
     }
     
     return headers;

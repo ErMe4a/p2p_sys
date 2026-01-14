@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Adds an analytics dropdown menu to Bybit P2P order pages.",
   "permissions": ["activeTab", "storage", "downloads", "tabs", "tabCapture"],
-  "host_permissions": ["*://*.bybit.com/*", "*://*.htx.com/*", "*://*.htx.com.gt/*", "*://*.mexc.com/*", "http://127.0.0.1:8000/*"],
+  "host_permissions": ["*://*.bybit.com/*", "*://*.htx.com/*", "*://*.htx.com.gt/*", "*://*.mexc.com/*", "<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },

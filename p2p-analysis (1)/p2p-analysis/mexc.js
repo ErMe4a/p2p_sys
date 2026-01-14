@@ -20,6 +20,17 @@ let isInitializing = false;
 let currentDisplayName = '';
 let currentSellDisplayNameTemp = '';
 let originalBuyName = '';
+let currentUrl = window.location.href;
+let urlWatchInterval = null;
+
+// Load widget collapsed state from storage
+let widgetCollapsed = false;
+try {
+    const storedState = localStorage.getItem('p2p-analytics-mexc-widget-collapsed');
+    widgetCollapsed = storedState === 'true';
+} catch (e) {
+    // Ignore localStorage errors
+}
 
 // Helper functions
 function normalizeText(str) {
@@ -426,27 +437,6 @@ function createSubmitButton() {
     const submitBtn = document.createElement('button');
     submitBtn.className = 'p2p-analytics-submit-button';
     submitBtn.textContent = 'Сохранить заказ';
-    submitBtn.style.cssText = `
-        width: 100%;
-        padding: 12px;
-        background-color: ${MEXC_PRIMARY_COLOR};
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        margin-bottom: 12px;
-        transition: background-color 0.2s;
-    `;
-
-    submitBtn.addEventListener('mouseenter', () => {
-        submitBtn.style.backgroundColor = '#096F48';
-    });
-
-    submitBtn.addEventListener('mouseleave', () => {
-        submitBtn.style.backgroundColor = MEXC_PRIMARY_COLOR;
-    });
 
     submitBtn.onclick = async () => {
         const formData = collectFormData();
@@ -594,20 +584,7 @@ function createDeleteOrderButton() {
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'p2p-analytics-delete-button';
     deleteBtn.textContent = 'Удалить заказ';
-    deleteBtn.style.cssText = `
-        width: 100%;
-        padding: 12px;
-        background-color: #E94359;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        margin-bottom: 16px;
-        transition: background-color 0.2s;
-        display: none;
-    `;
+    deleteBtn.style.display = 'none'; // Initially hidden
 
     // Check if order exists and show button (async)
     (async () => {
@@ -626,14 +603,6 @@ function createDeleteOrderButton() {
             });
         }
     })();
-
-    deleteBtn.addEventListener('mouseenter', () => {
-        deleteBtn.style.backgroundColor = '#D93850';
-    });
-
-    deleteBtn.addEventListener('mouseleave', () => {
-        deleteBtn.style.backgroundColor = '#E94359';
-    });
 
     deleteBtn.onclick = async () => {
         console.log('P2P Analytics MEXC: Delete button clicked, getting order ID...');
@@ -694,155 +663,125 @@ function createDeleteOrderButton() {
 }
 
 function createCommissionInput() {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'p2p-analytics-commission-wrapper';
-    wrapper.style.cssText = `
-        position: relative;
-        margin-top: 12px;
-    `;
+    const inputWrapper = document.createElement('div');
+    inputWrapper.className = 'p2p-analytics-input-wrapper';
 
+    const label = document.createElement('label');
+    label.className = 'p2p-analytics-label';
+    label.textContent = 'Комиссия';
+
+    // Create input group container (input with integrated dropdown)
     const inputGroup = document.createElement('div');
-    inputGroup.style.cssText = `
-        display: flex;
-        align-items: center;
-        border: 1px solid var(--elevation-3, #E5E7EB);
-        border-radius: 4px;
-        overflow: hidden;
-        background: var(--bg-l0, white);
-    `;
+    inputGroup.className = 'p2p-analytics-input-group';
 
     const input = document.createElement('input');
-    input.type = 'number';
-    input.step = '0.01';
-    input.placeholder = 'Введите процент';
-    input.className = 'p2p-analytics-commission-input';
-    input.style.cssText = `
-        flex: 1;
-        padding: 10px 12px;
-        border: none;
-        outline: none;
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        background: var(--bg-l0, white);
-    `;
+    input.type = 'text';
+    input.className = 'p2p-analytics-input p2p-analytics-commission-input';
+    input.name = `p2p-mexc-commission-${Date.now()}`; // Unique name to prevent autocomplete
+    input.placeholder = 'Введите комиссию';
+    input.autocomplete = 'new-password'; // Trick to disable autocomplete
+    input.setAttribute('autocomplete', 'new-password');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.setAttribute('data-lpignore', 'true'); // Ignore LastPass
+    input.setAttribute('data-form-type', 'other'); // Prevent form detection
 
-    const suffixButton = document.createElement('button');
-    suffixButton.className = 'p2p-analytics-suffix-text';
-    suffixButton.textContent = '%';
-    suffixButton.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT);
-    suffixButton.style.cssText = `
-        padding: 10px 16px;
-        background: var(--elevation-3, #F3F4F6);
-        border: none;
-        border-left: 1px solid var(--elevation-3, #E5E7EB);
-        cursor: pointer;
-        font-size: 14px;
-        color: var(--text-primary, #6B7280);
-        min-width: 50px;
-        transition: background-color 0.2s;
-    `;
+    // Create dropdown wrapper for the suffix
+    const suffixWrapper = document.createElement('div');
+    suffixWrapper.className = 'p2p-analytics-input-suffix';
+    suffixWrapper.style.position = 'relative';
 
-    suffixButton.addEventListener('mouseenter', () => {
-        suffixButton.style.backgroundColor = 'var(--elevation-3, #E5E7EB)';
-    });
+    const dropdownButton = document.createElement('button');
+    dropdownButton.className = 'p2p-analytics-suffix-button';
+    dropdownButton.type = 'button';
+    
+    const buttonTextSpan = document.createElement('span');
+    buttonTextSpan.className = 'p2p-analytics-suffix-text';
+    buttonTextSpan.textContent = '%';
+    buttonTextSpan.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT);
 
-    suffixButton.addEventListener('mouseleave', () => {
-        suffixButton.style.backgroundColor = 'var(--elevation-3, #F3F4F6)';
-    });
+    const dropdownArrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    dropdownArrowSvg.setAttribute('width', '10');
+    dropdownArrowSvg.setAttribute('height', '10');
+    dropdownArrowSvg.setAttribute('viewBox', '0 0 12 12');
+    dropdownArrowSvg.setAttribute('fill', 'currentColor');
+    dropdownArrowSvg.style.marginLeft = '4px';
+    dropdownArrowSvg.innerHTML = '<path d="M2.94141 4.41645C3.13999 4.21787 3.47075 4.21787 3.66934 4.41645L6.00007 6.74719L8.3308 4.41645C8.52938 4.21787 8.86014 4.21787 9.05873 4.41645C9.25731 4.61504 9.25731 4.9458 9.05873 5.14438L6.39206 7.81105C6.19348 8.00963 5.86272 8.00963 5.66413 7.81105L2.94141 5.14438C2.74283 4.9458 2.74283 4.61504 2.94141 4.41645Z"></path>';
 
-    const commissionMenu = document.createElement('div');
-    commissionMenu.className = 'p2p-analytics-commission-menu';
-    commissionMenu.style.cssText = `
-        display: none;
-        position: absolute;
-        bottom: 100%;
-        right: 0;
-        margin-bottom: 4px;
-        background: var(--bg-l0, white);
-        border: 1px solid var(--elevation-3, #E5E7EB);
-        border-radius: 4px;
-        box-shadow: var(--shadow-s2-down, 0 4px 12px rgba(0, 0, 0, 0.15));
-        z-index: 1000;
-        min-width: 120px;
-    `;
+    dropdownButton.appendChild(buttonTextSpan);
+    dropdownButton.appendChild(dropdownArrowSvg);
 
-    const percentOption = document.createElement('div');
-    percentOption.className = 'p2p-analytics-commission-menu-item';
-    percentOption.textContent = '% (Процент)';
-    percentOption.style.cssText = `
-        padding: 10px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        transition: background-color 0.2s;
-    `;
+    const dropdownMenu = document.createElement('div');
+    dropdownMenu.className = 'p2p-analytics-suffix-menu';
+    dropdownMenu.style.display = 'none';
 
-    const moneyOption = document.createElement('div');
-    moneyOption.className = 'p2p-analytics-commission-menu-item';
-    moneyOption.textContent = '₽ (Рубли)';
-    moneyOption.style.cssText = `
-        padding: 10px 16px;
-        cursor: pointer;
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        transition: background-color 0.2s;
-    `;
+    const commissionTypes = [
+        { value: COMMISSION_TYPE_PERCENT, label: '%' },
+        { value: COMMISSION_TYPE_MONEY, label: '₽' }
+    ];
 
-    [percentOption, moneyOption].forEach(option => {
-        option.addEventListener('mouseenter', () => {
-            option.style.backgroundColor = 'var(--elevation-3, #F3F4F6)';
-        });
-        option.addEventListener('mouseleave', () => {
-            option.style.backgroundColor = 'var(--bg-l0, white)';
-        });
-    });
-
-    percentOption.onclick = (e) => {
+    commissionTypes.forEach(type => {
+        const menuItemElement = document.createElement('div');
+        menuItemElement.className = 'p2p-analytics-menu-item';
+        menuItemElement.textContent = type.label;
+        menuItemElement.onclick = (e) => {
         e.stopPropagation();
-        suffixButton.textContent = '%';
-        suffixButton.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT);
-        input.placeholder = 'Введите процент';
-        commissionMenu.style.display = 'none';
-    };
-
-    moneyOption.onclick = (e) => {
-        e.stopPropagation();
-        suffixButton.textContent = '₽';
-        suffixButton.setAttribute('data-commission-type', COMMISSION_TYPE_MONEY);
+            buttonTextSpan.textContent = type.label;
+            buttonTextSpan.setAttribute('data-commission-type', type.value);
+            
+            // Update input placeholder based on selection
+            if (type.value === COMMISSION_TYPE_MONEY) {
         input.placeholder = 'Введите сумму в рублях';
-        commissionMenu.style.display = 'none';
-    };
-
-    commissionMenu.appendChild(percentOption);
-    commissionMenu.appendChild(moneyOption);
-
-    suffixButton.onclick = (e) => {
-        e.stopPropagation();
-        const isVisible = commissionMenu.style.display === 'block';
-        commissionMenu.style.display = isVisible ? 'none' : 'block';
-    };
-
-    document.addEventListener('click', () => {
-        commissionMenu.style.display = 'none';
+            } else {
+                input.placeholder = 'Введите процент';
+            }
+            
+            console.log(`${type.label} selected (${type.value})`);
+            dropdownMenu.style.display = 'none';
+            dropdownButton.classList.remove('p2p-analytics-suffix-button-active');
+        };
+        dropdownMenu.appendChild(menuItemElement);
     });
+
+    suffixWrapper.appendChild(dropdownButton);
+    suffixWrapper.appendChild(dropdownMenu);
 
     inputGroup.appendChild(input);
-    inputGroup.appendChild(suffixButton);
-    wrapper.appendChild(inputGroup);
-    wrapper.appendChild(commissionMenu);
+    inputGroup.appendChild(suffixWrapper);
 
-    return wrapper;
+    inputWrapper.appendChild(label);
+    inputWrapper.appendChild(inputGroup);
+
+    // Add event listeners for suffix dropdown
+    dropdownButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isHidden = dropdownMenu.style.display === 'none';
+        dropdownMenu.style.display = isHidden ? 'block' : 'none';
+        dropdownButton.classList.toggle('p2p-analytics-suffix-button-active', isHidden);
+        
+        // Update input group styling
+        if (isHidden) {
+            inputGroup.classList.add('p2p-analytics-input-group-active');
+        } else {
+            inputGroup.classList.remove('p2p-analytics-input-group-active');
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!inputWrapper.contains(event.target) && dropdownMenu.style.display === 'block') {
+            dropdownMenu.style.display = 'none';
+            dropdownButton.classList.remove('p2p-analytics-suffix-button-active');
+            inputGroup.classList.remove('p2p-analytics-input-group-active');
+        }
+    });
+
+    return inputWrapper;
 }
 
 async function createUnifiedFormSection() {
     const formSection = document.createElement('div');
     formSection.className = 'p2p-analytics-form-section';
-    formSection.style.cssText = `
-        padding: 20px;
-        background: var(--bg-l0, #ffffff);
-        border-radius: 8px;
-        box-shadow: var(--shadow-s1-down, 0px 2px 12px 0px rgba(0, 0, 0, .06));
-    `;
 
     // Add submit button
     formSection.appendChild(createSubmitButton());
@@ -854,12 +793,6 @@ async function createUnifiedFormSection() {
     const requisitesTitle = document.createElement('h3');
     requisitesTitle.className = 'p2p-analytics-form-title';
     requisitesTitle.textContent = 'Реквизиты';
-    requisitesTitle.style.cssText = `
-        margin: 0 0 12px 0;
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--text-primary, #1F2937);
-    `;
     formSection.appendChild(requisitesTitle);
 
     // Create bank dropdown wrapper
@@ -869,20 +802,6 @@ async function createUnifiedFormSection() {
 
     const dropdownButton = document.createElement('button');
     dropdownButton.className = 'p2p-analytics-button';
-    dropdownButton.style.cssText = `
-        width: 100%;
-        padding: 10px 12px;
-        background: var(--bg-l0, white);
-        border: 1px solid var(--elevation-3, #E5E7EB);
-        border-radius: 4px;
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        cursor: pointer;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        transition: border-color 0.2s;
-    `;
     
     const buttonTextSpan = document.createElement('span');
     buttonTextSpan.className = 'p2p-analytics-button-text';
@@ -901,21 +820,7 @@ async function createUnifiedFormSection() {
 
     const dropdownMenu = document.createElement('div');
     dropdownMenu.className = 'p2p-analytics-menu';
-    dropdownMenu.style.cssText = `
-        display: none;
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        margin-top: 4px;
-        background: var(--bg-l0, white);
-        border: 1px solid var(--elevation-3, #E5E7EB);
-        border-radius: 4px;
-        box-shadow: var(--shadow-s2-down, 0 4px 12px rgba(0, 0, 0, 0.15));
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 1000;
-    `;
+    dropdownMenu.style.display = 'none';
 
     // Fetch bank details
     console.log('P2P Analytics MEXC: Fetching bank details...');
@@ -930,26 +835,12 @@ async function createUnifiedFormSection() {
             menuItem.className = 'p2p-analytics-menu-item';
             menuItem.textContent = bankDetail.name;
             menuItem.setAttribute('data-bank-id', bankDetail.id);
-            menuItem.style.cssText = `
-                padding: 10px 16px;
-                cursor: pointer;
-                font-size: 14px;
-                color: var(--text-primary, #1F2937);
-                transition: background-color 0.2s;
-            `;
-
-            menuItem.addEventListener('mouseenter', () => {
-                menuItem.style.backgroundColor = 'var(--elevation-3, #F3F4F6)';
-            });
-
-            menuItem.addEventListener('mouseleave', () => {
-                menuItem.style.backgroundColor = 'var(--bg-l0, white)';
-            });
 
             menuItem.onclick = (e) => {
                 e.stopPropagation();
                 buttonTextSpan.textContent = bankDetail.name;
                 buttonTextSpan.setAttribute('data-bank-id', bankDetail.id);
+                console.log(`${bankDetail.name} (ID: ${bankDetail.id}) selected`);
                 dropdownMenu.style.display = 'none';
                 dropdownButton.classList.remove('p2p-analytics-button-active');
             };
@@ -957,46 +848,36 @@ async function createUnifiedFormSection() {
         });
     } else {
         buttonTextSpan.textContent = 'Ошибка загрузки банков';
+        console.error('P2P Analytics MEXC: Failed to load bank details:', bankDetailsResult.error);
+        
         const errorItem = document.createElement('div');
+        errorItem.className = 'p2p-analytics-menu-item';
         errorItem.textContent = 'Не удалось загрузить список банков';
-        errorItem.style.cssText = `
-            padding: 10px 16px;
-            color: #E94359;
-            font-size: 14px;
-        `;
+        errorItem.style.color = '#ff6b6b';
+        errorItem.style.cursor = 'default';
         dropdownMenu.appendChild(errorItem);
     }
 
-    dropdownButton.onclick = (e) => {
-        e.stopPropagation();
-        const isVisible = dropdownMenu.style.display === 'block';
-        dropdownMenu.style.display = isVisible ? 'none' : 'block';
-        dropdownButton.style.borderColor = isVisible ? '#E5E7EB' : MEXC_PRIMARY_COLOR;
-    };
+    // Add event listeners for bank dropdown
+    dropdownButton.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const isHidden = dropdownMenu.style.display === 'none';
+        dropdownMenu.style.display = isHidden ? 'block' : 'none';
+        dropdownButton.classList.toggle('p2p-analytics-button-active', isHidden);
+    });
 
-    document.addEventListener('click', () => {
+    document.addEventListener('click', (event) => {
+        if (!formSection.contains(event.target) && dropdownMenu.style.display === 'block') {
         dropdownMenu.style.display = 'none';
-        dropdownButton.style.borderColor = '#E5E7EB';
+            dropdownButton.classList.remove('p2p-analytics-button-active');
+        }
     });
 
     buttonMenuWrapper.appendChild(dropdownButton);
     buttonMenuWrapper.appendChild(dropdownMenu);
     formSection.appendChild(buttonMenuWrapper);
 
-    // Add commission label and input
-    const commissionLabel = document.createElement('label');
-    commissionLabel.className = 'p2p-analytics-label';
-    commissionLabel.textContent = 'Комиссия';
-    commissionLabel.style.cssText = `
-        display: block;
-        margin-top: 12px;
-        margin-bottom: 6px;
-        font-size: 12px;
-        color: var(--text-primary, #6B7280);
-        font-weight: 500;
-    `;
-    formSection.appendChild(commissionLabel);
-
+    // Add commission input with dropdown
     const commissionInputWrapper = createCommissionInput();
     formSection.appendChild(commissionInputWrapper);
 
@@ -1069,19 +950,127 @@ async function createDropdownMenu() {
     
     const dropdownContainer = document.createElement('div');
     dropdownContainer.className = 'p2p-analytics-dropdown-container';
-    dropdownContainer.style.cssText = `
-        margin: 20px 0 0 0;
-        padding: 0;
-        background: transparent;
-        width: 100%;
-        box-sizing: border-box;
-    `;
 
     const formSection = await createUnifiedFormSection();
     dropdownContainer.appendChild(formSection);
 
     console.log('P2P Analytics MEXC: Dropdown menu created successfully');
     return dropdownContainer;
+}
+
+// Create floating widget similar to Bybit
+async function createFloatingWidget() {
+    // Check if widget already exists
+    const existingWidget = document.querySelector('.p2p-analytics-widget--mexc');
+    if (existingWidget) {
+        console.log('P2P Analytics MEXC: Widget already exists');
+        return true;
+    }
+    
+    // Double-check that we're not in the middle of creating a widget
+    if (isInitializing) {
+        console.log('P2P Analytics MEXC: Widget creation already in progress, skipping...');
+        return false;
+    }
+    
+    isInitializing = true;
+    
+    try {
+        console.log('P2P Analytics MEXC: Creating floating widget...');
+        
+        // Create main widget container
+        const widget = document.createElement('div');
+        widget.className = 'p2p-analytics-widget p2p-analytics-widget--mexc';
+        
+        if (widgetCollapsed) {
+            widget.classList.add('collapsed');
+        }
+        
+        // Create toggle button
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'p2p-analytics-widget-toggle';
+        toggleBtn.title = 'Свернуть/Развернуть панель';
+        toggleBtn.innerHTML = `
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+            </svg>
+        `;
+        toggleBtn.addEventListener('click', () => {
+            widgetCollapsed = !widgetCollapsed;
+            widget.classList.toggle('collapsed', widgetCollapsed);
+            // Save state to localStorage
+            try {
+                localStorage.setItem('p2p-analytics-mexc-widget-collapsed', widgetCollapsed.toString());
+            } catch (e) {
+                // Ignore localStorage errors
+            }
+        });
+        
+        // Create panel container
+        const panel = document.createElement('div');
+        panel.className = 'p2p-analytics-widget-panel';
+        
+        // Create header
+        const header = document.createElement('div');
+        header.className = 'p2p-analytics-widget-header';
+        header.innerHTML = `
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+            </svg>
+            <span>P2P Analytics</span>
+        `;
+        
+        // Create content container
+        const content = document.createElement('div');
+        content.className = 'p2p-analytics-widget-content';
+        
+        // Create the form menu
+        const menuContainer = await createDropdownMenu();
+        content.appendChild(menuContainer);
+        
+        // Assemble the panel
+        panel.appendChild(header);
+        panel.appendChild(content);
+        
+        // Assemble the widget
+        widget.appendChild(toggleBtn);
+        widget.appendChild(panel);
+        
+        // Append to body
+        document.body.appendChild(widget);
+        
+        console.log('P2P Analytics MEXC: Floating widget created successfully!');
+        
+        return true;
+    } catch (error) {
+        console.error('P2P Analytics MEXC: Error creating widget:', error);
+        return false;
+    } finally {
+        isInitializing = false;
+    }
+}
+
+function cleanupResources() {
+    console.log('P2P Analytics MEXC: Cleaning up resources...');
+    
+    // Disconnect observer
+    if (observer) {
+        observer.disconnect();
+        observer = null;
+    }
+    
+    // Remove existing widget
+    const existingWidget = document.querySelector('.p2p-analytics-widget--mexc');
+    if (existingWidget) {
+        existingWidget.remove();
+    }
+    
+    // Reset flags
+    isInitializing = false;
+    // Reset ephemeral SELL name on navigation
+    currentSellDisplayNameTemp = '';
+    // Reset captured BUY original name on navigation
+    originalBuyName = '';
 }
 
 // parseNumberOrNull, generateRandomGmail, truncateToDecimals are available globally from order_api.js
@@ -1319,57 +1308,30 @@ function parseAmountFromPage() {
 function createSeparator() {
     const separator = document.createElement('div');
     separator.className = 'p2p-analytics-separator';
-    separator.style.cssText = `
-        height: 1px;
-        background: var(--elevation-3, #EBEEF5);
-        margin: 16px 0;
-    `;
     return separator;
 }
 
 function createInput(labelText, inputId, placeholder) {
     const inputWrapper = document.createElement('div');
     inputWrapper.className = 'p2p-analytics-input-wrapper';
-    inputWrapper.style.cssText = `
-        margin-bottom: 12px;
-    `;
 
     const label = document.createElement('label');
     label.className = 'p2p-analytics-label';
     label.textContent = labelText;
-    label.style.cssText = `
-        display: block;
-        margin-bottom: 6px;
-        font-size: 12px;
-        color: var(--text-primary, #6B7280);
-        font-weight: 500;
-    `;
 
     const input = document.createElement('input');
     input.type = 'text';
     input.className = 'p2p-analytics-input';
     input.id = inputId;
+    input.name = `p2p-mexc-${inputId}-${Date.now()}`; // Unique name to prevent autocomplete
     input.placeholder = placeholder;
-    input.style.cssText = `
-        width: 100%;
-        padding: 10px 12px;
-        border: 1px solid var(--elevation-3, #E5E7EB);
-        border-radius: 4px;
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        background: var(--bg-l0, white);
-        outline: none;
-        transition: border-color 0.2s;
-        box-sizing: border-box;
-    `;
-
-    input.addEventListener('focus', () => {
-        input.style.borderColor = MEXC_PRIMARY_COLOR;
-    });
-
-    input.addEventListener('blur', () => {
-        input.style.borderColor = '#E5E7EB';
-    });
+    input.autocomplete = 'new-password'; // Trick to disable autocomplete
+    input.setAttribute('autocomplete', 'new-password');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.setAttribute('data-lpignore', 'true'); // Ignore LastPass
+    input.setAttribute('data-form-type', 'other'); // Prevent form detection
 
     inputWrapper.appendChild(label);
     inputWrapper.appendChild(input);
@@ -1384,9 +1346,6 @@ function createCheckContent() {
     // MEXC специфично: всегда показываем поля Курс, Количество и Стоимость
     const permanentInputs = document.createElement('div');
     permanentInputs.className = 'p2p-analytics-permanent-inputs';
-    permanentInputs.style.cssText = `
-        margin-bottom: 16px;
-    `;
 
     const rateInputWrapper = createInput('Курс', 'rate-input', 'Введите курс');
     const rateInput = rateInputWrapper.querySelector('#rate-input');
@@ -1409,63 +1368,30 @@ function createCheckContent() {
     // Main checkbox
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
-    checkboxWrapper.style.cssText = `
-        display: flex;
-        align-items: center;
-        margin-bottom: 12px;
-    `;
 
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.className = 'p2p-analytics-checkbox';
     checkbox.id = 'check-checkbox';
-    checkbox.style.cssText = `
-        width: 16px;
-        height: 16px;
-        cursor: pointer;
-        margin-right: 8px;
-    `;
 
     const label = document.createElement('label');
     label.className = 'p2p-analytics-checkbox-label';
     label.htmlFor = 'check-checkbox';
     label.textContent = 'Чек';
-    label.style.cssText = `
-        font-size: 14px;
-        color: var(--text-primary, #1F2937);
-        cursor: pointer;
-        user-select: none;
-    `;
 
     checkboxWrapper.appendChild(checkbox);
     checkboxWrapper.appendChild(label);
 
-    // Warning message
+    // Warning message for missing evotor credentials
     const warningMessage = document.createElement('div');
     warningMessage.className = 'p2p-analytics-check-warning';
-    warningMessage.style.cssText = `
-        display: none;
-        padding: 8px 12px;
-        background: var(--web-color-functional-tint-orange-smooth, #FEF3CD);
-        color: var(--web-color-functional-warning, #92400E);
-        border-radius: 4px;
-        font-size: 12px;
-        margin-bottom: 12px;
-    `;
+    warningMessage.style.display = 'none';
     warningMessage.textContent = 'Чтобы пробить чек, заполните анкету';
 
-    // Success message
+    // Success message for existing receipt
     const successMessage = document.createElement('div');
     successMessage.className = 'p2p-analytics-check-success';
-    successMessage.style.cssText = `
-        display: none;
-        padding: 8px 12px;
-        background: #D1FAE5;
-        color: #065F46;
-        border-radius: 4px;
-        font-size: 12px;
-        margin-bottom: 12px;
-    `;
+    successMessage.style.display = 'none';
     successMessage.textContent = 'Чек пробит';
 
     // Conditional inputs container (только для контакта)
@@ -1655,26 +1581,12 @@ function collectFormData() {
 // Notification system
 function showNotification(message, type = 'success') {
     const notification = document.createElement('div');
-    notification.className = 'p2p-analytics-notification';
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 12px 20px;
-        background: ${type === 'success' ? '#10B981' : '#E94359'};
-        color: white;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        z-index: 10000;
-        font-size: 14px;
-        animation: slideIn 0.3s ease-out;
-    `;
-    
+    notification.className = `p2p-analytics-notification p2p-analytics-notification--${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
 
     setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-out';
+        notification.classList.add('p2p-analytics-notification--hide');
         setTimeout(() => {
             notification.remove();
         }, 300);
@@ -1691,7 +1603,32 @@ function addStyles() {
     const style = document.createElement('style');
     style.id = 'p2p-analytics-mexc-styles';
     style.textContent = `
-        @keyframes slideIn {
+        .p2p-analytics-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10001;
+            font-size: 12px;
+            animation: p2p-mexc-slideIn 0.3s ease-out;
+        }
+        
+        .p2p-analytics-notification--success {
+            background: #0B8E5A;
+        }
+        
+        .p2p-analytics-notification--error {
+            background: #E94359;
+        }
+        
+        .p2p-analytics-notification--hide {
+            animation: p2p-mexc-slideOut 0.3s ease-out forwards;
+        }
+        
+        @keyframes p2p-mexc-slideIn {
             from {
                 transform: translateX(100%);
                 opacity: 0;
@@ -1702,7 +1639,7 @@ function addStyles() {
             }
         }
         
-        @keyframes slideOut {
+        @keyframes p2p-mexc-slideOut {
             from {
                 transform: translateX(0);
                 opacity: 1;
@@ -1711,34 +1648,6 @@ function addStyles() {
                 transform: translateX(100%);
                 opacity: 0;
             }
-        }
-        
-        .p2p-analytics-commission-menu::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .p2p-analytics-commission-menu::-webkit-scrollbar-thumb {
-            background: #D1D5DB;
-            border-radius: 3px;
-        }
-        
-        .p2p-analytics-menu::-webkit-scrollbar {
-            width: 6px;
-        }
-        
-        .p2p-analytics-menu::-webkit-scrollbar-thumb {
-            background: #D1D5DB;
-            border-radius: 3px;
-        }
-        
-        .p2p-analytics-input-readonly {
-            background-color: #F3F4F6 !important;
-            cursor: not-allowed !important;
-        }
-        
-        .p2p-analytics-checkbox-disabled {
-            cursor: not-allowed !important;
-            opacity: 0.6;
         }
     `;
     
@@ -1750,120 +1659,6 @@ function addStyles() {
     }
 }
 
-// Find the best insertion point and chat position info
-function findInsertionPoint() {
-    // Find the chat to get its position
-    const chatSelectors = [
-        '.desktop-order-chatroom',
-        '[class*="orderImRight"]'
-    ];
-    
-    let chatElement = null;
-    for (const selector of chatSelectors) {
-        chatElement = document.querySelector(selector);
-        if (chatElement && chatElement.offsetHeight > 0) {
-            console.log('P2P Analytics MEXC: Found chat element:', selector);
-            break;
-        }
-    }
-    
-    // Find the content container to insert after
-    const contentSelectors = [
-        '.page_orderStatusContent__n28k5',
-        '[class*="orderStatusContent"]'
-    ];
-    
-    for (const selector of contentSelectors) {
-        const element = document.querySelector(selector);
-        if (element && element.offsetHeight > 0) {
-            console.log('P2P Analytics MEXC: Found content container:', selector);
-            return { 
-                element, 
-                chatElement,
-                strategy: 'after-content-aligned-to-chat' 
-            };
-        }
-    }
-    
-    return null;
-}
-
-// Insert menu after target element
-async function insertMenuAfterTarget() {
-    // MEXC specific: insert AFTER content block, aligned to chat column
-    const insertionPoint = findInsertionPoint();
-    
-    if (!insertionPoint) {
-        console.log('P2P Analytics MEXC: No suitable insertion point found');
-        // Debug: log all major containers
-        const containers = document.querySelectorAll('[class*="page_"], [class*="order"]');
-        console.log('P2P Analytics MEXC: Found containers:', containers.length);
-        containers.forEach((el, i) => {
-            console.log(`Container ${i}:`, el.className, 'visible:', el.offsetHeight > 0);
-        });
-        return false;
-    }
-    
-    const targetDiv = insertionPoint.element;
-    const chatElement = insertionPoint.chatElement;
-    console.log('P2P Analytics MEXC: Using insertion strategy:', insertionPoint.strategy);
-    console.log('P2P Analytics MEXC: Target element height:', targetDiv.offsetHeight);
-
-    // Check if menu already exists
-    const existingMenus = document.querySelectorAll('.p2p-analytics-dropdown-container');
-    if (existingMenus.length > 0) {
-        console.log('P2P Analytics MEXC: Menu already exists');
-        for (let i = 1; i < existingMenus.length; i++) {
-            existingMenus[i].remove();
-        }
-        return true;
-    }
-    
-    if (isInitializing) {
-        console.log('P2P Analytics MEXC: Menu creation already in progress');
-        return false;
-    }
-    
-    isInitializing = true;
-    
-    try {
-        console.log('P2P Analytics MEXC: Creating dropdown menu...');
-        const menuContainer = await createDropdownMenu();
-        
-        // Get chat position to align our container exactly under chat
-        if (chatElement) {
-            const chatRect = chatElement.getBoundingClientRect();
-            const parentRect = targetDiv.parentNode.getBoundingClientRect();
-            
-            // Calculate right margin (distance from chat right edge to parent right edge)
-            const marginRight = parentRect.right - chatRect.right;
-            
-            console.log('P2P Analytics MEXC: Chat width:', chatRect.width);
-            console.log('P2P Analytics MEXC: Chat right:', chatRect.right);
-            console.log('P2P Analytics MEXC: Parent right:', parentRect.right);
-            console.log('P2P Analytics MEXC: Margin right:', marginRight);
-            
-            // Set container width same as chat, use same margins
-            menuContainer.style.width = chatRect.width + 'px';
-            menuContainer.style.maxWidth = chatRect.width + 'px';
-            menuContainer.style.marginLeft = 'auto';
-            menuContainer.style.marginRight = marginRight + 'px';
-        }
-        
-        // Insert after the content container
-        targetDiv.parentNode.insertBefore(menuContainer, targetDiv.nextSibling);
-        console.log('P2P Analytics MEXC: Menu inserted after content, aligned to chat!');
-        console.log('P2P Analytics MEXC: Menu element:', menuContainer);
-        
-        return true;
-    } catch (error) {
-        console.error('P2P Analytics MEXC: Error creating menu:', error);
-        console.error('P2P Analytics MEXC: Error stack:', error.stack);
-        return false;
-    } finally {
-        isInitializing = false;
-    }
-}
 
 // Mutation observer
 function initializeMutationObserver() {
@@ -1879,22 +1674,11 @@ function initializeMutationObserver() {
         }
         
         debounceTimer = setTimeout(async () => {
-            const insertionPoint = findInsertionPoint();
-            
-            if (insertionPoint) {
-                const existingMenus = document.querySelectorAll('.p2p-analytics-dropdown-container');
-                if (existingMenus.length === 0) {
-                    console.log('P2P Analytics MEXC: MutationObserver found insertion point via strategy:', insertionPoint.strategy);
-                    if (await insertMenuAfterTarget()) {
-                        console.log('P2P Analytics MEXC: Menu inserted via MutationObserver!');
-                    }
-                } else {
-                    // Remove duplicates
-                    for (let i = 1; i < existingMenus.length; i++) {
-                        console.log('P2P Analytics MEXC: Removing duplicate menu via MutationObserver');
-                        existingMenus[i].remove();
-                    }
-                }
+            // Check if widget exists, create if not
+            const existingWidget = document.querySelector('.p2p-analytics-widget--mexc');
+            if (!existingWidget && !isInitializing) {
+                console.log('P2P Analytics MEXC: MutationObserver - widget not found, creating...');
+                await createFloatingWidget();
             }
         }, 100);
     });
@@ -1909,6 +1693,7 @@ function initializeMutationObserver() {
 
 // Initialize
 async function initialize() {
+    // Prevent multiple simultaneous initializations
     if (isInitializing) {
         console.log('P2P Analytics MEXC: Already initializing, skipping...');
         return false;
@@ -1928,93 +1713,194 @@ async function initialize() {
     
     if (!isCorrectPage || isListPage) {
         console.log('P2P Analytics MEXC: Not on individual order page, skipping initialization');
+        cleanupResources(); // Clean up widget if navigating away
         return false;
     }
     
     // Check if auth helper is loaded
     if (!window.P2PAuth) {
-        console.error('P2P Analytics MEXC: Auth helper not loaded');
+        console.error('P2P Analytics MEXC: Auth helper not loaded, retrying...');
+        setTimeout(initialize, 1000);
         return false;
     }
     
     console.log('P2P Analytics MEXC: Auth helper loaded successfully');
     
-    // Check authentication
-    const authData = await window.P2PAuth.getAuthData();
-    if (!authData || !authData.token) {
-        console.log('P2P Analytics MEXC: Not authenticated, skipping initialization');
-        return false;
+    // Check authentication status
+    try {
+        const isAuth = await window.P2PAuth.isAuthenticated();
+        console.log('P2P Analytics MEXC: User authenticated:', isAuth);
+        
+        if (!isAuth) {
+            console.log('P2P Analytics MEXC: User not authenticated, showing auth error');
+            window.P2PAuth.showAuthError('Необходимо авторизоваться для работы с расширением. Нажмите на иконку расширения для входа в систему.');
+        }
+    } catch (error) {
+        console.error('P2P Analytics MEXC: Error checking authentication:', error);
     }
-    
-    console.log('P2P Analytics MEXC: Authenticated, proceeding with initialization');
     
     // Load display name
     await loadDisplayNameFromStorage();
     
+    // Clean up any existing resources
+    cleanupResources();
+    
     // Initialize mutation observer
     initializeMutationObserver();
     
-    // Try to insert menu immediately
-    const menuInserted = await insertMenuAfterTarget();
+    // Create floating widget
+    const widgetCreated = await createFloatingWidget();
     
-    if (menuInserted) {
+    if (widgetCreated) {
         console.log('P2P Analytics MEXC: Initialization successful');
         return true;
     }
     
-    console.log('P2P Analytics MEXC: Menu not inserted yet, will retry');
+    console.log('P2P Analytics MEXC: Widget not created yet, will retry');
     return false;
 }
 
-// Retry mechanism for initialization
-let initRetryCount = 0;
-const maxInitRetries = 10;
+// --- Main Execution ---
 
-async function tryInitialize() {
-    const success = await initialize();
-    
-    if (!success && initRetryCount < maxInitRetries) {
-        initRetryCount++;
-        console.log(`P2P Analytics MEXC: Retry ${initRetryCount}/${maxInitRetries}...`);
-        setTimeout(tryInitialize, 1000);
-    } else if (success) {
-        console.log('P2P Analytics MEXC: Successfully initialized');
-    } else {
-        console.log('P2P Analytics MEXC: Max retries reached, giving up');
-    }
-}
-
-// Wait for DOM ready and auth
+// Handle different loading states
+function handleDocumentReady() {
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
         console.log('P2P Analytics MEXC: DOM content loaded');
-        addStyles(); // Add styles as soon as DOM is ready
-        setTimeout(tryInitialize, 500);
+            addStyles();
+            initialize();
     });
 } else {
+        // DOM is already loaded
     console.log('P2P Analytics MEXC: DOM already loaded');
-    addStyles(); // Add styles immediately if DOM already ready
-    setTimeout(tryInitialize, 500);
+        addStyles();
+        initialize();
+    }
 }
 
-// Handle URL changes (SPA navigation)
-let lastUrl = location.href;
-new MutationObserver(() => {
-    const url = location.href;
-    if (url !== lastUrl) {
-        lastUrl = url;
-        console.log('P2P Analytics MEXC: URL changed to:', url);
-        // Reset retry counter on URL change
-        initRetryCount = 0;
-        // Disconnect existing observer if any
-        if (observer) {
-            observer.disconnect();
-            observer = null;
-        }
-        setTimeout(tryInitialize, 1000);
-    }
-}).observe(document, { subtree: true, childList: true });
+// Start the process
+handleDocumentReady();
 
+// Ensure URL watcher is running to catch SPA route changes
+function ensureUrlWatcher() {
+    if (!urlWatchInterval) {
+        urlWatchInterval = setInterval(() => {
+            try {
+                handleUrlChange();
+            } catch (e) {
+                // noop
+            }
+        }, 300);
+    }
+}
+ensureUrlWatcher();
+
+// Unified handler for URL changes (SPA-friendly)
+function handleUrlChange() {
+    const newUrl = window.location.href;
+    if (newUrl !== currentUrl) {
+        console.log('P2P Analytics MEXC: URL change detected, reinitializing...');
+        currentUrl = newUrl;
+        cleanupResources();
+        setTimeout(() => initialize(), 200);
+    }
+}
+
+// Also listen for page navigation in SPAs (back/forward)
+window.addEventListener('popstate', handleUrlChange);
+
+// Listen for hash changes (common in SPAs)
+window.addEventListener('hashchange', handleUrlChange);
+
+// Detect pushState/replaceState navigations (typical SPA route changes)
+(function patchHistoryApiForUrlChanges() {
+    try {
+        const originalPushState = history.pushState;
+        const originalReplaceState = history.replaceState;
+
+        history.pushState = function() {
+            const result = originalPushState.apply(this, arguments);
+            handleUrlChange();
+            return result;
+        };
+
+        history.replaceState = function() {
+            const result = originalReplaceState.apply(this, arguments);
+            handleUrlChange();
+            return result;
+        };
+    } catch (e) {
+        console.warn('P2P Analytics MEXC: Failed to patch History API for URL changes:', e);
+    }
+})();
+
+// Clean up resources when leaving the page
+window.addEventListener('beforeunload', () => {
+    cleanupResources();
+});
+
+// Listen for auth changes
+if (chrome && chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, namespace) => {
+        if (namespace === 'sync') {
+            if (changes.authToken) {
+                console.log('P2P Analytics MEXC: Auth token changed, reinitializing...');
+                
+                // If token was removed (user logged out)
+                if (!changes.authToken.newValue && changes.authToken.oldValue) {
+                    console.log('P2P Analytics MEXC: User logged out');
+                    cleanupResources();
+                    window.P2PAuth.showAuthError('Вы вышли из системы. Для работы с расширением необходимо авторизоваться заново.');
+                }
+                
+                // If token was added (user logged in)
+                if (changes.authToken.newValue && !changes.authToken.oldValue) {
+                    console.log('P2P Analytics MEXC: User logged in, reinitializing...');
+                    setTimeout(() => {
+                        initialize();
+                    }, 500);
+                }
+            }
+
+            if (changes.displayName) {
+                currentDisplayName = changes.displayName.newValue || '';
+                console.log('P2P Analytics MEXC: Display name changed to:', currentDisplayName);
+            }
+        }
+    });
+}
+
+// Debug function to manually test the extension
+window.P2PAnalyticsMEXCDebug = {
+    initialize: initialize,
+    createWidget: createFloatingWidget,
+    cleanupResources: cleanupResources,
+    toggleWidget: () => {
+        const widget = document.querySelector('.p2p-analytics-widget--mexc');
+        if (widget) {
+            widgetCollapsed = !widgetCollapsed;
+            widget.classList.toggle('collapsed', widgetCollapsed);
+            try {
+                localStorage.setItem('p2p-analytics-mexc-widget-collapsed', widgetCollapsed.toString());
+            } catch (e) { /* ignore */ }
+            console.log('Debug: Widget collapsed:', widgetCollapsed);
+        } else {
+            console.log('Debug: Widget not found');
+        }
+    },
+    testAuth: async () => {
+        if (window.P2PAuth) {
+            const isAuth = await window.P2PAuth.isAuthenticated();
+            console.log('Debug: User authenticated:', isAuth);
+            return isAuth;
+        } else {
+            console.log('Debug: P2PAuth not loaded');
+            return false;
+        }
+    }
+};
+
+console.log('P2P Analytics MEXC: Debug functions available at window.P2PAnalyticsMEXCDebug');
 console.log('P2P Analytics MEXC: Script initialization complete');
 
 
