@@ -2119,53 +2119,81 @@ function findBybitChatHeaderContainer() {
 
 
 async function createFloatingWidget() {
-  console.log('P2P Analytics: Creating floating widget...');
+  // 1. Создаем виджет, если его еще нет
+  let widget = document.getElementById('p2p-analytics-floating-widget');
+  const isNew = !widget;
 
-  // если уже есть — не создаём второй
-  const existing = document.getElementById('p2p-analytics-floating-widget');
-  if (existing) return existing;
+  if (isNew) {
+      widget = document.createElement('div');
+      widget.id = 'p2p-analytics-floating-widget';
+      widget.className = 'p2p-analytics-widget'; // Базовый класс
 
-  // ROOT — используем твой CSS-класс
-  const widget = document.createElement('div');
-  widget.id = 'p2p-analytics-floating-widget';
-  widget.className = 'p2p-analytics-widget p2p-analytics-widget--attached'; // ВАЖНО
+      const panel = document.createElement('div');
+      panel.className = 'p2p-analytics-widget-panel';
 
-  // PANEL
-  const panel = document.createElement('div');
-  panel.className = 'p2p-analytics-widget-panel';
+      const header = document.createElement('div');
+      header.className = 'p2p-analytics-widget-header';
+      header.textContent = 'P2P Analytics';
 
-  // HEADER
-  const header = document.createElement('div');
-  header.className = 'p2p-analytics-widget-header';
-  header.textContent = 'P2P Analytics';
+      const content = document.createElement('div');
+      content.className = 'p2p-analytics-widget-content';
 
-  // CONTENT
-  const content = document.createElement('div');
-  content.className = 'p2p-analytics-widget-content';
+      const form = await createUnifiedFormSection();
+      content.appendChild(form);
+      panel.appendChild(header);
+      panel.appendChild(content);
+      widget.appendChild(panel);
+  }
 
-  // ВАЖНО: createUnifiedFormSection async → await
-  const form = await createUnifiedFormSection();
-  content.appendChild(form);
+  // 2. Ищем контейнер чата ПО СТРУКТУРЕ (Класс родителя + класс ребенка)
+  // Мы ищем элемент .im-container, который содержит внутри себя .im-container-caption
+  let chatParent = null;
+  let caption = null;
 
-  panel.appendChild(header);
-  panel.appendChild(content);
-  widget.appendChild(panel);
+  // Сначала пробуем найти все контейнеры .im-container
+  const potentialParents = document.querySelectorAll('.im-container');
+  
+  for (const parent of potentialParents) {
+      // Ищем внутри него шапку
+      const cap = parent.querySelector('.im-container-caption');
+      if (cap) {
+          // Ура, нашли правильную пару "Чат -> Шапка"
+          chatParent = parent;
+          caption = cap;
+          break; 
+      }
+  }
 
-  // вставка под имя контрагента
-  const headerContainer = findBybitChatHeaderContainer();
-  if (headerContainer) {
-    headerContainer.appendChild(widget);
-    console.log('P2P Analytics: Widget attached to chat header container');
+  // 3. Логика вставки
+  if (chatParent && caption) {
+      // Проверяем, стоит ли виджет уже на правильном месте (сразу после шапки)
+      if (widget.previousElementSibling !== caption) {
+          console.log('P2P Analytics: Found chat structure! Moving widget under caption...');
+          
+          // 1. Добавляем класс прикрепления (чтобы CSS сделал position: static)
+          widget.classList.add('p2p-analytics-widget--attached');
+          
+          // 2. Вставляем виджет ВНУТРЬ chatParent, но ПОСЛЕ caption
+          if (caption.nextSibling) {
+              chatParent.insertBefore(widget, caption.nextSibling);
+          } else {
+              chatParent.appendChild(widget);
+          }
+      }
   } else {
-    // fallback (если не нашли контейнер)
-    widget.classList.remove('p2p-analytics-widget--attached');
-    document.body.appendChild(widget);
-    console.warn('P2P Analytics: Chat header not found, fallback to fixed position');
+      // 4. FALLBACK: Если чат не найден
+      // Если виджет нигде не стоит или был прикреплен (но чат исчез), кидаем в body
+      if (!widget.parentElement || widget.classList.contains('p2p-analytics-widget--attached')) {
+          console.warn('P2P Analytics: Chat structure not found. Using corner fallback.');
+          
+          // Убираем класс прикрепления (вернется position: fixed из CSS)
+          widget.classList.remove('p2p-analytics-widget--attached');
+          document.body.appendChild(widget);
+      }
   }
 
   return widget;
 }
-
 
 
 function cleanupResources() {
@@ -2243,62 +2271,54 @@ async function tryInsertWidget() {
 
 // --- Main Execution ---
 async function initialize() {
-    // Prevent multiple simultaneous initializations
-    if (isInitializing) {
-        console.log('P2P Analytics: Already initializing, skipping...');
-        return;
-    }
+    // Предотвращаем повторный запуск
+    if (isInitializing) return;
     
-    console.log('P2P Analytics: Initializing extension...');
-    console.log('P2P Analytics: Current URL:', window.location.href);
-    
-    // Check if we're on the right page - should work for all orderList pages with order IDs on bybit.com
+    // Проверка страницы
     const urlPattern = /bybit\.com.*\/orderList\/\d+/;
-    const isCorrectPage = urlPattern.test(window.location.href);
-    console.log('P2P Analytics: On correct page:', isCorrectPage);
-    console.log('P2P Analytics: URL pattern test result:', window.location.href, '→', isCorrectPage);
-    
-    if (!isCorrectPage) {
-        console.log('P2P Analytics: Not on order page, skipping initialization');
-        cleanupResources(); // Clean up widget if navigating away
+    if (!urlPattern.test(window.location.href)) {
+        cleanupResources();
         return;
     }
-    
-    // Check if auth helper is loaded
+
+    // Ждем загрузки хелпера авторизации
     if (!window.P2PAuth) {
-        console.error('P2P Analytics: Auth helper not loaded, retrying...');
         setTimeout(initialize, 1000);
         return;
     }
-    
-    console.log('P2P Analytics: Auth helper loaded successfully');
-    
-    // Check authentication status
+
+    // --- ГЛАВНОЕ ИЗМЕНЕНИЕ: ЖЕСТКАЯ ПРОВЕРКА АВТОРИЗАЦИИ ---
     try {
         const isAuth = await window.P2PAuth.isAuthenticated();
-        console.log('P2P Analytics: User authenticated:', isAuth);
+        console.log('P2P Analytics: Auth status:', isAuth);
         
         if (!isAuth) {
-            console.log('P2P Analytics: User not authenticated, showing auth error');
-            window.P2PAuth.showAuthError('Необходимо авторизоваться для работы с расширением. Нажмите на иконку расширения для входа в систему.');
+            console.log('P2P Analytics: User NOT authenticated. Hiding widget.');
+            // Если не авторизован - удаляем виджет (если был) и выходим
+            cleanupResources();
+            return; 
         }
     } catch (error) {
-        console.error('P2P Analytics: Error checking authentication:', error);
+        console.error('P2P Analytics: Auth check failed', error);
+        return;
     }
-    
-    // Load display name and try to apply immediately (BUY only)
+    // -------------------------------------------------------
+
+    isInitializing = true;
+    console.log('P2P Analytics: Initializing extension (User is Authenticated)...');
+
+    // Загружаем имя и настройки
     await loadDisplayNameFromStorage();
     ensureOriginalBuyNameCaptured();
     applyDisplayNameIfNeeded();
     
-    // Clean up any existing resources
-    cleanupResources();
-    
-    // Initialize MutationObserver
+    // Запускаем слежение за DOM
     initializeMutationObserver();
     
-    // Create floating widget
+    // Пытаемся создать виджет
     await tryInsertWidget();
+    
+    isInitializing = false;
 }
 
 // Handle different loading states

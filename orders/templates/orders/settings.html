@@ -2,7 +2,8 @@
 {% block content %}
 <style>
     .settings-container {
-        max-width: 900px;
+        /* ИЗМЕНЕНО: Было 900px, ставим 100%, чтобы заполнить весь контейнер из base.html */
+        max-width: 100%; 
         margin: 20px auto;
         background: var(--bg-card);
         border: 1px solid var(--border);
@@ -73,7 +74,7 @@
             </div>
             <div class="col-md-6">
                 <label class="field-label">API пароль Эвотора</label>
-                <input type="password" name="evotor_password" class="form-control" value="{{ user.evotor_password|default:'' }}">
+                <input type="text" name="evotor_password" class="form-control" value="{{ user.evotor_password|default:'' }}">
             </div>
             <div class="col-md-6">
                 <label class="field-label">Идентификатор группы ККТ</label>
@@ -109,7 +110,7 @@
             </div>
             <div class="col-md-6">
                 <label class="field-label">HTX Private Key</label>
-                <input type="password" name="htx_secret" class="form-control" value="{{ user.htx_private_key|default:'' }}">
+                <input type="text" name="htx_secret" class="form-control" value="{{ user.htx_private_key|default:'' }}">
             </div>
         </div>
 
@@ -121,7 +122,7 @@
             </div>
             <div class="col-md-6">
                 <label class="field-label">MEXC API Secret</label>
-                <input type="password" name="mexc_secret" class="form-control" value="{{ user.mexc_api_secret|default:'' }}">
+                <input type="text" name="mexc_secret" class="form-control" value="{{ user.mexc_api_secret|default:'' }}">
             </div>
         </div>
 
@@ -133,7 +134,7 @@
             </div>
             <div class="col-md-6">
                 <label class="field-label">Bybit API Secret</label>
-                <input type="password" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
+                <input type="text" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
             </div>
         </div>
 

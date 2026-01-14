@@ -13,6 +13,9 @@ class User(AbstractUser):
     htx_private_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="HTX Private Key")
     bybit_api_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="Bybit API Key")
     bybit_api_secret = models.CharField(max_length=255, blank=True, null=True, verbose_name="Bybit API Secret")
+    mexc_api_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="MEXC Access Key")
+    mexc_api_secret = models.CharField(max_length=255, blank=True, null=True, verbose_name="MEXC API Secret")
+
 
     def __str__(self):
         return self.username
