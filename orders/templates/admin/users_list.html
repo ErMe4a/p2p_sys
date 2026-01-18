@@ -17,6 +17,10 @@
 
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
+
+    /* Дополнительные стили для кнопок отчета */
+    .btn-report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+    .btn-full-width { grid-column: span 2; }
 </style>
 {% endblock %}
 
@@ -67,7 +71,9 @@
                                 onclick="openEditUserModal('{{ u.id }}', '{{ u.username }}', '{{ u.bybit_api_key|default:'' }}', '{{ u.bybit_api_secret|default:'' }}', '{{ u.htx_access_key|default:'' }}', '{{ u.htx_private_key|default:'' }}', '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}')">
                             ✏️
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary ms-1">📊</button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}')">
+                            📊
+                        </button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -79,7 +85,7 @@
 <div class="modal-overlay" id="addUserModal">
     <div class="modal-content-custom" style="max-width: 500px;">
         <div class="modal-header-custom">
-            <span>Новый пользователь</span>
+            <span>Новый пользователя</span>
             <button class="btn-close btn-close-white" onclick="closeAddUserModal()"></button>
         </div>
         <form method="POST">
@@ -163,40 +169,148 @@
         </form>
     </div>
 </div>
+
+<div class="modal-overlay" id="reportsModal">
+    <div class="modal-content-custom" style="max-width: 500px;">
+        <div class="modal-header-custom">
+            <span>📊 Отчёты — <strong id="reportsUserLogin" class="text-primary"></strong></span>
+            <button class="btn-close btn-close-white" onclick="closeReportsModal()"></button>
+        </div>
+        
+        <input type="hidden" id="reportsUserId">
+        
+        <div class="form-group mb-3">
+            <label>Реквизиты</label>
+            <select class="form-control" id="reportsUserDetails">
+                <option value="">Выберите реквизиты</option>
+            </select>
+        </div>
+
+        <div class="form-row mb-3">
+            <div class="form-group">
+                <label>Дата начала</label>
+                <input class="form-control" type="date" id="reportsStartDate">
+            </div>
+            <div class="form-group">
+                <label>Дата окончания</label>
+                <input class="form-control" type="date" id="reportsEndDate">
+            </div>
+        </div>
+
+        <div class="form-row mb-3">
+            <div class="form-group">
+                <label>Тип операции</label>
+                <select class="form-control" id="reportsOperationType">
+                    <option value="">Все операции</option>
+                    <option value="BUY">Покупка (BUY)</option>
+                    <option value="SELL">Продажа (SELL)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Год (для УСН)</label>
+                <input class="form-control" type="number" id="reportsYear" value="2026" min="2020" max="2030">
+            </div>
+        </div>
+
+        <div class="btn-report-grid">
+            <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadScreenshots()" id="downloadScreenshotsBtn">📷 Скриншоты</button>
+            <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadExcel()" id="downloadExcelBtn">📊 Excel</button>
+            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUsn()" id="downloadUsnBtn">📋 Скачать УСН отчет</button>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    // Базовые функции управления модалками
     function openAddUserModal() { document.getElementById('addUserModal').classList.add('active'); }
     function closeAddUserModal() { document.getElementById('addUserModal').classList.remove('active'); }
 
     function openEditUserModal(id, login, bKey, bSec, hKey, hSec, eLog, ePass) {
         document.getElementById('editUserId').value = id;
         document.getElementById('editUserLoginLabel').innerText = login;
-        
-        // Заполняем поля
         document.getElementById('editBybitKey').value = bKey;
         document.getElementById('editBybitSecret').value = bSec;
         document.getElementById('editHtxKey').value = hKey;
         document.getElementById('editHtxSecret').value = hSec;
         document.getElementById('editEvoLogin').value = eLog;
         document.getElementById('editEvoPass').value = ePass;
-
-        // Обновляем индикаторы (лампочки)
         document.getElementById('bybitInd').className = bKey ? 'indicator ok' : 'indicator';
         document.getElementById('htxInd').className = hKey ? 'indicator ok' : 'indicator';
         document.getElementById('evoInd').className = eLog ? 'indicator ok' : 'indicator';
-
         document.getElementById('editUserModal').classList.add('active');
     }
 
     function closeEditUserModal() { document.getElementById('editUserModal').classList.remove('active'); }
 
-    // Закрытие по клику вне модалки
+    // Логика модалки ОТЧЕТОВ
+    const availableBanks = [
+        { id: 'sber', name: 'Сбербанк' },
+        { id: 'tinkoff', name: 'Тинькофф' },
+        { id: 'alfa', name: 'Альфа-Банк' },
+        { id: 'vtb', name: 'ВТБ' },
+        { id: 'raiff', name: 'Райффайзен' }
+    ];
+
+    function openReportsModal(userId, username) {
+        document.getElementById('reportsUserId').value = userId;
+        document.getElementById('reportsUserLogin').innerText = username;
+        
+        const detailsSelect = document.getElementById('reportsUserDetails');
+        
+        // Очищаем и заполняем список из нашего массива
+        detailsSelect.innerHTML = '<option value="">Выберите реквизиты</option>';
+        
+        availableBanks.forEach(bank => {
+            let opt = document.createElement('option');
+            opt.value = bank.id;
+            opt.innerHTML = bank.name;
+            detailsSelect.appendChild(opt);
+        });
+
+        document.getElementById('reportsModal').classList.add('active');
+    }
+
+    function closeReportsModal() { 
+        document.getElementById('reportsModal').classList.remove('active'); 
+    }
+
+    // Функции скачивания (формируют URL с параметрами из формы)
+    function downloadExcel() {
+        const userId = document.getElementById('reportsUserId').value;
+        const start = document.getElementById('reportsStartDate').value;
+        const end = document.getElementById('reportsEndDate').value;
+        const bank = document.getElementById('reportsUserDetails').value;
+        const type = document.getElementById('reportsOperationType').value;
+
+        if (!start || !end) {
+            alert('Выберите период дат');
+            return;
+        }
+
+        // Формируем запрос на бэкенд
+        const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
+        window.location.href = url;
+    }
+
+    function downloadUsn() {
+        const userId = document.getElementById('reportsUserId').value;
+        const year = document.getElementById('reportsYear').value;
+        window.location.href = `/admin-panel/export/usn/?user_id=${userId}&year=${year}`;
+    }
+
+    function downloadScreenshots() {
+        const userId = document.getElementById('reportsUserId').value;
+        alert('Запрос на сбор архива скриншотов отправлен для ID: ' + userId);
+    }
+
+    // Закрытие при клике на фон
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
             closeAddUserModal();
             closeEditUserModal();
+            closeReportsModal();
         }
     }
 </script>

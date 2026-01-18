@@ -32,6 +32,10 @@ from django.http import JsonResponse
 from django.db.models import Sum, Q
 from django.contrib.auth import get_user_model # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
 from .models import Order 
+import openpyxl
+from openpyxl.styles import Alignment, Font, Border, Side
+from django.http import HttpResponse
+
 
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
@@ -238,6 +242,118 @@ def admin_users_list(request):
     return render(request, 'admin/users_list.html', {'users': users})
 
 
+
+
+def export_excel_report(request):
+    # 1. Получение параметров из запроса
+    user_id = request.GET.get('user_id')
+    start_date = request.GET.get('start')  # Ожидается формат YYYY-MM-DD
+    end_date = request.GET.get('end')      # Ожидается формат YYYY-MM-DD
+    bank_id = request.GET.get('bank_id')
+    op_type = request.GET.get('type')
+
+    # Получаем данные с сортировкой по дате
+    orders = Order.objects.filter(user_id=user_id).order_by('created_at')
+
+    # Применяем фильтры
+    if start_date:
+        orders = orders.filter(created_at__date__gte=start_date)
+    if end_date:
+        orders = orders.filter(created_at__date__lte=end_date)
+    if bank_id and bank_id.isdigit():
+        orders = orders.filter(bank_detail_id=bank_id)
+    if op_type:
+        orders = orders.filter(operation_type=op_type)
+
+    # 2. Создание Excel книги
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Отчет"
+
+    # Стили
+    thin_side = Side(style='thin')
+    thin_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    bold_font = Font(bold=True)
+    center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    # 3. Формирование шапки (как в образце)
+    ws.merge_cells('A1:L1')
+    ws['A1'] = "Учет приобретенной и проданной цифровой валюты (ЦВ)"
+    ws['A1'].font = Font(size=14, bold=True)
+    ws['A1'].alignment = Alignment(horizontal='center')
+
+    ws.merge_cells('A2:A3')
+    ws['A2'] = "№ п/п"
+    ws.merge_cells('B2:B3')
+    ws['B2'] = "Дата операции"
+    ws.merge_cells('C2:C3')
+    ws['C2'] = "Номер документа"
+    ws.merge_cells('D2:D3')
+    ws['D2'] = "Наименование ЦВ"
+    
+    ws.merge_cells('E2:H2')
+    ws['E2'] = "Приобретение цифровой валюты"
+    
+    ws.merge_cells('I2:L2')
+    ws['I2'] = "Продажа цифровой валюты"
+
+    sub_headers = [
+        "", "", "", "",
+        "Кол-во покупки", "Курс покупки", "Стоимость покупки, руб.", "Комиссия покупки, руб.",
+        "Кол-во продажи", "Курс продажи", "Стоимость продажи, руб.", "Комиссия продажи, руб."
+    ]
+    ws.append(sub_headers)
+
+    # 4. Заполнение данными
+    for idx, o in enumerate(orders, 1):
+        b_qty, b_price, b_cost, b_comm = "", "", "", ""
+        s_qty, s_price, s_cost, s_comm = "", "", "", ""
+
+        # Расчет комиссии (процент или фиксированная сумма)
+        comm_val = float(o.commission or 0)
+        total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
+
+        if o.operation_type == 'BUY':
+            b_qty, b_price, b_cost, b_comm = o.amount, o.price, o.cost, total_comm
+        else:
+            s_qty, s_price, s_cost, s_comm = o.amount, o.price, o.cost, total_comm
+
+        ws.append([
+            idx,
+            o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
+            o.external_id,
+            "USDT",
+            b_qty, b_price, b_cost, b_comm,
+            s_qty, s_price, s_cost, s_comm
+        ])
+
+    # 5. Отрисовка границ для всех заполненных ячеек
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=12):
+        for cell in row:
+            cell.border = thin_border
+            if cell.row <= 3: # Стили для заголовков
+                cell.font = bold_font
+                cell.alignment = center_align
+            else: # Стили для строк данных
+                cell.alignment = Alignment(horizontal='center')
+
+    # 6. Настройка ширины колонок
+    column_widths = {'A': 6, 'B': 15, 'C': 25, 'D': 15, 'E': 15, 'F': 15, 'G': 18, 'H': 18, 'I': 15, 'J': 15, 'K': 18, 'L': 18}
+    for col_letter, width in column_widths.items():
+        ws.column_dimensions[col_letter].width = width
+
+    # 7. Формирование динамического названия файла
+    # Используем "start" и "end", если даты не выбраны в фильтре
+    fname_start = start_date if start_date else "start"
+    fname_end = end_date if end_date else "end"
+    filename = f"orders_report_{fname_start}_{fname_end}_{user_id}.xlsx"
+
+    # 8. Отправка ответа
+    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    wb.save(response)
+    
+    return response
 
 def admin_login(request):
     if request.user.is_authenticated and request.user.is_superuser:

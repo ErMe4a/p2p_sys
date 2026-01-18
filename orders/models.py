@@ -53,7 +53,7 @@ class Order(models.Model):
     commission_type = models.CharField(max_length=10, choices=COMMISSION_CHOICES, default='PERCENT')
     screenshot = models.ImageField(upload_to='orders/screenshots/', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    receipt = models.JSONField(null=True, blank=True, verbose_name="Чек (JSON)")
+    
 
     def __str__(self):
         return f"{self.operation_type} - {self.external_id}"
