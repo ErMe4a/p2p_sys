@@ -39,6 +39,50 @@
     }
     .alert-custom-blue i { font-size: 14px; }
 
+    /* ===== MINI DEBUG (только стили, структуру не ломаем) ===== */
+    .alert-debug {
+        background-color: rgba(247, 166, 0, 0.06);
+        border: 1px solid rgba(247, 166, 0, 0.22);
+        color: #f3d48c;
+        border-radius: 6px;
+        padding: 12px 16px;
+        font-size: 12px;
+        margin-bottom: 20px;
+    }
+    .alert-debug__title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+    .alert-debug__badge {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(247, 166, 0, 0.35);
+        color: #f7a600;
+        background: rgba(0,0,0,0.15);
+        white-space: nowrap;
+    }
+    .alert-debug pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+        padding: 10px 12px;
+        border-radius: 6px;
+        background: rgba(0,0,0,0.35);
+        border: 1px solid rgba(255,255,255,0.06);
+        color: #d9d9d9;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        line-height: 1.45;
+        max-height: 220px;
+        overflow: auto;
+    }
+    /* ========================================================= */
+
     /* Контейнер таблицы */
     .table-card {
         background: var(--bg-card);
@@ -54,13 +98,13 @@
         padding: 10px 15px;
         border-bottom: 1px solid var(--border-color);
     }
-    
+
     .pagination-controls {
         display: flex;
         align-items: center;
         gap: 8px;
     }
-    
+
     .btn-page {
         background: #2b3139;
         border: none;
@@ -97,7 +141,7 @@
 
     /* Стили колонок */
     .col-id { font-weight: 600; color: #fff; }
-    .col-type-buy { color: var(--text-muted); } /* На скрине просто серый текст */
+    .col-type-buy { color: var(--text-muted); }
     .col-type-sell { color: var(--text-muted); }
 
     /* Кнопки действий */
@@ -130,7 +174,7 @@
         color: #fff;
         border-color: #f84960;
     }
-    
+
     /* Скроллбар для таблицы */
     .table-responsive::-webkit-scrollbar { height: 6px; }
     .table-responsive::-webkit-scrollbar-track { background: var(--bg-card); }
@@ -139,64 +183,78 @@
 
 
 <div class="container-fluid px-0">
-    
+
     <div class="alert-custom-blue">
         <span>ℹ️</span> Ордера с бирж HTX и MEXC пока не выгружаются в этот раздел
     </div>
 
-
-
-        <div class="table-responsive">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>ID ордера</th>
-                        <th>Тип</th>
-                        <th>Цена</th>
-                        <th>Кол-во</th>
-                        <th>Создан</th>
-                        <th class="text-center">Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for item in unprocessed_orders %}
-                    <tr>
-                        <td class="col-id">{{ item.order_id }}</td>
-                        
-                        <td>
-                            {% if item.operation_type == 'BUY' %}
-                                <span class="col-type-buy">Покупка</span>
-                            {% else %}
-                                <span class="col-type-sell">Продажа</span>
-                            {% endif %}
-                        </td>
-                        
-                        <td>{{ item.price|default:"—" }}</td>
-                        
-                        <td>{{ item.amount }}</td>
-                        
-                        <td class="text-muted">{{ item.created_at|date:"d.m.Y, H:i:s" }}</td>
-                        
-                        <td class="text-end">
-                            <a href="https://www.bybit.com/fiat/trade/otc/order/{{ item.order_id }}" target="_blank" class="btn-bybit">
-                                Bybit
-                            </a>
-                            <a href="#" class="btn-delete-row" onclick="return confirm('Удалить из списка?')">
-                                Удалить
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="6" class="text-center py-5 text-muted">
-                            Список пуст. Новых ордеров не найдено.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {# ===== MINI DEBUG: показывает что реально вернул Bybit sync ===== #}
+    {% if sync_debug %}
+    <div class="alert-debug">
+        <div class="alert-debug__title">
+            <span>🛠️ Debug синхронизации Bybit</span>
+            {% if sync_debug.ok %}
+                <span class="alert-debug__badge">OK</span>
+            {% else %}
+                <span class="alert-debug__badge">ERROR</span>
+            {% endif %}
         </div>
+        <pre>{{ sync_debug|pprint }}</pre>
     </div>
+    {% endif %}
+    {# ============================================================= #}
+
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>ID ордера</th>
+                    <th>Тип</th>
+                    <th>Цена</th>
+                    <th>Кол-во</th>
+                    <th>Создан</th>
+                    <th class="text-center">Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in unprocessed_orders %}
+                <tr>
+                    <td class="col-id">{{ item.order_id }}</td>
+
+                    <td>
+                        {% if item.operation_type == 'BUY' %}
+                            <span class="col-type-buy">Покупка</span>
+                        {% else %}
+                            <span class="col-type-sell">Продажа</span>
+                        {% endif %}
+                    </td>
+
+                    <td>{{ item.price|default:"—" }}</td>
+
+                    <td>{{ item.amount }}</td>
+
+                    <td class="text-muted">{{ item.created_at|date:"d.m.Y, H:i:s" }}</td>
+
+                    <td class="text-end">
+                        <a href="https://www.bybit.com/ru-RU/p2p/orderList/{{ item.order_id }}" target="_blank" class="btn-bybit">
+                            Bybit
+                        </a>
+                        <a href="#" class="btn-delete-row" onclick="return confirm('Удалить из списка?')">
+                            Удалить
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" class="text-center py-5 text-muted">
+                        Список пуст. Новых ордеров не найдено.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
 </div>
 
 {% endblock %}

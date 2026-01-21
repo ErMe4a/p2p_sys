@@ -1,33 +1,37 @@
-{% extends 'admin/admin_base.html' %}
+{% extends 'custom_admin/admin_base.html' %}
 
 {% block title %}Пользователи | Админка{% endblock %}
 
 {% block extra_css %}
 <style>
     .form-control { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
-    .api-label { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; background: var(--bg-input); border: 1px solid var(--border-color); }
-    .api-label.active { color: #58d68d; border-color: rgba(88,214,141,0.3); }
-    .api-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; background: #3a3a4a; }
-    .api-dot.active { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
     
-    .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
-    .form-section-inner h4 { font-size: 0.85rem; margin-bottom: 12px; color: var(--accent-blue); display: flex; align-items: center; gap: 8px; }
-    .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; }
+    /* Стили для лампочек в таблице */
+    .api-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin: 0 auto; transition: 0.3s; }
+    .api-dot.active { background: #58d68d; box-shadow: 0 0 6px #58d68d; }
+    
+    /* Стили для индикаторов в модалке */
+    .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin-right: 5px; }
     .indicator.ok { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
+
+    .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
+    .form-section-inner h4 { font-size: 0.85rem; margin-bottom: 12px; color: var(--accent-blue); display: flex; align-items: center; }
 
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
 
-    /* Дополнительные стили для кнопок отчета */
     .btn-report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
     .btn-full-width { grid-column: span 2; }
+    
+    /* Центрирование колонок с лампочками */
+    .col-center { text-align: center; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="card-custom">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h5 class="m-0">Управление пользователями</h5>
+        <h5 class="m-0">Пользователи</h5>
         <button class="btn btn-sm btn-outline-blue px-3" onclick="openAddUserModal()">+ Добавить пользователя</button>
     </div>
 
@@ -37,9 +41,10 @@
                 <tr>
                     <th>ID</th>
                     <th>Логин</th>
-                    <th>Bybit</th>
-                    <th>HTX</th>
-                    <th>Evotor</th>
+                    <th class="col-center">Bybit</th>
+                    <th class="col-center">HTX</th>
+                    <th class="col-center">MEXC</th>
+                    <th class="col-center">Evotor</th>
                     <th class="text-end">Действия</th>
                 </tr>
             </thead>
@@ -48,27 +53,49 @@
                 <tr>
                     <td class="text-muted">{{ u.id }}</td>
                     <td class="fw-bold">{{ u.username }}</td>
-                    <td>
-                        <span class="api-label {% if u.bybit_api_key %}active{% endif %}">
-                            <span class="api-dot {% if u.bybit_api_key %}active{% endif %}"></span>
-                            {% if u.bybit_api_key %}✓{% else %}—{% endif %}
-                        </span>
+                    
+                    <td class="col-center">
+                        {% if u.bybit_api_key and u.bybit_api_secret %}
+                            <span class="api-dot active" title="Подключено"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не настроено"></span>
+                        {% endif %}
                     </td>
-                    <td>
-                        <span class="api-label {% if u.htx_access_key %}active{% endif %}">
-                            <span class="api-dot {% if u.htx_access_key %}active{% endif %}"></span>
-                            {% if u.htx_access_key %}✓{% else %}—{% endif %}
-                        </span>
+
+                    <td class="col-center">
+                        {% if u.htx_access_key and u.htx_private_key %}
+                            <span class="api-dot active" title="Подключено"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не настроено"></span>
+                        {% endif %}
                     </td>
-                    <td>
-                        <span class="api-label {% if u.evotor_login %}active{% endif %}">
-                            <span class="api-dot {% if u.evotor_login %}active{% endif %}"></span>
-                            {% if u.evotor_login %}✓{% else %}—{% endif %}
-                        </span>
+
+                    <td class="col-center">
+                        {% if u.mexc_api_key and u.mexc_api_secret %}
+                            <span class="api-dot active" title="Подключено"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не настроено"></span>
+                        {% endif %}
                     </td>
+
+                    <td class="col-center">
+                        {% if u.evotor_login and u.evotor_password %}
+                            <span class="api-dot active" title="Подключено"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не настроено"></span>
+                        {% endif %}
+                    </td>
+
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-secondary" 
-                                onclick="openEditUserModal('{{ u.id }}', '{{ u.username }}', '{{ u.bybit_api_key|default:'' }}', '{{ u.bybit_api_secret|default:'' }}', '{{ u.htx_access_key|default:'' }}', '{{ u.htx_private_key|default:'' }}', '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}')">
+                                onclick="openEditUserModal(
+                                    '{{ u.id }}', 
+                                    '{{ u.username }}', 
+                                    '{{ u.bybit_api_key|default:'' }}', '{{ u.bybit_api_secret|default:'' }}', 
+                                    '{{ u.htx_access_key|default:'' }}', '{{ u.htx_private_key|default:'' }}', 
+                                    '{{ u.mexc_api_key|default:'' }}', '{{ u.mexc_api_secret|default:'' }}', 
+                                    '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}'
+                                )">
                             ✏️
                         </button>
                         <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}')">
@@ -85,7 +112,7 @@
 <div class="modal-overlay" id="addUserModal">
     <div class="modal-content-custom" style="max-width: 500px;">
         <div class="modal-header-custom">
-            <span>Новый пользователя</span>
+            <span>Новый пользователь</span>
             <button class="btn-close btn-close-white" onclick="closeAddUserModal()"></button>
         </div>
         <form method="POST">
@@ -98,7 +125,7 @@
                 </div>
                 <div class="form-group">
                     <label>Пароль *</label>
-                    <input class="form-control" type="password" name="password" required>
+                    <input class="form-control" type="text" name="password" required>
                 </div>
             </div>
             <div style="display:flex; gap:12px; justify-content:flex-end;">
@@ -149,6 +176,20 @@
             </div>
 
             <div class="form-section-inner">
+                <h4><span id="mexcInd" class="indicator"></span> MEXC API</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Access Key</label>
+                        <input class="form-control" type="text" name="mexc_key" id="editMexcKey">
+                    </div>
+                    <div class="form-group">
+                        <label>Secret Key</label>
+                        <input class="form-control" type="text" name="mexc_secret" id="editMexcSecret">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section-inner">
                 <h4><span id="evoInd" class="indicator"></span> Evotor</h4>
                 <div class="form-row">
                     <div class="form-group">
@@ -157,7 +198,7 @@
                     </div>
                     <div class="form-group">
                         <label>Пароль</label>
-                        <input class="form-control" type="password" name="evotor_password" id="editEvoPass">
+                        <input class="form-control" type="text" name="evotor_password" id="editEvoPass">
                     </div>
                 </div>
             </div>
@@ -227,18 +268,32 @@
     function openAddUserModal() { document.getElementById('addUserModal').classList.add('active'); }
     function closeAddUserModal() { document.getElementById('addUserModal').classList.remove('active'); }
 
-    function openEditUserModal(id, login, bKey, bSec, hKey, hSec, eLog, ePass) {
+    // Обновил функцию, добавив параметры MEXC
+    function openEditUserModal(id, login, bKey, bSec, hKey, hSec, mKey, mSec, eLog, ePass) {
         document.getElementById('editUserId').value = id;
         document.getElementById('editUserLoginLabel').innerText = login;
+        
+        // Bybit
         document.getElementById('editBybitKey').value = bKey;
         document.getElementById('editBybitSecret').value = bSec;
+        // Лампочка в модалке: горит только если оба поля не пустые
+        document.getElementById('bybitInd').className = (bKey && bSec) ? 'indicator ok' : 'indicator';
+
+        // HTX
         document.getElementById('editHtxKey').value = hKey;
         document.getElementById('editHtxSecret').value = hSec;
+        document.getElementById('htxInd').className = (hKey && hSec) ? 'indicator ok' : 'indicator';
+        
+        // MEXC (Новое)
+        document.getElementById('editMexcKey').value = mKey;
+        document.getElementById('editMexcSecret').value = mSec;
+        document.getElementById('mexcInd').className = (mKey && mSec) ? 'indicator ok' : 'indicator';
+
+        // Evotor
         document.getElementById('editEvoLogin').value = eLog;
         document.getElementById('editEvoPass').value = ePass;
-        document.getElementById('bybitInd').className = bKey ? 'indicator ok' : 'indicator';
-        document.getElementById('htxInd').className = hKey ? 'indicator ok' : 'indicator';
-        document.getElementById('evoInd').className = eLog ? 'indicator ok' : 'indicator';
+        document.getElementById('evoInd').className = (eLog && ePass) ? 'indicator ok' : 'indicator';
+
         document.getElementById('editUserModal').classList.add('active');
     }
 
@@ -276,7 +331,7 @@
         document.getElementById('reportsModal').classList.remove('active'); 
     }
 
-    // Функции скачивания (формируют URL с параметрами из формы)
+    // Функции скачивания
     function downloadExcel() {
         const userId = document.getElementById('reportsUserId').value;
         const start = document.getElementById('reportsStartDate').value;
@@ -289,7 +344,6 @@
             return;
         }
 
-        // Формируем запрос на бэкенд
         const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
         window.location.href = url;
     }
@@ -305,7 +359,6 @@
         alert('Запрос на сбор архива скриншотов отправлен для ID: ' + userId);
     }
 
-    // Закрытие при клике на фон
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
             closeAddUserModal();

@@ -1,4 +1,4 @@
-{% extends 'admin/admin_base.html' %}
+{% extends 'custom_admin/admin_base.html' %}
 
 {% block title %}Редактор заказов | Админка{% endblock %}
 
@@ -127,7 +127,7 @@
                     <label>Тип комиссии</label>
                     <select class="form-select" name="commission_type">
                         <option value="PERCENT" {% if order.commission_type == 'PERCENT' %}selected{% endif %}>Процент</option>
-                        <option value="MONEY" {% if order.commission_type == 'MONEY' %}selected{% endif %}>Деньги</option>
+                        <option value="MONEY" {% if order.commission_type == 'MONEY' %}selected{% endif %}>Рубли</option>
                     </select>
                 </div>
                 <div class="form-group d-flex align-items-end">

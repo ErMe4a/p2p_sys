@@ -29,7 +29,6 @@
     .table-container { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
 
     /* === СТИЛИ ФОРМЫ (CLEAN STYLE) === */
-    /* Убираем "Floating", делаем классику */
     .form-label {
         color: var(--text-muted);
         font-size: 12px;
@@ -43,7 +42,7 @@
         color: #fff !important;
         font-size: 14px;
         border-radius: 6px;
-        height: 42px; /* Фиксированная высота для аккуратности */
+        height: 42px; 
         padding: 8px 12px;
     }
 
@@ -77,11 +76,11 @@
         background-color: var(--accent-blue); 
         color: #fff; 
         border: none; 
-        height: 42px; /* Высота как у полей */
+        height: 42px; 
         border-radius: 6px; 
         width: 100%; 
         font-weight: 600; 
-        margin-top: 23px; /* Компенсация высоты лейбла */
+        margin-top: 23px; 
     }
     .btn-create:hover { background-color: #304ffe; }
 
@@ -230,14 +229,15 @@
                             Изм.
                         </button>
 
+                        <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
+                        
+                        <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
+                            {% csrf_token %}
+                            <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
+                        </form>
+
                         {% if order.screenshot %}
-                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Смотреть">📷</a>
-                        {% else %}
-                            <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить">📷</button>
-                            <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
-                                {% csrf_token %}
-                                <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
-                            </form>
+                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть">👁️</a>
                         {% endif %}
 
                         <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
@@ -319,25 +319,18 @@
     });
 
     function openEditModal(id, opType, exchange, details, price, amount, cost, commVal, commType, extId, date) {
-        // 1. Ссылка на форму и ID
         document.getElementById('editForm').action = "/edit/" + id + "/";
         document.getElementById('display_id').innerText = id;
 
-        // 2. Умная установка банка (Details)
         const detailsSelect = document.getElementById('modal_details');
-        
-        // Сначала пробуем просто установить значение
         detailsSelect.value = details;
 
-        // Если значение не установилось (такого банка нет в списке <option>)
         if (detailsSelect.value !== details && details !== 'None' && details !== '') {
-            // Создаем новый вариант выбора динамически
             let newOpt = new Option(details, details);
             detailsSelect.add(newOpt);
             detailsSelect.value = details;
         }
 
-        // 3. Заполнение остальных полей
         document.getElementById('modal_op_type').value = opType;
         document.getElementById('modal_exchange').value = exchange;
         document.getElementById('modal_price').value = price;
@@ -348,7 +341,6 @@
         document.getElementById('modal_ext_id').value = extId;
         document.getElementById('modal_date').value = date; 
         
-        // 4. Показ модалки
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 

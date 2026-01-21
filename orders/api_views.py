@@ -233,8 +233,15 @@ def order_delete(request, order_id: str):
         external_id=str(order_id),
         exchange_type=exchange_name,
     ).first()
+    
     if not o:
         return Response({"message": "not found"}, status=404)
+    
+    # --- НОВОЕ: Удаление скриншота с диска при удалении ордера ---
+    if o.screenshot:
+        # delete(save=False) удаляет файл с диска
+        o.screenshot.delete(save=False)
+        
     o.delete()
     return Response({"success": True})
 
@@ -293,24 +300,50 @@ def order_screenshot(request):
     if request.method == "POST":
         file = request.FILES.get("file")
         name = (request.data.get("name") or "").strip()
+        
         if not file or not name:
             return Response({"message": "file and name required"}, status=400)
 
+        # 1. Получаем чистый ID ордера (без расширения)
+        order_key = name.rsplit(".", 1)[0]
+        
+        # 2. Ищем ордер
+        o = Order.objects.filter(user=request.user, external_id=order_key).order_by("-id").first()
+        
+        if not o: 
+            return Response({"message": "Order not found"}, status=404)
+        if not hasattr(o, "screenshot"): 
+            return Response({"message": "No screenshot field"}, status=500)
+
+        # 3. ПРИНУДИТЕЛЬНОЕ ПЕРЕИМЕНОВАНИЕ В .PNG
+        # Устанавливаем имя файла как {external_id}.png
+        file.name = f"{order_key}.png"
+
+        # 4. ЗАМЕНА СТАРОГО ФАЙЛА
+        # Если файл уже существует, удаляем его, чтобы Django не добавлял случайный суффикс
+        if o.screenshot:
+            o.screenshot.delete(save=False)
+
+        # 5. Сохраняем новый файл
+        o.screenshot = file
+        o.save()
+        
+        return Response({"success": True, "name": file.name})
+
+    # GET логика (выдача скриншота)
+    if request.method == "GET":
+        name = (request.query_params.get("name") or "").strip()
+        if not name: 
+            return Response({"message": "name required"}, status=400)
+        
         order_key = name.rsplit(".", 1)[0]
         o = Order.objects.filter(user=request.user, external_id=order_key).order_by("-id").first()
         
-        if not o: return Response({"message": "Order not found"}, status=404)
-        if not hasattr(o, "screenshot"): return Response({"message": "No screenshot field"}, status=500)
+        if not o or not getattr(o, "screenshot", None): 
+            raise Http404("not found")
 
-        o.screenshot = file
-        o.save()
-        return Response({"success": True, "name": name})
-
-    # GET
-    name = (request.query_params.get("name") or "").strip()
-    if not name: return Response({"message": "name required"}, status=400)
-    order_key = name.rsplit(".", 1)[0]
-    o = Order.objects.filter(user=request.user, external_id=order_key).order_by("-id").first()
-    if not o or not getattr(o, "screenshot", None): raise Http404("not found")
-
-    return FileResponse(o.screenshot.open("rb"), content_type="image/png")
+        # Возвращаем файл как png
+        try:
+            return FileResponse(o.screenshot.open("rb"), content_type="image/png")
+        except FileNotFoundError:
+            raise Http404("Файл на диске не найден")

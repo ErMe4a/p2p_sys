@@ -1,0 +1,165 @@
+{% extends 'custom_admin/admin_base.html' %}
+{% load l10n %}
+
+{% block title %}API Статистика 24ч{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Лоадер */
+    .loader-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 9999; align-items: center; justify-content: center; backdrop-filter: blur(2px); }
+    .spinner { width: 50px; height: 50px; border: 5px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    /* Твои старые стили для карточек (сокращенно для примера) */
+    .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: var(--bg-card); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); }
+    .stat-value { font-size: 1.4rem; font-weight: bold; color: #fff; }
+    .filters-section { background: var(--bg-card); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 20px; }
+    .filters-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; }
+    .input { background: var(--bg-input); border: 1px solid var(--border-color); color: #fff; padding: 8px; border-radius: 4px; width: 100%; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div id="loader" class="loader-overlay">
+    <div class="text-center">
+        <div class="spinner mb-3 mx-auto"></div>
+        <div style="color:white; font-size: 1.2rem;">Синхронизация с Bybit...</div>
+        <small style="color:#aaa;">Это может занять несколько секунд</small>
+    </div>
+</div>
+
+<div class="section">
+    <form method="GET" action="{% url 'admin_stats_24h' %}" onsubmit="document.getElementById('loader').style.display='flex'">
+        <div class="filters-section">
+            <div class="filters-row">
+                <div style="flex: 1; min-width: 200px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Пользователь</label>
+                    <select name="user" class="input">
+                        <option value="">Все пользователи</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}" {% if current_user == u.id %}selected{% endif %}>
+                                {{ u.username }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div style="flex: 1; min-width: 150px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Источник</label>
+                    <select name="exchange" class="input">
+                        <option value="">Все источники</option>
+                        <option value="1" {% if current_exchange == '1' %}selected{% endif %}>Bybit</option>
+                        </select>
+                </div>
+
+                <div style="flex: 1; min-width: 150px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Тип</label>
+                    <select name="type" class="input">
+                        <option value="">Все типы</option>
+                        <option value="BUY" {% if current_type == 'BUY' %}selected{% endif %}>Покупка</option>
+                        <option value="SELL" {% if current_type == 'SELL' %}selected{% endif %}>Продажа</option>
+                    </select>
+                </div>
+
+                <div style="flex: 0 0 100px;">
+                    <label style="color:#aaa; font-size:0.8rem;">Кол-во</label>
+                    <select name="limit" class="input">
+                        <option value="25" {% if current_limit == '25' %}selected{% endif %}>25</option>
+                        <option value="50" {% if current_limit == '50' %}selected{% endif %}>50</option>
+                        <option value="100" {% if current_limit == '100' %}selected{% endif %}>100</option>
+                    </select>
+                </div>
+
+                <div style="flex: 0 0 auto;">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="btn btn-primary w-100" style="background: var(--accent-blue); border:none; padding: 9px 20px;">
+                        🔄 Обновить данные
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+
+    <div class="stats-summary">
+        <div class="stat-card">
+            <div style="color:#aaa; font-size:0.8rem;">Всего заказов</div>
+            <div class="stat-value">{{ total_orders }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="color:#aaa; font-size:0.8rem;">Покупки</div>
+            <div class="stat-value" style="color:#00c087;">{{ buy_count }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="color:#aaa; font-size:0.8rem;">Продажи</div>
+            <div class="stat-value" style="color:#f84960;">{{ sell_count }}</div>
+        </div>
+        <div class="stat-card">
+            <div style="color:#aaa; font-size:0.8rem;">Оборот (Fiat)</div>
+            <div class="stat-value" style="color:#3498db;">{{ total_amount|floatformat:0 }} ₽</div>
+        </div>
+    </div>
+
+    <div class="table-container" style="background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color); overflow:hidden;">
+        <table class="table mb-0" style="color: #ddd;">
+            <thead style="background: rgba(255,255,255,0.05);">
+                <tr>
+                    <th>ID</th>
+                    <th>Пользователь</th>
+                    <th>Тип</th>
+                    <th>Биржа</th>
+                    <th>Сумма (₽)</th>
+                    <th>Крипта</th>
+                    <th>Курс</th>
+                    <th>Время</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if not is_search %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5">
+                            <h4 class="text-muted">Нажмите "Обновить данные" для загрузки</h4>
+                        </td>
+                    </tr>
+                {% else %}
+                    {% for order in orders %}
+                    <tr>
+                        <td><small class="text-muted">{{ order.external_id|slice:"-8:" }}</small></td>
+                        <td><strong>{{ order.user.username }}</strong></td>
+                        <td>
+                            {% if order.operation_type == 'BUY' %}
+                                <span style="color:#00c087; font-weight:bold;">BUY</span>
+                            {% else %}
+                                <span style="color:#f84960; font-weight:bold;">SELL</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ order.exchange_type }}</td>
+                        <td>{{ order.cost|floatformat:2 }} ₽</td>
+                        <td>{{ order.amount|floatformat:4 }}</td>
+                        <td>{{ order.price|floatformat:2 }}</td>
+                        <td>{{ order.created_at|date:"H:i d.m" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-4 text-muted">Заказов не найдено</td>
+                    </tr>
+                    {% endfor %}
+                {% endif %}
+            </tbody>
+        </table>
+
+        {% if orders.has_other_pages %}
+        <div class="p-3 d-flex justify-content-center gap-2">
+            {% if orders.has_previous %}
+                <a href="?page={{ orders.previous_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">←</a>
+            {% endif %}
+            <span class="btn btn-sm disabled text-white">{{ orders.number }} / {{ orders.paginator.num_pages }}</span>
+            {% if orders.has_next %}
+                <a href="?page={{ orders.next_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">→</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -27,8 +27,10 @@ SECRET_KEY = 'django-insecure-d6ff3d&08bv6d1%8szjv#w&(w2k2^2bcftpc9=f!b-+9-b^^+h
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['surest-evasively-robbie.ngrok-free.dev', '127.0.0.1', 'localhost']
 
+# Это критично для того, чтобы расширение могло отправлять POST-запросы (скриншоты и т.д.)
+CSRF_TRUSTED_ORIGINS = ['https://surest-evasively-robbie.ngrok-free.dev']
 
 # Application definition
 

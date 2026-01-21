@@ -86,7 +86,7 @@
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_users' %}active{% endif %}" href="{% url 'admin_users' %}">Пользователи</a>
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_orders_editor' %}active{% endif %}" href="{% url 'admin_orders_editor' %}">Редактор заказов</a>
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_turnover' %}active{% endif %}" href="{% url 'admin_turnover_control' %}">Контроль оборота</a>
-                <a class="nav-link {% if request.resolver_match.url_name == 'admin_stats' %}active{% endif %}" href="{% url 'admin_stats' %}">Статистика 24ч</a>
+                <a class="nav-link {% if request.resolver_match.url_name == 'admin_stats' %}active{% endif %}" href="{% url 'admin_stats_24h' %}">Статистика 24ч</a>
             </nav>
         </div>
 
