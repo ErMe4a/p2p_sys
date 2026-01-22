@@ -44,7 +44,47 @@ from django.core.paginator import Paginator
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from .service_for_stat_24 import get_orders_parallel
+
+from .receipt_service import create_or_update_and_send_receipt
+from django.views.decorators.http import require_POST
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from django.contrib.auth.decorators import login_required
+
+from .models import Order
+from .receipt_service import create_or_update_and_send_receipt
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
+
+
+
+
+@login_required
+@require_POST
+def receipt_test_send(request, order_id: int):
+    """
+    ТЕСТ: пробить чек на существующий ордер
+    - сумма всегда 1 рубль
+    - назначение берём из формы (purpose), по умолчанию 'тестовый перевод'
+    """
+    o = get_object_or_404(Order, id=order_id, user=request.user)
+
+    purpose = (request.POST.get("purpose") or "").strip() or "тестовый перевод"
+
+    receipt_data = {
+        "sum": "1",                 # принудительно 1 рубль
+        "purpose": purpose,         # попадет в item_name
+        "paymentMethod": "CARD",    # можешь заменить на CASH если нужно
+        "customerContact": request.user.email or "",
+    }
+
+    r = create_or_update_and_send_receipt(o, receipt_data)
+
+    return JsonResponse({
+        "ok": (r.status in ("SENT", "DONE")),
+        "status": r.status,
+        "error": r.error_text or "",
+        "evotorUuid": r.evotor_uuid or "",
+    })
 
 @login_required
 def my_orders_list(request):

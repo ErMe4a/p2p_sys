@@ -9,6 +9,8 @@ from rest_framework.authtoken.models import Token
 
 from .models import BankDetail, Order
 
+from .receipt_service import should_make_receipt, create_or_update_and_send_receipt
+
 # --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
 
 # Из ID расширения -> в строку для вашей БД
@@ -220,6 +222,21 @@ def order(request):
     if quantity: o.amount = quantity
 
     o.save()
+    
+    receipt_debug = None
+    if should_make_receipt(data):
+        receipt_debug = create_or_update_and_send_receipt(o, data.get("receipt") if isinstance(data.get("receipt"), dict) else {})
+    
+    return Response({
+        "success": True,
+        "id": o.id,
+        "receipt": {
+            "enabled": bool(receipt_debug),
+            "status": getattr(receipt_debug, "status", None),
+            "error": getattr(receipt_debug, "error_text", None),
+            "evotorUuid": getattr(receipt_debug, "evotor_uuid", None),
+        } if receipt_debug else {"enabled": False}
+    })
     
     return Response({"success": True, "id": o.id})
 

@@ -16,6 +16,8 @@ urlpatterns = [
     path('delete/<int:order_id>/', views.delete_order, name='delete_order'),
     path('upload_screen/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
     path('upload-screenshot/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
+    path("orders/<int:order_id>/receipt/test/", views.receipt_test_send, name="receipt_test_send"),
+
     path('p2p-admin/login/', views.admin_login, name='admin_login'),
     path('p2p-admin/logout/', views.admin_logout, name='admin_logout'),
 
@@ -26,5 +28,6 @@ urlpatterns = [
     path('p2p-admin/turnover/', views.admin_turnover_control, name='admin_turnover_control'),
     path('p2p-admin/api/search-users/', views.api_search_users, name='api_search_users'),
     path('p2p-admin/api/get-turnover/<int:user_id>/', views.api_get_turnover, name='api_get_turnover'),
+    
     
 ]

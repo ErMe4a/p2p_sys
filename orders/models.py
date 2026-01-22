@@ -58,6 +58,36 @@ class Order(models.Model):
     def __str__(self):
         return f"{self.operation_type} - {self.external_id}"
 
+# orders/models.py
+from django.db import models
+
+class Receipt(models.Model):
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("SENT", "Sent"),
+        ("DONE", "Done"),
+        ("ERROR", "Error"),
+    ]
+
+    order = models.OneToOneField("Order", on_delete=models.CASCADE, related_name="receipt_obj")
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="PENDING")
+
+    provider = models.CharField(max_length=32, default="EVOTOR_ATOL")
+    evotor_uuid = models.CharField(max_length=128, blank=True, null=True)
+    external_id = models.CharField(max_length=128, blank=True, null=True)
+
+    request_payload = models.JSONField(default=dict, blank=True)
+    response_payload = models.JSONField(default=dict, blank=True)
+
+    error_text = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Receipt({self.order.external_id}) {self.status}"
+
+
 class OrderScreenshot(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='screenshots')
     image = models.ImageField(upload_to='screenshots/%Y/%m/%d/', verbose_name="Скриншот")

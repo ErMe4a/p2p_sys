@@ -92,8 +92,12 @@
                 <label class="field-label">Тип налогообложения</label>
                 <select name="tax_type" class="form-select">
                     <option value="OCH" {% if user.tax_type == 'OCH' %}selected{% endif %}>OCH</option>
+                    
+                    <option value="OSNO" {% if user.tax_type == 'OSNO' %}selected{% endif %}>ОСНО</option>
+                    
                     <option value="USN_INCOME" {% if user.tax_type == 'USN_INCOME' %}selected{% endif %}>УСН доход</option>
                     <option value="USN_INCOME_OUTCOME" {% if user.tax_type == 'USN_INCOME_OUTCOME' %}selected{% endif %}>УСН доход-расход</option>
+                    <option value="PATENT" {% if user.tax_type == 'PATENT' %}selected{% endif %}>Патент</option>
                 </select>
             </div>
             <div class="col-md-6">
