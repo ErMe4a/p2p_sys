@@ -6,9 +6,17 @@ from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 
+from django.http import JsonResponse
+
+def health(request):
+    return JsonResponse({"status": "ok"})
+
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    
+    path("health", health),
+
     # При заходе на сайт (пустой путь) перекидываем на "Мои ордеры"
     path('', RedirectView.as_view(pattern_name='my_orders', permanent=False)),
     

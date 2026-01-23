@@ -1,19 +1,29 @@
-# Python
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-
-# Django
-db.sqlite3
-media/
-staticfiles/
-
-# Virtual Environment (ОБЯЗАТЕЛЬНО)
+*.egg-info/
+dist/
+build/
+.venv/
 venv/
-env/
-.env
 
-# IDE
+# django
+staticfiles/
+media/
+*.log
+
+# OS/IDE
+.DS_Store
 .idea/
 .vscode/
+*.swp
+
+# db dumps
+*.sql
