@@ -1003,16 +1003,23 @@ async function handleFormSubmission() {
             // Prepare order data (userId автоматически из JWT токена)
             // IMPORTANT: Keep orderId as string to preserve precision for large numbers
             const orderData = {
-                orderId: String(orderId), // Explicitly convert to string to prevent precision loss
+                orderId: String(orderId), 
                 details: { id: formData.bankId },
                 commission: formData.commission,
                 commissionType: formData.commissionType,
-                screenshotName: `${orderId}.png`, // Template literal keeps it as string
-                receipt: receiptValue,
+                screenshotName: `${orderId}.png`, 
+                
+                // === ВОТ ТУТ ИСПРАВЛЕНИЕ ===
+                // Передаем сам объект чека (данные)
+                receipt: receiptValue, 
+                // И ОБЯЗАТЕЛЬНО передаем статус галочки!
+                hasReceipt: formData.hasReceipt, 
+                // ==========================
+
                 createdAt: formData.createdAt,
                 type: formData.type,
-                exchangeType: EXCHANGE_TYPE_BYBIT // Bybit
-            };
+                exchangeType: EXCHANGE_TYPE_BYBIT 
+            }
         
         console.log('P2P Analytics: Order data prepared:', orderData);
         console.log('P2P Analytics: Receipt in orderData:', orderData.receipt);

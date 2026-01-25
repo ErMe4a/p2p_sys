@@ -4,31 +4,15 @@
 {% block content %}
 
 <style>
-    /* === ОСНОВНАЯ ЦВЕТОВАЯ СХЕМА === */
-    :root {
-        --bg-main: #0c0e16;       /* Фон страницы */
-        --bg-card: #161a25;       /* Фон карточек */
-        --input-bg: #0f111a;      /* Фон инпутов */
-        --border-color: #262c3d;  /* Цвет рамок */
-        --accent-blue: #3d5afe;   /* Акцентный синий */
-        --text-muted: #848e9c;    /* Серый текст */
-        --text-main: #eaecef;     /* Белый текст */
-        --success: #00c087;       /* Зеленый */
-        --danger: #f84960;        /* Красный */
-    }
-
-    body { background-color: var(--bg-main); color: var(--text-main); font-family: 'Inter', sans-serif; }
-
-    /* === ВКЛАДКИ === */
-    .nav-tabs-custom { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); }
-    .nav-tab { color: var(--text-muted); text-decoration: none; padding: 12px 16px; font-size: 14px; border-bottom: 2px solid transparent; transition: 0.2s; }
-    .nav-tab.active { color: var(--accent-blue); border-bottom-color: var(--accent-blue); font-weight: 600; }
+    /* ВАЖНО: Мы удалили :root и body отсюда, чтобы они наследовались из base.html.
+       Теперь цвета берутся из переменных темы.
+    */
 
     /* === КОНТЕЙНЕРЫ === */
     .form-section { background: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; }
     .table-container { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
 
-    /* === СТИЛИ ФОРМЫ (CLEAN STYLE) === */
+    /* === СТИЛИ ФОРМЫ === */
     .form-label {
         color: var(--text-muted);
         font-size: 12px;
@@ -37,9 +21,9 @@
     }
 
     .form-control, .form-select {
-        background-color: var(--input-bg) !important;
+        background-color: var(--bg-input) !important; /* Исправлено имя переменной */
         border: 1px solid var(--border-color) !important;
-        color: #fff !important;
+        color: var(--text-main) !important;
         font-size: 14px;
         border-radius: 6px;
         height: 42px; 
@@ -85,21 +69,23 @@
     .btn-create:hover { background-color: #304ffe; }
 
     /* Базовый стиль для кнопок в таблице */
-    .btn-action { background: #1e2330; border: 1px solid var(--border-color); color: #fff; font-size: 12px; padding: 4px 10px; border-radius: 4px; transition: 0.2s; cursor: pointer; }
-    .btn-action:hover { background: #2d3446; }
+    .btn-action { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); font-size: 12px; padding: 4px 10px; border-radius: 4px; transition: 0.2s; cursor: pointer; }
+    .btn-action:hover { background: var(--border-color); }
     .btn-delete { background: #3d2428; border: 1px solid #5a2d2d; color: #ff8080; }
     
     .status-buy { color: var(--success); font-weight: 600; }
     .status-sell { color: var(--danger); font-weight: 600; }
-    .badge-exchange { background: #2b3139; color: #929aa5; border: 1px solid #474d57; font-size: 11px; padding: 4px 8px; border-radius: 4px; }
+    .badge-exchange { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border-color); font-size: 11px; padding: 4px 8px; border-radius: 4px; }
 
     /* === МОДАЛКА === */
-    .modal-content { background: var(--bg-card); border: 1px solid var(--border-color); }
+    .modal-content { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); }
     .modal-header { border-bottom: 1px solid var(--border-color); }
     .modal-footer { border-top: none; }
-    .btn-close { filter: invert(1); }
+    /* Инверсия крестика только для темной темы */
+    [data-bs-theme="dark"] .btn-close { filter: invert(1); }
+    
     .btn-save-modal { background-color: var(--accent-blue); color: white; border-radius: 6px; border: none; font-weight: 600; }
-    .btn-cancel-modal { background-color: #2b3139; color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
+    .btn-cancel-modal { background-color: var(--bg-input); color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
 </style>
 
 <div class="form-section">
@@ -162,7 +148,7 @@
             <div class="col-md-2 pt-4"> 
                 <div class="d-flex gap-3 align-items-center h-100 ps-2">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkDocs">
+                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
                         <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
                     </div>
                     <div class="form-check">
@@ -230,13 +216,6 @@
                             Изм.
                         </button>
 
-                        <button type="button"
-                                class="btn-action"
-                                style="background:#182235; border-color:#2a3a66; color:#8da4ef;"
-                                onclick="openReceiptTestModal('{{ order.id }}')"
-                                title="Пробить тестовый чек на 1 рубль">
-                            Тест чек (1₽)
-                        </button>
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
                         
                         <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
@@ -320,66 +299,6 @@
     </div>
 </div>
 
-<div id="receiptTestModal" style="
-    display:none;
-    position:fixed; inset:0;
-    background:rgba(0,0,0,.55);
-    z-index:99999;">
-  <div style="
-      width:360px; max-width:92vw;
-      background:#161a25;
-      border:1px solid #262c3d;
-      border-radius:10px;
-      padding:14px;
-      position:absolute;
-      left:50%; top:50%;
-      transform:translate(-50%,-50%);
-      box-shadow:0 20px 60px rgba(0,0,0,.5);">
-    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
-      <div style="font-weight:700; color:#eaecef; font-size:14px;">
-        Тестовая пробивка чека
-      </div>
-      <button type="button" onclick="closeReceiptTestModal()" style="
-          background:transparent; border:none; color:#848e9c;
-          font-size:18px; cursor:pointer;">✕</button>
-    </div>
-
-    <div style="margin-top:10px; color:#848e9c; font-size:12px; line-height:1.4;">
-      Сумма: <b style="color:#eaecef;">1 ₽</b><br>
-      Назначение:
-    </div>
-
-    <input id="receiptTestPurpose" type="text" value="тестовый перевод" style="
-        width:100%;
-        margin-top:8px;
-        padding:10px 12px;
-        border-radius:8px;
-        border:1px solid #262c3d;
-        background:#0c0e16;
-        color:#eaecef;
-        outline:none;
-        box-sizing:border-box;">
-
-    <div id="receiptTestStatus" style="margin-top:10px; font-size:12px; color:#848e9c;"></div>
-
-    <div style="display:flex; gap:10px; margin-top:12px;">
-      <button type="button" onclick="closeReceiptTestModal()" style="
-          flex:1; background:#2b3139; border:none;
-          color:#eaecef; font-weight:700;
-          padding:10px 12px; border-radius:10px; cursor:pointer;">
-        Отмена
-      </button>
-
-      <button type="button" onclick="submitReceiptTest()" style="
-          flex:1; background:#f7a600; border:none;
-          color:#000; font-weight:800;
-          padding:10px 12px; border-radius:10px; cursor:pointer;">
-        Пробить (1₽)
-      </button>
-    </div>
-  </div>
-</div>
-
 <script>
     // Показ поля для файла при создании
     document.getElementById('checkScreen').addEventListener('change', function() {
@@ -417,71 +336,5 @@
         const fileInput = document.getElementById('file-input-' + orderId);
         if (fileInput) fileInput.click();
     }
-
-    // --- ЛОГИКА ТЕСТОВОГО ЧЕКА ---
-    let _receiptTestOrderId = null;
-
-    function openReceiptTestModal(orderId) {
-        _receiptTestOrderId = orderId;
-        document.getElementById('receiptTestPurpose').value = 'тестовый перевод';
-        const s = document.getElementById('receiptTestStatus');
-        s.textContent = '';
-        s.style.color = '#848e9c';
-        document.getElementById('receiptTestModal').style.display = 'block';
-        setTimeout(() => document.getElementById('receiptTestPurpose').focus(), 50);
-    }
-
-    function closeReceiptTestModal() {
-        document.getElementById('receiptTestModal').style.display = 'none';
-        _receiptTestOrderId = null;
-    }
-
-    function getCookie(name) {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) return parts.pop().split(';').shift();
-    }
-
-    async function submitReceiptTest() {
-        if (!_receiptTestOrderId) return;
-
-        const purpose = (document.getElementById('receiptTestPurpose').value || '').trim() || 'тестовый перевод';
-        const statusEl = document.getElementById('receiptTestStatus');
-        statusEl.style.color = '#848e9c';
-        statusEl.textContent = 'Отправляю чек...';
-
-        const csrf = getCookie('csrftoken');
-        const body = new URLSearchParams();
-        body.append('purpose', purpose);
-
-        try {
-            const resp = await fetch(`/orders/${_receiptTestOrderId}/receipt/test/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-                    'X-CSRFToken': csrf
-                },
-                body: body.toString()
-            });
-
-            const data = await resp.json();
-
-            if (data.ok) {
-                statusEl.style.color = '#52c41a';
-                statusEl.textContent = `Успех ✅ статус=${data.status || 'SENT'} ${data.evotorUuid ? '| uuid=' + data.evotorUuid : ''}`;
-            } else {
-                statusEl.style.color = '#f6465d';
-                statusEl.textContent = `Ошибка ❌ статус=${data.status || 'ERROR'}: ${data.error || 'unknown error'}`;
-            }
-        } catch (e) {
-            statusEl.style.color = '#f6465d';
-            statusEl.textContent = `Ошибка сети/сервера: ${e}`;
-        }
-    }
-
-    // закрытие по клику на фон
-    document.getElementById('receiptTestModal').addEventListener('click', (e) => {
-        if (e.target.id === 'receiptTestModal') closeReceiptTestModal();
-    });
 </script>
 {% endblock %}

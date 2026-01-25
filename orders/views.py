@@ -58,33 +58,6 @@ from .receipt_service import create_or_update_and_send_receipt
 
 
 
-@login_required
-@require_POST
-def receipt_test_send(request, order_id: int):
-    """
-    ТЕСТ: пробить чек на существующий ордер
-    - сумма всегда 1 рубль
-    - назначение берём из формы (purpose), по умолчанию 'тестовый перевод'
-    """
-    o = get_object_or_404(Order, id=order_id, user=request.user)
-
-    purpose = (request.POST.get("purpose") or "").strip() or "тестовый перевод"
-
-    receipt_data = {
-        "sum": "1",                 # принудительно 1 рубль
-        "purpose": purpose,         # попадет в item_name
-        "paymentMethod": "CARD",    # можешь заменить на CASH если нужно
-        "customerContact": request.user.email or "",
-    }
-
-    r = create_or_update_and_send_receipt(o, receipt_data)
-
-    return JsonResponse({
-        "ok": (r.status in ("SENT", "DONE")),
-        "status": r.status,
-        "error": r.error_text or "",
-        "evotorUuid": r.evotor_uuid or "",
-    })
 
 @login_required
 def my_orders_list(request):
@@ -98,15 +71,17 @@ def my_orders_list(request):
         # 1. Получаем название банка из формы
         bank_name = request.POST.get('details') 
         
-        # 2. Ищем этот банк в базе данных пользователя или создаем новый, если его нет
-        # Это превращает строку "Сбербанк" в объект, который понимает база данных
-        bank_instance, created = BankDetail.objects.get_or_create(
-            user=request.user,
-            name=bank_name
-        )
+        # 2. Ищем или создаем банк
+        bank_instance = None
+        if bank_name:
+            bank_instance, created = BankDetail.objects.get_or_create(
+                user=request.user,
+                name=bank_name,
+                defaults={'is_deleted': False}
+            )
 
-        # 3. Теперь создаем ордер, передавая готовый объект банка
-        Order.objects.create(
+        # 3. Создаем ордер (сохраняем результат в переменную order)
+        order = Order.objects.create(
             user=request.user,
             external_id=request.POST.get('external_id'),
             price=request.POST.get('price') or 0,
@@ -115,13 +90,34 @@ def my_orders_list(request):
             operation_type=request.POST.get('operation_type'),
             exchange_type=request.POST.get('exchange'),
             
-            # ВАЖНО: передаем объект, а не строку
             bank_detail=bank_instance, 
             
             commission=request.POST.get('commission_value') or 0,
             commission_type=request.POST.get('commission_type'),
+            
+            # Добавил сохранение скриншота, если он был загружен
+            screenshot=request.FILES.get('screenshot'),
+            
             created_at=order_date
         )
+
+        # 4. ЛОГИКА ЧЕКА (Эвотор)
+        # Проверяем, была ли нажата галочка в форме (name="need_receipt")
+        need_receipt = request.POST.get('need_receipt') == 'on'
+        
+        if need_receipt:
+            # Собираем дополнительные данные для чека (если нужно)
+            # В данном случае берем email пользователя как контакт, если он есть
+            receipt_data = {
+                "contact": request.user.email, 
+                "sum": order.cost  # Сумма чека равна стоимости ордера
+            }
+            
+            # Вызываем твой сервис. Он сформирует чек и отправит в Эвотор
+            # Функция теперь возвращает объект ReceiptResponse (не сохраняя в БД, как мы переделали ранее)
+            # Если нужно вывести ошибку пользователю, это можно обработать здесь, но пока просто отправляем.
+            create_or_update_and_send_receipt(order, receipt_data)
+
         return redirect('my_orders')
 
     orders = Order.objects.filter(user=request.user).order_by('-created_at')

@@ -5,8 +5,8 @@
         /* ИЗМЕНЕНО: Было 900px, ставим 100%, чтобы заполнить весь контейнер из base.html */
         max-width: 100%; 
         margin: 20px auto;
-        background: var(--bg-card);
-        border: 1px solid var(--border);
+        background: var(--bg-card); /* Переменная темы */
+        border: 1px solid var(--border-color); /* Переменная темы */
         border-radius: 12px;
         padding: 30px;
     }
@@ -16,7 +16,7 @@
         display: flex;
         align-items: center;
         text-align: center;
-        color: var(--text-muted);
+        color: var(--text-muted); /* Переменная темы */
         font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -25,14 +25,14 @@
     .section-divider::before, .section-divider::after {
         content: '';
         flex: 1;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border-color); /* Переменная темы */
     }
     .section-divider:not(:empty)::before { margin-right: 15px; }
     .section-divider:not(:empty)::after { margin-left: 15px; }
 
     .field-label {
         font-size: 0.8rem;
-        color: #fff;
+        color: var(--text-muted); /* БЫЛО #fff -> СТАЛО var(--text-muted) для поддержки светлой темы */
         margin-bottom: 6px;
         display: block;
     }
@@ -41,23 +41,40 @@
         height: 42px;
         font-size: 0.9rem;
         margin-bottom: 15px;
+        background-color: var(--bg-input) !important; /* Переменная темы */
+        border: 1px solid var(--border-color) !important; /* Переменная темы */
+        color: var(--text-main) !important; /* Переменная темы */
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--accent-blue) !important;
+        box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
     }
 
     .btn-save {
-        background: #2b344d;
-        border: 1px solid #3d6eff;
-        color: #fff;
+        background: var(--bg-input); /* Фон кнопки подстраивается под тему */
+        border: 1px solid var(--accent-blue);
+        color: var(--text-main);
         padding: 8px 25px;
         border-radius: 6px;
         font-size: 0.85rem;
         transition: 0.3s;
+        font-weight: 500;
     }
-    .btn-save:hover { background: #3d6eff; }
+    /* В светлой теме делаем текст кнопки синим для акцента */
+    [data-bs-theme="light"] .btn-save {
+        color: var(--accent-blue);
+    }
+    
+    .btn-save:hover { 
+        background: var(--accent-blue); 
+        color: #fff !important; /* При наведении текст всегда белый */
+    }
     
     .footer-link {
         text-align: center;
         font-size: 0.75rem;
-        color: #4b526d;
+        color: var(--text-muted); /* Переменная темы */
         margin-top: 20px;
     }
 </style>
