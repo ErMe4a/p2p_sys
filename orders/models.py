@@ -21,12 +21,17 @@ class User(AbstractUser):
         return self.username
 
 class BankDetail(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='bank_details')
-    name = models.CharField(max_length=255, verbose_name="Название счета")
+    # Убрали поле user. Теперь этот список общий для всей системы.
+    name = models.CharField(max_length=255, verbose_name="Название банка")
+    
+    # Можно оставить is_deleted на случай, если какой-то банк закроется, 
+    # чтобы не удалять его из старых ордеров, а просто скрыть.
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
 
     def __str__(self):
-        return f"{self.name} ({self.user.username})"
+        return self.name
+    
+
 
 class Order(models.Model):
     OPERATION_CHOICES = [('BUY', 'Покупка'), ('SELL', 'Продажа')]

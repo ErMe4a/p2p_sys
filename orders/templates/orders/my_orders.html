@@ -127,7 +127,7 @@
             <div class="col-md-3">
                 <select class="form-select" name="details">
                     <option selected disabled value="">Выберите банк...</option>
-                    {% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}
+                    {% for bank in default_banks %}<option value="{{ bank.id }}">{{ bank.name }}</option>{% endfor %}
                 </select>
             </div>
             

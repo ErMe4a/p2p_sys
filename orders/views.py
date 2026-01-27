@@ -61,24 +61,21 @@ from .receipt_service import create_or_update_and_send_receipt
 
 @login_required
 def my_orders_list(request):
-    default_banks = ['Тинькофф', 'Сбербанк', 'Альфа-Банк', 'ВТБ']
+    # ТЕПЕРЬ: Грузим глобальный список банков из базы, а не хардкодом
+    default_banks = BankDetail.objects.filter(is_deleted=False).order_by('id')
     
     # ЛОГИКА СОЗДАНИЯ
     if request.method == 'POST' and 'create_order' in request.POST:
         raw_date = request.POST.get('created_at')
         order_date = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M') if raw_date else timezone.now()
 
-        # 1. Получаем название банка из формы
-        bank_name = request.POST.get('details') 
+        # 1. Получаем ID банка из формы (value в select должно быть ID)
+        bank_id = request.POST.get('details') 
         
-        # 2. Ищем или создаем банк
+        # 2. Просто находим этот банк по ID. Никакого создания.
         bank_instance = None
-        if bank_name:
-            bank_instance, created = BankDetail.objects.get_or_create(
-                user=request.user,
-                name=bank_name,
-                defaults={'is_deleted': False}
-            )
+        if bank_id:
+            bank_instance = BankDetail.objects.filter(id=bank_id, is_deleted=False).first()
 
         # 3. Создаем ордер (сохраняем результат в переменную order)
         order = Order.objects.create(
@@ -90,7 +87,7 @@ def my_orders_list(request):
             operation_type=request.POST.get('operation_type'),
             exchange_type=request.POST.get('exchange'),
             
-            bank_detail=bank_instance, 
+            bank_detail=bank_instance, # Привязываем найденный банк
             
             commission=request.POST.get('commission_value') or 0,
             commission_type=request.POST.get('commission_type'),
@@ -114,8 +111,6 @@ def my_orders_list(request):
             }
             
             # Вызываем твой сервис. Он сформирует чек и отправит в Эвотор
-            # Функция теперь возвращает объект ReceiptResponse (не сохраняя в БД, как мы переделали ранее)
-            # Если нужно вывести ошибку пользователю, это можно обработать здесь, но пока просто отправляем.
             create_or_update_and_send_receipt(order, receipt_data)
 
         return redirect('my_orders')
@@ -125,7 +120,7 @@ def my_orders_list(request):
     
     return render(request, 'orders/my_orders.html', {
         'orders': orders,
-        'default_banks': default_banks,
+        'default_banks': default_banks, # Передаем объекты (id, name) в шаблон
         'current_time': current_time
     })
 

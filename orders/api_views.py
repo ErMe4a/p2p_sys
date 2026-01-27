@@ -94,26 +94,21 @@ def users_me(request):
 @permission_classes([IsAuthenticated])
 def details(request):
     if request.method == "GET":
-        qs = BankDetail.objects.filter(user=request.user, is_deleted=False).order_by("id")
+        # ИЗМЕНЕНИЕ: Отдаем все активные банки (общий список)
+        # Убрали фильтр user=request.user
+        qs = BankDetail.objects.filter(is_deleted=False).order_by("id")
         return Response([{"id": d.id, "name": d.name} for d in qs])
 
-    name = (request.data.get("name") or "").strip()
-    if not name:
-        return Response({"message": "name is required"}, status=400)
-
-    d = BankDetail.objects.create(user=request.user, name=name)
-    return Response({"id": d.id, "name": d.name})
+    # ИЗМЕНЕНИЕ: Запрещаем создание новых банков через API
+    return Response({"message": "Creating banks is disabled via API"}, status=403)
 
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def details_delete(request, pk: int):
-    d = BankDetail.objects.filter(pk=pk, user=request.user).first()
-    if not d:
-        return Response({"message": "not found"}, status=404)
-    d.is_deleted = True
-    d.save()
-    return Response({"success": True})
+    # Удаление тоже можно запретить или оставить только для админов, 
+    # но пока оставим логику "не нашел - 404", так как у юзера нет своих банков
+    return Response({"message": "Deletion disabled"}, status=403)
 
 
 # ---------- ORDER ----------
@@ -173,13 +168,18 @@ def order(request):
     if "createdAt" in data:
         created_at = parse_datetime(data.get("createdAt"))
 
-    # Обработка банка
+    # ИЗМЕНЕНИЕ: Обработка банка ТОЛЬКО по ID
     bank = None
     details_obj = data.get("details")
+    
     if isinstance(details_obj, dict):
         bank_id = details_obj.get("id")
         if bank_id:
-            bank = BankDetail.objects.filter(id=bank_id, user=request.user, is_deleted=False).first()
+            # Ищем банк по ID в общем списке
+            bank = BankDetail.objects.filter(id=bank_id, is_deleted=False).first()
+    # На случай если придет просто ID числом
+    elif isinstance(details_obj, int):
+        bank = BankDetail.objects.filter(id=details_obj, is_deleted=False).first()
 
     # --- ПОДГОТОВКА ДАННЫХ ЧЕКА И ЦИФР ---
     # Получаем словарь чека с фронта. В нем лежит ключ 'contact' - это ПОКУПАТЕЛЬ.
@@ -209,7 +209,7 @@ def order(request):
     o.operation_type = op_type
     o.commission = commission
     o.commission_type = commission_type
-    o.bank_detail = bank
+    o.bank_detail = bank # Привязываем найденный общий банк
     
     if created_at: o.created_at = created_at
     if "screenshotName" in data: o.screenshot_name = data.get("screenshotName")
@@ -276,6 +276,7 @@ def order_my(request):
             "commission": str(getattr(o, "commission", 0)),
             "commissionType": getattr(o, "commission_type", "PERCENT"),
             "createdAt": o.created_at.isoformat() if getattr(o, "created_at", None) else None,
+            # Если банк удален, name может упасть, добавил защиту
             "details": {"name": o.bank_detail.name} if getattr(o, "bank_detail", None) else None,
             "price": str(getattr(o, "price", 0)),
             "amount": str(getattr(o, "cost", 0)),     
