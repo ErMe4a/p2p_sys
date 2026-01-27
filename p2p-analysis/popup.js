@@ -1,5 +1,5 @@
 // API endpoint
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://mininp2p.ru';
 // Safe guards for extension context
 function isExtensionContextValid() {
     try {
@@ -227,7 +227,7 @@ async function makeAuthenticatedRequest(url, options = {}) {
     const headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${authData.token}`,
+        'Authorization': `${authData.tokenType} ${authData.token}`,
         ...options.headers
     };
     

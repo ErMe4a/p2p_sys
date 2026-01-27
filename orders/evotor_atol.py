@@ -32,6 +32,7 @@ def evotor_get_token(login: str, password: str) -> str:
 def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -> dict:
     """
     Сборка тела запроса согласно схеме v5 ФФД 1.2
+    Исправлена логика формирования позиций (Цена x Количество)
     """
     
     # 1. Дата
@@ -57,37 +58,14 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         client_obj["phone"] = clean_phone
         client_obj["email"] = None
 
-    # 4. Данные компании (ИСПРАВЛЕННАЯ ЛОГИКА СНО)
-    # Получаем значение из базы, превращаем в строку, убираем пробелы и делаем маленькими буквами
+    # 4. Данные компании (СНО)
     raw_tax_from_db = str(getattr(user, "tax_type", "")).strip().lower()
-    
-    print(f"\n>>> DEBUG TAX: В базе лежит: '{raw_tax_from_db}' <<<\n")
-
     tax_map = {
-        # === ОБЩАЯ СИСТЕМА (osn) ===
-        "osn": "osn",
-        "och": "osn",       # Для вашего старого значения 'OCH'
-        "осн": "osn", 
-        "osno": "osn",      # <--- ДЛЯ НОВОГО ЗНАЧЕНИЯ 'OSNO'
-        "осно": "osn",      # На случай кириллицы
-        "общая": "osn",
-
-        # === УСН Доходы (usn_income) ===
-        "usn_income": "usn_income",
-        "usn доход": "usn_income",
-        "усн доход": "usn_income",
-        
-        # === УСН Доходы-Расходы (usn_income_outcome) ===
-        "usn_income_outcome": "usn_income_outcome",
-        "usn доход-расход": "usn_income_outcome",
-        "усн доход-расход": "usn_income_outcome",
-        
-        # === ПАТЕНТ (patent) ===
-        "patent": "patent",
-        "патент": "patent"
+        "osn": "osn", "och": "osn", "осн": "osn", "osno": "osn", "осно": "osn", "общая": "osn",
+        "usn_income": "usn_income", "usn доход": "usn_income", "усн доход": "usn_income",
+        "usn_income_outcome": "usn_income_outcome", "usn доход-расход": "usn_income_outcome", "усн доход-расход": "usn_income_outcome",
+        "patent": "patent", "патент": "patent"
     }
-    
-    # Берем значение из карты, если нет — ставим 'osn' (раз у вас ОСНО)
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
     company_obj = {
@@ -97,29 +75,62 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         "payment_address": getattr(user, "payment_address", "") or "https://mysite.com"
     }
 
-    # 5. Суммы
+    # 5. Подготовка цифр (Цена, Кол-во, Сумма)
     def to_float(val):
         try: return float(val)
-        except: return 1.0
+        except: return 0.0
 
-    raw_sum = receipt_data.get("sum") or order.cost
-    total_sum = to_float(raw_sum)
-    if total_sum <= 0: total_sum = 1.0 
-
-    # 6. Позиции
-    item_name = (receipt_data.get("purpose") or f"Order {order.external_id}")[:128]
+    # Пытаемся достать детальные данные из receipt_data (пришли с фронта)
+    # Если их нет, берем из order (базы)
     
+    quantity = to_float(receipt_data.get("amount") or getattr(order, "amount", 0)) # Количество (шт)
+    price = to_float(receipt_data.get("price") or getattr(order, "price", 0))      # Цена за единицу
+    total_sum = to_float(receipt_data.get("sum") or getattr(order, "cost", 0))     # Итоговая сумма
+
+    # Защита от нулевых значений (если вдруг данных нет, ставим заглушки чтобы чек не упал)
+    if total_sum <= 0: total_sum = 1.0
+    
+    # ЛОГИКА ВАЛИДАЦИИ МАТЕМАТИКИ
+    # Эвотор очень строг: Price * Quantity должно быть равно Sum (с погрешностью копеек)
+    # Если данных о кол-ве нет, делаем "1 шт * Сумма"
+    if quantity <= 0 or price <= 0:
+        quantity = 1.0
+        price = total_sum
+    else:
+        # Если есть и цена и кол-во, проверяем сходится ли математика.
+        # Часто бывает: 56.54 * 82.98 = 4691.6892, а сумма 4691.69.
+        # Лучше довериться Сумме и Количеству, а Цену пересчитать под них, 
+        # так как Сумма - это то, что реально списали с карты.
+        price = round(total_sum / quantity, 2) 
+        # Или оставляем как есть, но рискуем получить ошибку валидации от АТОЛ
+
+    # 6. Позиции (Items)
+    # Формируем красивое название, как вы просили
+    # Пытаемся найти валюту в ордере, если нет - просто "Цифровая валюта"
+    currency_name = getattr(order, "currency", "USDT") # Можно заменить на 'USDT' если у вас всегда тезер
+    
+    # Если пользователь ввел свое назначение платежа - используем его, иначе шаблон
+    custom_purpose = receipt_data.get("purpose")
+    if custom_purpose:
+        item_name = custom_purpose[:128]
+    else:
+        item_name = f"Цифровая валюта {currency_name}"
+
     items_obj = [
         {
             "name": item_name,
-            "price": total_sum,
-            "quantity": 1.0,
-            "measure": 0,          
-            "sum": total_sum,      
+            "price": price,          # Цена за единицу (например 82.98)
+            "quantity": quantity,    # Количество (например 56.54)
+            "measure": 0,            # 0 - это штуки/единицы (по ФФД)
+            "sum": total_sum,        # Итоговая сумма позиции (например 4691.69)
+            
             "payment_method": "full_payment",
-            "payment_object": 4,   
+            
+            # ВАЖНО: Меняем 4 (Услуга) на 1 (Товар), как вы просили
+            "payment_object": 1,     # 1 = Товар, 4 = Услуга, 10 = Платеж
+            
             "vat": {
-                "type": "none"     
+                "type": "none"       # Без НДС
             }
         }
     ]

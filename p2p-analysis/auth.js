@@ -1,7 +1,7 @@
 // Authentication helper functions for content script
 
 // API endpoint
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://mininp2p.ru';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -516,5 +516,5 @@ window.P2PAuth = {
     uploadScreenshot,
     getScreenshot,
     createBankDetail,
-    API_BASE_URL
+    API_BASE_URL,
 }; 

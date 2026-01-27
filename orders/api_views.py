@@ -8,22 +8,18 @@ from rest_framework import status
 from rest_framework.authtoken.models import Token
 
 from .models import BankDetail, Order
-
 from .receipt_service import should_make_receipt, create_or_update_and_send_receipt
 
 # --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
 
-# Из ID расширения -> в строку для вашей БД
 EXCHANGE_ID_TO_NAME = {
     1: "Bybit",
     2: "HTX",
     3: "MEXC"
 }
 
-# Из строки БД -> в ID для расширения
 EXCHANGE_NAME_TO_ID = {
-    "Bybit": 1,
-    "BYBIT": 1,
+    "Bybit": 1, "BYBIT": 1,
     "HTX": 2,
     "MEXC": 3
 }
@@ -131,7 +127,6 @@ def order(request):
     # === GET: Поиск конкретного ордера ===
     if request.method == "GET":
         order_id = (request.query_params.get("id") or "").strip()
-        # Переводим число из запроса в имя для поиска в БД
         exchange_name = get_exchange_name(request.query_params.get("exchangeType", 1))
 
         if not order_id:
@@ -149,7 +144,7 @@ def order(request):
         return Response({
             "id": o.id,
             "orderId": o.external_id,
-            "exchangeType": get_exchange_id(o.exchange_type), # Возвращаем число 1, 2 или 3
+            "exchangeType": get_exchange_id(o.exchange_type), 
             "type": o.operation_type,
             "commission": str(getattr(o, "commission", 0)),
             "commissionType": getattr(o, "commission_type", "PERCENT"),
@@ -158,6 +153,7 @@ def order(request):
             "price": str(getattr(o, "price", 0)),
             "amount": str(getattr(o, "cost", 0)),     # Фиат
             "quantity": str(getattr(o, "amount", 0)), # Крипта
+            "receipt": o.receipt
         })
 
     # === POST: Сохранение ордера ===
@@ -167,7 +163,6 @@ def order(request):
     if not external_id:
         return Response({"message": "orderId required"}, status=400)
 
-    # Переводим число из расширения в слово для вашей модели
     exchange_name = get_exchange_name(data.get("exchangeType", 1))
     
     op_type = data.get("type", "BUY")
@@ -186,22 +181,25 @@ def order(request):
         if bank_id:
             bank = BankDetail.objects.filter(id=bank_id, user=request.user, is_deleted=False).first()
 
-    # --- ИЗВЛЕЧЕНИЕ ДАННЫХ ИЗ RECEIPT ---
+    # --- ПОДГОТОВКА ДАННЫХ ЧЕКА И ЦИФР ---
+    # Получаем словарь чека с фронта. В нем лежит ключ 'contact' - это ПОКУПАТЕЛЬ.
+    receipt_data_raw = data.get("receipt")
+    receipt_dict = receipt_data_raw if isinstance(receipt_data_raw, dict) else {}
+
+    # Получаем цифры: приоритет у корня JSON, запасной вариант - данные из чека
     price = data.get("price")
     quantity = data.get("quantity") # Крипта
     cost = data.get("amount")       # Фиат
 
-    receipt_data = data.get("receipt")
-    if isinstance(receipt_data, dict):
-        if not price: price = receipt_data.get("price")
-        if not quantity: quantity = receipt_data.get("amount")
-        if not cost: cost = receipt_data.get("sum")
+    if not price: price = receipt_dict.get("price")
+    if not quantity: quantity = receipt_dict.get("amount")
+    if not cost: cost = receipt_dict.get("sum")
 
     # Сохранение (update_or_create)
     o, created = Order.objects.update_or_create(
-        user=request.user,
+        user=request.user, # ВАЖНО: Order привязывается к текущему юзеру (ОТПРАВИТЕЛЮ)
         external_id=external_id,
-        exchange_type=exchange_name, # Запишется "Bybit", "HTX" или "MEXC"
+        exchange_type=exchange_name, 
         defaults={
             "operation_type": op_type
         },
@@ -223,9 +221,13 @@ def order(request):
 
     o.save()
     
+    # --- ЛОГИКА ОТПРАВКИ ЧЕКА ---
     receipt_debug = None
     if should_make_receipt(data):
-        receipt_debug = create_or_update_and_send_receipt(o, data.get("receipt") if isinstance(data.get("receipt"), dict) else {})
+        # В функцию передаем:
+        # 1. Объект order (в нем order.user - это ВЫ, отправитель)
+        # 2. Словарь receipt_dict (в нем receipt_dict['contact'] - это ПОКУПАТЕЛЬ с расширения)
+        receipt_debug = create_or_update_and_send_receipt(o, receipt_dict)
     
     return Response({
         "success": True,
@@ -237,8 +239,6 @@ def order(request):
             "evotorUuid": getattr(receipt_debug, "evotor_uuid", None),
         } if receipt_debug else {"enabled": False}
     })
-    
-    return Response({"success": True, "id": o.id})
 
 
 @api_view(["DELETE"])
@@ -254,9 +254,7 @@ def order_delete(request, order_id: str):
     if not o:
         return Response({"message": "not found"}, status=404)
     
-    # --- НОВОЕ: Удаление скриншота с диска при удалении ордера ---
     if o.screenshot:
-        # delete(save=False) удаляет файл с диска
         o.screenshot.delete(save=False)
         
     o.delete()
@@ -273,15 +271,15 @@ def order_my(request):
         out.append({
             "id": o.id,
             "orderId": o.external_id,
-            "exchangeType": get_exchange_id(o.exchange_type), # Обратно в число для фронта
+            "exchangeType": get_exchange_id(o.exchange_type),
             "type": o.operation_type,
             "commission": str(getattr(o, "commission", 0)),
             "commissionType": getattr(o, "commission_type", "PERCENT"),
             "createdAt": o.created_at.isoformat() if getattr(o, "created_at", None) else None,
             "details": {"name": o.bank_detail.name} if getattr(o, "bank_detail", None) else None,
             "price": str(getattr(o, "price", 0)),
-            "amount": str(getattr(o, "cost", 0)),     # Сумма
-            "quantity": str(getattr(o, "amount", 0)), # Крипта
+            "amount": str(getattr(o, "cost", 0)),     
+            "quantity": str(getattr(o, "amount", 0)), 
         })
     return Response(out)
 
@@ -321,10 +319,8 @@ def order_screenshot(request):
         if not file or not name:
             return Response({"message": "file and name required"}, status=400)
 
-        # 1. Получаем чистый ID ордера (без расширения)
         order_key = name.rsplit(".", 1)[0]
         
-        # 2. Ищем ордер
         o = Order.objects.filter(user=request.user, external_id=order_key).order_by("-id").first()
         
         if not o: 
@@ -332,22 +328,16 @@ def order_screenshot(request):
         if not hasattr(o, "screenshot"): 
             return Response({"message": "No screenshot field"}, status=500)
 
-        # 3. ПРИНУДИТЕЛЬНОЕ ПЕРЕИМЕНОВАНИЕ В .PNG
-        # Устанавливаем имя файла как {external_id}.png
         file.name = f"{order_key}.png"
 
-        # 4. ЗАМЕНА СТАРОГО ФАЙЛА
-        # Если файл уже существует, удаляем его, чтобы Django не добавлял случайный суффикс
         if o.screenshot:
             o.screenshot.delete(save=False)
 
-        # 5. Сохраняем новый файл
         o.screenshot = file
         o.save()
         
         return Response({"success": True, "name": file.name})
 
-    # GET логика (выдача скриншота)
     if request.method == "GET":
         name = (request.query_params.get("name") or "").strip()
         if not name: 
@@ -359,7 +349,6 @@ def order_screenshot(request):
         if not o or not getattr(o, "screenshot", None): 
             raise Http404("not found")
 
-        # Возвращаем файл как png
         try:
             return FileResponse(o.screenshot.open("rb"), content_type="image/png")
         except FileNotFoundError:

@@ -45,59 +45,76 @@ def get_evotor_operation_type(order: Order) -> str:
         return 'buy'   # Расход
     return 'sell'
 
+# receipt_service.py
+
 def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptResponse:
     """
-    Отправка чека в Эвотор БЕЗ сохранения в БД.
-    Возвращает объект ReceiptResponse с результатами.
+    Отправка чека в Эвотор И СОХРАНЕНИЕ результата в БД.
     """
     user = order.user
 
-    # 1. Валидация реквизитов пользователя
+    # 1. Если чек уже есть в базе, не бьем повторно (защита)
+    if order.receipt and order.receipt.get("uuid"):
+         return ReceiptResponse(
+            status="SENT", 
+            evotor_uuid=order.receipt.get("uuid"),
+            error_text=""
+        )
+
+    # 2. Валидация реквизитов
     required_fields = [
         user.evotor_login, user.evotor_password, 
         user.kkt_id, user.inn, user.payment_address
     ]
     
     if not all(required_fields):
-        return ReceiptResponse(
-            status="ERROR", 
-            error_text="Не заполнены настройки Эвотор (Логин, Пароль, ККТ, ИНН, Адрес)"
-        )
+        return ReceiptResponse(status="ERROR", error_text="Не заполнены настройки Эвотор")
 
     try:
-        # 2. Авторизация (получаем токен)
+        # 3. Авторизация
         token = evotor_get_token(user.evotor_login, user.evotor_password)
 
-        # 3. Определяем тип операции (sell/buy)
+        # 4. Операция
         operation_type = get_evotor_operation_type(order)
 
-        # 4. Собираем JSON
-        payload = build_receipt_payload_v5(
-            order=order,
-            user=user,
-            receipt_data=receipt_data or {},
-            check_type=operation_type
-        )
+        # 5. Сборка JSON
+        payload = build_receipt_payload_v5(order, user, receipt_data or {}, operation_type)
 
-        # 5. Отправка запроса в Эвотор
+        # 6. Отправка
         response_data = evotor_register_receipt(
             token=token,
             group_code=user.kkt_id,
             operation=operation_type,
             payload=payload
         )
+        
+        evotor_uuid = response_data.get("uuid")
 
-        # 6. Успех
+        # === ГЛАВНОЕ ИЗМЕНЕНИЕ: СОХРАНЯЕМ В БАЗУ ===
+        # Сохраняем не только статус, но и данные, чтобы потом показать их в readonly полях
+        saved_receipt_data = {
+            "uuid": evotor_uuid,
+            "status": "SENT",
+            "timestamp": payload.get("timestamp"),
+            # Сохраняем то, что ввел пользователь, чтобы потом отобразить в серых полях
+            "contact": receipt_data.get("contact"),
+            "price": receipt_data.get("price"),
+            "amount": receipt_data.get("amount"),
+            "sum": receipt_data.get("sum"),
+        }
+        
+        order.receipt = saved_receipt_data
+        order.save(update_fields=["receipt"])
+        # ===========================================
+
         return ReceiptResponse(
             status="SENT", 
-            evotor_uuid=response_data.get("uuid"),
+            evotor_uuid=evotor_uuid,
             error_text=""
         )
 
     except EvotorAtolError as e:
-        # Ошибка логики (неверный токен, валидация JSON)
         return ReceiptResponse(status="ERROR", error_text=str(e))
         
     except Exception as e:
-        # Непредвиденная ошибка системы
         return ReceiptResponse(status="ERROR", error_text=f"System Error: {str(e)}")

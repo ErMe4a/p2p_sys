@@ -1003,23 +1003,16 @@ async function handleFormSubmission() {
             // Prepare order data (userId автоматически из JWT токена)
             // IMPORTANT: Keep orderId as string to preserve precision for large numbers
             const orderData = {
-                orderId: String(orderId), 
+                orderId: String(orderId), // Explicitly convert to string to prevent precision loss
                 details: { id: formData.bankId },
                 commission: formData.commission,
                 commissionType: formData.commissionType,
-                screenshotName: `${orderId}.png`, 
-                
-                // === ВОТ ТУТ ИСПРАВЛЕНИЕ ===
-                // Передаем сам объект чека (данные)
-                receipt: receiptValue, 
-                // И ОБЯЗАТЕЛЬНО передаем статус галочки!
-                hasReceipt: formData.hasReceipt, 
-                // ==========================
-
+                screenshotName: `${orderId}.png`, // Template literal keeps it as string
+                receipt: receiptValue,
                 createdAt: formData.createdAt,
                 type: formData.type,
-                exchangeType: EXCHANGE_TYPE_BYBIT 
-            }
+                exchangeType: EXCHANGE_TYPE_BYBIT // Bybit
+            };
         
         console.log('P2P Analytics: Order data prepared:', orderData);
         console.log('P2P Analytics: Receipt in orderData:', orderData.receipt);
@@ -1814,39 +1807,55 @@ function createCheckContent() {
             
             // Show receipt data in readonly inputs
             conditionalInputs.style.display = 'block';
+
+            // --- ИЗМЕНЕНИЕ: Делаем блок визуально серым и неактивным ---
+            conditionalInputs.style.opacity = '0.7';
+            conditionalInputs.style.pointerEvents = 'none'; // Блокируем клики
+            conditionalInputs.style.filter = 'grayscale(100%)';
             
             const receipt = orderResult.data.receipt;
             
+            // --- ИЗМЕНЕНИЕ: Строгая стилизация полей (Темный фон) ---
+            const lockStyle = (input) => {
+                input.style.backgroundColor = '#333'; 
+                input.style.color = '#aaa'; 
+                input.style.border = '1px solid #444';
+            };
+
             // Fill and disable contact input
-            if (contactInput && receipt.contact) {
-                contactInput.value = receipt.contact;
+            if (contactInput) {
+                contactInput.value = receipt.contact || ''; // Берем строго из базы
                 contactInput.readOnly = true;
                 contactInput.disabled = true;
                 contactInput.classList.add('p2p-analytics-input-readonly');
+                lockStyle(contactInput);
             }
             
             // Fill and disable rate input
-            if (rateInput && receipt.price !== null && receipt.price !== undefined) {
-                rateInput.value = receipt.price;
+            if (rateInput) {
+                rateInput.value = (receipt.price !== null && receipt.price !== undefined) ? receipt.price : '';
                 rateInput.readOnly = true;
                 rateInput.disabled = true;
                 rateInput.classList.add('p2p-analytics-input-readonly');
+                lockStyle(rateInput);
             }
             
             // Fill and disable quantity input
-            if (quantityInput && receipt.amount !== null && receipt.amount !== undefined) {
-                quantityInput.value = receipt.amount;
+            if (quantityInput) {
+                quantityInput.value = (receipt.amount !== null && receipt.amount !== undefined) ? receipt.amount : '';
                 quantityInput.readOnly = true;
                 quantityInput.disabled = true;
                 quantityInput.classList.add('p2p-analytics-input-readonly');
+                lockStyle(quantityInput);
             }
             
             // Fill and disable cost input
-            if (costInput && receipt.sum !== null && receipt.sum !== undefined) {
-                costInput.value = receipt.sum;
+            if (costInput) {
+                costInput.value = (receipt.sum !== null && receipt.sum !== undefined) ? receipt.sum : '';
                 costInput.readOnly = true;
                 costInput.disabled = true;
                 costInput.classList.add('p2p-analytics-input-readonly');
+                lockStyle(costInput);
             }
             
             console.log('P2P Analytics: Receipt already exists for this order, showing readonly data');
@@ -1894,7 +1903,6 @@ function createCheckContent() {
             }
             
             // Fill price, quantity, and cost with retry mechanism
-            // This handles SPA pages where data might not be loaded immediately
             waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
         }
     });

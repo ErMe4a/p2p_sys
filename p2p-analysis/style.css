@@ -1221,19 +1221,9 @@ html[theme="dark"] .p2p-analytics-widget-content::-webkit-scrollbar-thumb {
 }
 
 /* 7. ПРЯЧЕМ ЛИШНЕЕ */
+/* Скрываем заголовок "P2P Analytics" и кнопку сворачивания, 
+   чтобы виджет начинался сразу с контента (кнопки "Отправить") */
 .p2p-analytics-widget.embedded-mode .p2p-analytics-widget-toggle,
-.p2p-analytics-widget.embedded-mode .p2p-analytics-widget-header svg,
-.p2p-analytics-widget.embedded-mode .p2p-analytics-checkbox-wrapper {
-    display: none !important; /* Прячем галочку "Данные чека", так как они теперь видны всегда */
-}
-
-/* Заголовок "P2P Analytics" */
 .p2p-analytics-widget.embedded-mode .p2p-analytics-widget-header {
-    padding-bottom: 10px !important;
-    margin-bottom: 15px !important;
-    border-bottom: 1px solid var(--bds-gray-ele-line, #2b313f) !important;
-    background: transparent !important;
-    color: var(--bds-brand-700-normal, #f7a600) !important;
-    cursor: default !important;
-    padding-top: 0 !important;
+    display: none !important;
 }
