@@ -106,7 +106,7 @@ LOGOUT_REDIRECT_URL = 'login'
 # Internationalization
 # ------------------------------------------------------------------------------
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = env('TIME_ZONE', default='UTC')
+TIME_ZONE ='Europe/Moscow'
 USE_I18N = True
 USE_TZ = True
 

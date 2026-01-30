@@ -317,7 +317,7 @@ def order_by_string_id(request):
         "type": o.operation_type,
         "commission": str(getattr(o, "commission", 0)),
         "commissionType": getattr(o, "commission_type", "PERCENT"),
-        "receipt": receipt_data  
+        "receipt": receipt_data
     })
 
 

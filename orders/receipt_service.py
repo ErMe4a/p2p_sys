@@ -121,3 +121,4 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
     except Exception as e:
         logger.error(f"SYSTEM ERROR: {str(e)}")
         return ReceiptResponse(status="ERROR", error_text=f"System Error: {str(e)}")
+
