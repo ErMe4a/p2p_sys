@@ -135,6 +135,10 @@ def order(request):
 
         if not o:
             return Response({"message": "not found"}, status=404)
+        
+        receipt_data = None
+        if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
+            receipt_data = o.receipt
 
         return Response({
             "id": o.id,
@@ -148,7 +152,7 @@ def order(request):
             "price": str(getattr(o, "price", 0)),
             "amount": str(getattr(o, "cost", 0)),     # Фиат
             "quantity": str(getattr(o, "amount", 0)), # Крипта
-            "receipt": o.receipt
+            "receipt": receipt_data
         })
 
     # === POST: Сохранение ордера ===
