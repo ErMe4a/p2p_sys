@@ -43,7 +43,6 @@ User = get_user_model()
 from django.core.paginator import Paginator
 from django.contrib.auth import get_user_model
 from django.db.models import Q
-from .service_for_stat_24 import get_orders_parallel
 
 from .receipt_service import create_or_update_and_send_receipt
 from django.views.decorators.http import require_POST
@@ -53,6 +52,9 @@ from django.contrib.auth.decorators import login_required
 
 from .models import Order
 from .receipt_service import create_or_update_and_send_receipt
+from .bybit_service import get_orders_parallel as get_bybit_orders
+# Импортируем MEXC
+from .mexc_service import get_mexc_orders_parallel
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
@@ -131,14 +133,18 @@ def edit_order(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
     
     if request.method == 'POST':
-        # 1. Получаем название банка из формы (например, "ВТБ")
-        bank_name = request.POST.get('details')
+        # 1. Получаем название банка из формы
+        details_name = request.POST.get('details')
         
-        # 2. Находим или создаем объект BankDetail для этого пользователя
-        bank_instance, created = BankDetail.objects.get_or_create(
-            user=request.user,
-            name=bank_name
-        )
+        # Обработка банка
+        if details_name:
+            # Ищем банк просто по имени (так как модель общая)
+            bank_instance, created = BankDetail.objects.get_or_create(
+                name=details_name
+            )
+            order.bank_detail = bank_instance
+        # Если details_name пустой, мы просто не меняем order.bank_detail 
+        # или можно добавить else: order.bank_detail = None, если нужно удалять банк
 
         order.external_id = request.POST.get('external_id')
         order.price = request.POST.get('price') or 0
@@ -147,12 +153,12 @@ def edit_order(request, order_id):
         order.operation_type = request.POST.get('operation_type')
         order.exchange_type = request.POST.get('exchange')
 
-        order.bank_detail = bank_instance 
+        # УДАЛЕНО: order.bank_detail = bank_instance 
+        # (Эта строка вызывала ошибку, так как bank_instance может не существовать)
         
         order.commission = request.POST.get('commission_value') or 0
         order.commission_type = request.POST.get('commission_type')
         
-
         raw_date = request.POST.get('created_at')
         if raw_date:
             order.created_at = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
@@ -275,6 +281,8 @@ def admin_users_list(request):
             user_to_edit.bybit_api_secret = request.POST.get('bybit_secret')
             user_to_edit.htx_access_key = request.POST.get('htx_key')
             user_to_edit.htx_private_key = request.POST.get('htx_secret')
+            user_to_edit.mexc_api_key= request.POST.get('mexc_key')
+            user_to_edit.mexc_api_secret = request.POST.get('mexc_secret')
             user_to_edit.evotor_login = request.POST.get('evotor_login')
             user_to_edit.evotor_password = request.POST.get('evotor_password')
             user_to_edit.save()
@@ -478,33 +486,51 @@ User = get_user_model()
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_statistics_24h(request):
-    # Получаем параметры
     f_user = request.GET.get('user', '')
-    f_exchange = request.GET.get('exchange', '')
+    f_exchange = request.GET.get('exchange', '') # Bybit, MEXC, или пусто
     f_type = request.GET.get('type', '')
     f_limit = request.GET.get('limit', '50')
 
-    # Проверяем, нажата ли кнопка "Обновить" (или применены фильтры)
-    # Если параметров нет вообще в URL - это первый заход
-    is_update_action = bool(request.GET) 
-
+    is_update_action = bool(request.GET)
     orders = []
-    
-    # Логика запуска (только если нажали Обновить)
+
     if is_update_action:
-        # Кого сканируем?
+        # --- 1. ОПРЕДЕЛЯЕМ ПОЛЬЗОВАТЕЛЕЙ ---
         if f_user and f_user.isdigit():
+            # Если выбран конкретный пользователь
             users_qs = User.objects.filter(id=f_user)
         else:
-            # ВСЕ ПОЛЬЗОВАТЕЛИ (но только те, у кого есть ключи)
-            # Это фильтрует "мусорных" юзеров и ускоряет процесс
-            users_qs = User.objects.exclude(bybit_api_key__isnull=True).exclude(bybit_api_key='')
+            # Если "Все", берем тех, у кого есть хоть какие-то ключи
+            users_qs = User.objects.filter(
+                Q(bybit_api_key__isnull=False) & ~Q(bybit_api_key='') |
+                Q(mexc_api_key__isnull=False) & ~Q(mexc_api_key='')
+            )
 
-        # Запускаем параллельный сервис
         filters = {'type': f_type, 'exchange': f_exchange}
-        orders = get_orders_parallel(users_qs, filters)
+        
+        # --- 2. СБОР ДАННЫХ ---
+        
+        # BYBIT
+        # Запускаем, если выбран "Bybit" или "Все источники"
+        if f_exchange == 'Bybit' or f_exchange == '' or f_exchange == '1':
+            # Фильтруем юзеров, у кого есть ключи Bybit, чтобы не гонять пустышки
+            bybit_users = users_qs.exclude(bybit_api_key__isnull=True).exclude(bybit_api_key='')
+            bybit_data = get_bybit_orders(bybit_users, filters)
+            orders.extend(bybit_data)
 
-    # Статистика (считаем "на лету" по полученному списку)
+        # MEXC
+        # Запускаем, если выбран "MEXC" или "Все источники"
+        if f_exchange == 'MEXC' or f_exchange == '':
+            # Фильтруем юзеров, у кого есть ключи MEXC
+            mexc_users = users_qs.exclude(mexc_api_key__isnull=True).exclude(mexc_api_key='')
+            mexc_data = get_mexc_orders_parallel(mexc_users, filters)
+            orders.extend(mexc_data)
+
+        # --- 3. ФИНАЛЬНАЯ СОРТИРОВКА ---
+        # Сортируем общий список по дате (свежие сверху)
+        orders.sort(key=lambda x: x.created_at, reverse=True)
+
+    # Статистика "на лету"
     total_count = len(orders)
     buy_count = sum(1 for x in orders if x.operation_type == 'BUY')
     sell_count = sum(1 for x in orders if x.operation_type == 'SELL')
@@ -519,26 +545,19 @@ def admin_statistics_24h(request):
     paginator = Paginator(orders, limit)
     page_obj = paginator.get_page(request.GET.get('page'))
 
-    # Контекст
     all_users = User.objects.all().order_by('username')
 
     context = {
         'orders': page_obj,
         'users': all_users,
-        
-        # Сохраняем выбор в фильтрах
         'current_user': int(f_user) if f_user.isdigit() else '',
         'current_exchange': f_exchange,
         'current_type': f_type,
         'current_limit': f_limit,
-        
-        # Статы
         'total_orders': total_count,
         'buy_count': buy_count,
         'sell_count': sell_count,
         'total_amount': total_sum,
-        
-        # Флаг, искали мы что-то или нет
         'is_search': is_update_action
     }
 

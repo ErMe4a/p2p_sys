@@ -28,5 +28,4 @@ urlpatterns = [
     path('p2p-admin/api/search-users/', views.api_search_users, name='api_search_users'),
     path('p2p-admin/api/get-turnover/<int:user_id>/', views.api_get_turnover, name='api_get_turnover'),
     
-    
 ]

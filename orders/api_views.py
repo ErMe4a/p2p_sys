@@ -299,6 +299,13 @@ def order_by_string_id(request):
 
     if not o: return Response({"message": "not found"}, status=404)
 
+    # ЛОГИКА ИСПРАВЛЕНИЯ:
+    # Проверяем, есть ли внутри receipt ключ 'uuid'.
+    # Если uuid нет или он null — отдаем None, чтобы фронт не рисовал плашку.
+    receipt_data = None
+    if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
+        receipt_data = o.receipt
+
     return Response({
         "id": o.id,
         "orderId": o.external_id,
@@ -306,6 +313,7 @@ def order_by_string_id(request):
         "type": o.operation_type,
         "commission": str(getattr(o, "commission", 0)),
         "commissionType": getattr(o, "commission_type", "PERCENT"),
+        "receipt": receipt_data  # <--- Теперь тут будет None, если чек не пробит
     })
 
 
