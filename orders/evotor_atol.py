@@ -68,11 +68,17 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     }
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
+    # Получаем название биржи из ордера
+    exchange_name = getattr(order, "exchange_type", "Bybit")
+    # Формируем понятный текст
+    platform_text = f"Площадка: {exchange_name}"
+    # Если нужно добавить URL
+
     company_obj = {
         "email": user.email or "noreply@evotor.ru",
         "sno": sno_value,
         "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": getattr(user, "payment_address", "") or "https://mysite.com"
+        "payment_address": platform_text  # Или platform_address если нужен URL
     }
 
     # 5. Подготовка цифр (Цена, Кол-во, Сумма)

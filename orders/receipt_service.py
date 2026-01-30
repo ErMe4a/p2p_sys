@@ -7,7 +7,8 @@ from .evotor_atol import (
     build_receipt_payload_v5,
     EvotorAtolError,
 )
-
+import logging
+logger = logging.getLogger(__name__)
 # Простой класс для ответа (вместо модели БД)
 class ReceiptResponse:
     def __init__(self, status="PENDING", error_text="", evotor_uuid=None):
@@ -114,7 +115,9 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
         )
 
     except EvotorAtolError as e:
+        logger.error(f"EVOTOR ERROR: {str(e)}")
         return ReceiptResponse(status="ERROR", error_text=str(e))
         
     except Exception as e:
+        logger.error(f"SYSTEM ERROR: {str(e)}")
         return ReceiptResponse(status="ERROR", error_text=f"System Error: {str(e)}")
