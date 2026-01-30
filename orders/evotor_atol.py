@@ -68,29 +68,46 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     }
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
-    exchange_type = str(getattr(order, "exchange_type", "Bybit")).strip()
+    exchange_type = getattr(order, "exchange_type", "Bybit")
     
-    # Маппинг названий платформ к их URL
-    platform_urls = {
+    # Словарь для маппинга
+    exchange_to_url = {
+        # Строковые значения
+        "Bybit": "https://www.bybit.com/",
+        "HTX": "https://www.htx.com/",
+        "MEXC": "https://www.mexc.com/",
         "bybit": "https://www.bybit.com/",
-        "htx": "https://www.htx.com/", 
+        "htx": "https://www.htx.com/",
         "mexc": "https://www.mexc.com/",
-        "1": "https://www.bybit.com/",  # если хранится как ID
+        # Числовые значения (на случай если хранится как ID)
+        1: "https://www.bybit.com/",
+        2: "https://www.htx.com/",
+        3: "https://www.mexc.com/",
+        "1": "https://www.bybit.com/",
         "2": "https://www.htx.com/",
-        "3": "https://www.mexc.com/"
+        "3": "https://www.mexc.com/",
     }
     
-    # Нормализуем название платформы (нижний регистр, убираем пробелы)
-    normalized_exchange = exchange_type.lower().strip()
+    # Получаем URL
+    payment_address = exchange_to_url.get(exchange_type)
     
-    # Получаем URL платформы, по умолчанию Bybit
-    payment_address = platform_urls.get(normalized_exchange, "https://www.bybit.com/")
+    # Если не нашли, пробуем привести к строке и найти
+    if not payment_address:
+        exchange_str = str(exchange_type).strip().lower()
+        if "bybit" in exchange_str:
+            payment_address = "https://www.bybit.com/"
+        elif "htx" in exchange_str:
+            payment_address = "https://www.htx.com/"
+        elif "mexc" in exchange_str:
+            payment_address = "https://www.mexc.com/"
+        else:
+            payment_address = "https://www.bybit.com/"  # значение по умолчанию
 
     company_obj = {
         "email": user.email or "noreply@evotor.ru",
         "sno": sno_value,
         "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": payment_address  # Теперь здесь URL платформы
+        "payment_address": payment_address
     }
 
     # 5. Подготовка цифр (Цена, Кол-во, Сумма)
