@@ -37,6 +37,11 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.utils.dateparse import parse_datetime
 from decimal import Decimal
 from .models import Order, BankDetail
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
+
 
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
@@ -182,33 +187,44 @@ def upload_screenshot(request, order_id):
         
     return redirect('my_orders')
 
-
-
 @login_required
 def profile_settings(request):
     user = request.user
+
     if request.method == 'POST':
-        # Онлайн-касса
+        # 1. Сохраняем основные данные
         user.evotor_login = request.POST.get('evotor_login')
         user.evotor_password = request.POST.get('evotor_password')
         user.kkt_id = request.POST.get('kkt_id')
         user.email = request.POST.get('email')
         user.payment_address = request.POST.get('payment_address')
-        user.tax_type = request.POST.get('tax_type') # Новый параметр
-        user.inn = request.POST.get('inn')           
-        
-        # API Ключи
+        user.tax_type = request.POST.get('tax_type')
+        user.inn = request.POST.get('inn')
+
+        # 2. Сохраняем ключи API
         user.htx_access_key = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
-        user.mexc_api_key = request.POST.get('mexc_key')      # Добавлено
-        user.mexc_api_secret = request.POST.get('mexc_secret') # Добавлено
+        user.mexc_api_key = request.POST.get('mexc_key')
+        user.mexc_api_secret = request.POST.get('mexc_secret')
         user.bybit_api_key = request.POST.get('bybit_key')
         user.bybit_api_secret = request.POST.get('bybit_secret')
-        
-        user.save()
-        return redirect('settings')
-        
-    return render(request, 'orders/settings.html')
+
+        # 3. ЛОГИКА СМЕНЫ ПАРОЛЯ
+        new_password = request.POST.get('new_password')
+        if new_password and new_password.strip():
+            user.set_password(new_password)
+            user.save()
+            update_session_auth_hash(request, user) # Важно: чтобы не разлогинило
+            messages.success(request, "Пароль успешно изменен!")
+        else:
+            user.save()
+            messages.success(request, "Настройки сохранены.")
+            
+        return redirect('settings') # Возврат для POST запроса
+
+    # ВАЖНО: Эта строка должна быть ВНЕ блока if
+    # Она срабатывает, когда ты просто заходишь на страницу (GET запрос)
+    return render(request, 'orders/settings.html', {'user': user})
 
 
 @login_required

@@ -158,7 +158,16 @@
                 <input type="text" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
             </div>
         </div>
-
+        <div class="section-divider">Безопасность</div>
+        <div class="row">
+            <div class="col-md-12">
+                <label class="field-label">Смена пароля</label>
+                <input type="text" name="new_password" class="form-control" placeholder="Введите новый пароль, если хотите его изменить">
+                <small style="color: var(--text-muted); font-size: 0.75rem;">
+                    * Текущий пароль скрыт системой безопасности. Введите сюда новый пароль, чтобы изменить его.
+                </small>
+            </div>
+        </div>
         <div class="mt-4">
             <button type="submit" class="btn btn-save">Сохранить настройки</button>
         </div>
