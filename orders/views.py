@@ -15,50 +15,27 @@ import datetime
 from django.http import JsonResponse, HttpResponse
 from .models import Order, User 
 from django.contrib.auth import get_user_model
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
 from django.db.models import Sum, Q
 from django.contrib.auth.models import User  # Или твоя модель пользователя
-from .models import Order # Убедись, что импорт правильный
 
 
-from django.db.models import Sum, Q
 from django.contrib.auth.decorators import user_passes_test
 
-from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required, user_passes_test
-from django.http import JsonResponse
-from django.db.models import Sum, Q
-from django.contrib.auth import get_user_model # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
-from .models import Order 
+from django.db.models import Sum, Q # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
 import openpyxl
 from openpyxl.styles import Alignment, Font, Border, Side
-from django.http import HttpResponse
-
 from .bybit_api import sync_bybit_orders
-
-User = get_user_model()
-
+from .mexc_api import  sync_mexc_orders
 from django.core.paginator import Paginator
-from django.contrib.auth import get_user_model
-from django.db.models import Q
-
-from .receipt_service import create_or_update_and_send_receipt
-from django.views.decorators.http import require_POST
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-from django.contrib.auth.decorators import login_required
-
-from .models import Order
 from .receipt_service import create_or_update_and_send_receipt
 from .bybit_service import get_orders_parallel as get_bybit_orders
-# Импортируем MEXC
 from .mexc_service import get_mexc_orders_parallel
+
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
-
+User = get_user_model()
 
 
 @login_required
@@ -228,32 +205,48 @@ def profile_settings(request):
     return render(request, 'orders/settings.html')
 
 
-
 @login_required
 def unprocessed_orders_list(request):
     """
     Страница необработанных ордеров.
-    При загрузке автоматически синхронизируется с Bybit.
+    Синхронизирует Bybit и MEXC.
     """
+    user = request.user
     
-    # 1. Запускаем синхронизацию
-    # Функция сама проверит ключи и добавит новые ордера в БД
-    sync_bybit_orders(request.user)
-    
-    # 2. Получаем список ордеров из базы
-    # Сортируем: сначала новые (по дате создания)
+    # 1. Синхронизация Bybit
+    try:
+        sync_bybit_orders(user)
+    except Exception as e:
+        # Логируем ошибку, но не роняем страницу
+        print(f"Error syncing Bybit: {e}") 
+        if user.bybit_api_key:
+            messages.error(request, "Ошибка синхронизации Bybit")
+
+    # 2. Синхронизация MEXC
+    try:
+        sync_mexc_orders(user)
+    except Exception as e:
+        print(f"Error syncing MEXC: {e}")
+        if user.mexc_api_key:
+             messages.error(request, "Ошибка синхронизации MEXC")
+
+    # 3. Получаем список ордеров из базы (уже смешанный Bybit + MEXC)
     unprocessed_orders = UnprocessedOrder.objects.filter(
-        user=request.user
+        user=user
     ).order_by('-created_at')
     
-    # 3. Проверка ключей для отображения предупреждения (опционально)
-    keys_configured = bool(request.user.bybit_api_key and request.user.bybit_api_secret)
-    if not keys_configured:
-        messages.warning(request, "API ключи Bybit не настроены. Синхронизация невозможна.")
+    # 4. Проверка ключей для UI
+    # Проверяем, настроена ли ХОТЯ БЫ ОДНА биржа
+    bybit_ok = bool(user.bybit_api_key and user.bybit_api_secret)
+    mexc_ok = bool(user.mexc_api_key and user.mexc_api_secret)
+    
+    if not bybit_ok and not mexc_ok:
+        messages.warning(request, "API ключи не настроены. Добавьте Bybit или MEXC.")
 
     context = {
         'unprocessed_orders': unprocessed_orders,
-        'keys_configured': keys_configured
+        'bybit_configured': bybit_ok,
+        'mexc_configured': mexc_ok
     }
     
     return render(request, 'orders/unprocessed.html', context)

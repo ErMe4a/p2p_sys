@@ -46,7 +46,6 @@ def get_evotor_operation_type(order: Order) -> str:
         return 'buy'   # Расход
     return 'sell'
 
-# receipt_service.py
 
 def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptResponse:
     """
@@ -63,13 +62,18 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
         )
 
     # 2. Валидация реквизитов
+    # ИСПРАВЛЕНИЕ: Убрали user.payment_address, так как адрес сайта теперь 
+    # определяется динамически (Bybit/HTX/MEXC) внутри build_receipt_payload_v5
     required_fields = [
-        user.evotor_login, user.evotor_password, 
-        user.kkt_id, user.inn, user.payment_address
+        user.evotor_login, 
+        user.evotor_password, 
+        user.kkt_id, 
+        user.inn
+        # user.payment_address - УБРАЛИ ОТСЮДА
     ]
     
     if not all(required_fields):
-        return ReceiptResponse(status="ERROR", error_text="Не заполнены настройки Эвотор")
+        return ReceiptResponse(status="ERROR", error_text="Не заполнены настройки Эвотор (Логин, Пароль, ID кассы или ИНН)")
 
     try:
         # 3. Авторизация
@@ -79,6 +83,7 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
         operation_type = get_evotor_operation_type(order)
 
         # 5. Сборка JSON
+        # Внутри этой функции сама подставится нужная биржа
         payload = build_receipt_payload_v5(order, user, receipt_data or {}, operation_type)
 
         # 6. Отправка
@@ -91,13 +96,12 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
         
         evotor_uuid = response_data.get("uuid")
 
-        # === ГЛАВНОЕ ИЗМЕНЕНИЕ: СОХРАНЯЕМ В БАЗУ ===
-        # Сохраняем не только статус, но и данные, чтобы потом показать их в readonly полях
+        # === СОХРАНЯЕМ В БАЗУ ===
         saved_receipt_data = {
             "uuid": evotor_uuid,
             "status": "SENT",
             "timestamp": payload.get("timestamp"),
-            # Сохраняем то, что ввел пользователь, чтобы потом отобразить в серых полях
+            # Данные из формы, чтобы заблокировать инпуты на фронте
             "contact": receipt_data.get("contact"),
             "price": receipt_data.get("price"),
             "amount": receipt_data.get("amount"),
@@ -121,4 +125,3 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
     except Exception as e:
         logger.error(f"SYSTEM ERROR: {str(e)}")
         return ReceiptResponse(status="ERROR", error_text=f"System Error: {str(e)}")
-
