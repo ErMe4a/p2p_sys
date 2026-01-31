@@ -6,6 +6,11 @@ import re
 from datetime import datetime
 from decimal import Decimal
 
+from datetime import datetime, timedelta # Добавили timedelta
+
+
+# ... (token и Error class без изменений)
+
 logger = logging.getLogger(__name__)
 
 EVOTOR_BASE_URL = "https://fiscalization.evotor.ru/possystem/v5"
@@ -29,273 +34,82 @@ def evotor_get_token(login: str, password: str) -> str:
         raise EvotorAtolError(f"Token Error: {str(e)}")
 
 
+
 def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -> dict:
     """
-    Сборка тела запроса согласно схеме v5 ФФД 1.2
+    Сборка тела запроса v5. 
+    Место расчетов всегда берется по бирже ордера.
+    Время корректируется на +3 часа (МСК).
     """
     
-    # 1. Дата
-    timestamp_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    # 1. Исправление времени (если сервер в UTC, добавляем 3 часа для Москвы)
+    # Если ваш сервер уже в МСК, удалите .replace и + timedelta
+    msk_time = datetime.now() + timedelta(hours=3)
+    timestamp_str = msk_time.strftime("%d.%m.%Y %H:%M:%S")
 
     # 2. Уникальный ID
     external_id = f"ord_{order.id}_{uuid.uuid4().hex}"[:128]
 
-    # 3. Данные клиента
+    # 3. Данные клиента (Email/Phone)
     raw_contact = receipt_data.get("contact") or "client@example.com"
     client_obj = {}
-    
     if "@" in raw_contact:
         client_obj["email"] = raw_contact
-        client_obj["phone"] = None 
     else:
-        # Очистка телефона
         clean_phone = re.sub(r"[^0-9]", "", raw_contact)
-        if not raw_contact.startswith("+"):
-            if clean_phone.startswith("8") and len(clean_phone) == 11:
-                clean_phone = "+7" + clean_phone[1:]
-            else:
-                clean_phone = "+" + clean_phone
+        if not clean_phone.startswith("+"):
+            clean_phone = "+" + clean_phone
         client_obj["phone"] = clean_phone
-        client_obj["email"] = None
 
-    # 4. Данные компании (СНО)
+    # 4. Данные компании и ЖЕСТКИЙ МАППИНГ МЕСТА РАСЧЕТОВ
     raw_tax_from_db = str(getattr(user, "tax_type", "")).strip().lower()
-    tax_map = {
-        "osn": "osn", "och": "osn", "осн": "osn", "osno": "osn", "осно": "osn",
-        "usn_income": "usn_income", "usn доход": "usn_income", "усн доход": "usn_income",
-        "usn_income_outcome": "usn_income_outcome", "patent": "patent"
-    }
+    tax_map = {"osn": "osn", "usn_income": "usn_income", "usn_income_outcome": "usn_income_outcome", "patent": "patent"}
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
-    # === ЛОГИКА ОПРЕДЕЛЕНИЯ МЕСТА РАСЧЕТОВ (Сайт) ===
-    # 1. Берем название биржи СТРОГО из БД (объект order), игнорируя данные с фронта
-    exchange_raw = getattr(order, "exchange_type", "Bybit")
-    exchange_str = str(exchange_raw).strip().lower() # Превращаем в bybit, htx, mexc
+    # Определяем URL биржи на основе ордера
+    exchange_type = str(getattr(order, "exchange_type", "Bybit")).strip().lower()
     
-    # 2. Эталонные ссылки (как ты просил)
-    URL_BYBIT = "https://www.bybit.com/"
-    URL_HTX = "https://www.htx.com/"
-    URL_MEXC = "https://www.mexc.com/"
-
-    # 3. Логика подбора (с защитой от разного написания)
-    if "htx" in exchange_str or "huobi" in exchange_str:
-        payment_address = URL_HTX
-    elif "mexc" in exchange_str:
-        payment_address = URL_MEXC
+    if "htx" in exchange_type or "huobi" in exchange_type:
+        payment_address = "https://www.htx.com/"
+    elif "mexc" in exchange_type:
+        payment_address = "https://www.mexc.com/"
     else:
-        # По умолчанию Bybit (если написано bybit или что-то непонятное)
-        payment_address = URL_BYBIT
+        payment_address = "https://www.bybit.com/"
 
     company_obj = {
         "email": user.email or "noreply@evotor.ru",
         "sno": sno_value,
         "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": payment_address # <-- Сюда попадет правильная ссылка
+        "payment_address": payment_address # Это поле уйдет в "Место расчетов" и "Магазин"
     }
 
-    # 5. Подготовка цифр
+    # 5. Цифры (Математика чека)
     def to_float(val):
-        try: 
-            # Заменяем запятую на точку, чтобы Python не падал
-            return float(str(val).replace(",", ".").strip())
-        except: 
-            return 0.0
-
-    # Берем цифры. Приоритет: данные с фронта (если редактировали руками), иначе из БД
-    quantity = to_float(receipt_data.get("amount") or getattr(order, "amount", 0)) 
-    total_sum = to_float(receipt_data.get("sum") or getattr(order, "cost", 0)) 
-    
-    # Считаем цену от суммы (самый надежный способ для фискализации)
-    if total_sum <= 0: total_sum = 1.0
-    
-    if quantity <= 0:
-        quantity = 1.0
-        price = total_sum
-    else:
-        price = round(total_sum / quantity, 2)
-
-    # 6. Позиции (Items)
-    currency_name = getattr(order, "currency", "USDT")
-    custom_purpose = receipt_data.get("purpose")
-    
-    if custom_purpose:
-        item_name = custom_purpose[:128]
-    else:
-        item_name = f"Цифровая валюта {currency_name}"
-
-    items_obj = [
-        {
-            "name": item_name,
-            "price": price,          
-            "quantity": quantity,    
-            "measure": 0,            
-            "sum": total_sum,        
-            "payment_method": "full_payment",
-            "payment_object": 1,     # 1 = Товар
-            "vat": {
-                "type": "none"       
-            }
-        }
-    ]
-
-    # 7. Платежи
-    payments_obj = [{"type": 1, "sum": total_sum}]
-
-    payload = {
-        "timestamp": timestamp_str,
-        "external_id": external_id,
-        "receipt": {
-            "client": client_obj,
-            "company": company_obj,
-            "items": items_obj,
-            "payments": payments_obj,
-            "total": total_sum
-        }
-    }
-
-    return payload
-    """
-    Сборка тела запроса согласно схеме v5 ФФД 1.2
-    Исправлена логика формирования позиций (Цена x Количество)
-    """
-    
-    # 1. Дата
-    timestamp_str = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-
-    # 2. Уникальный ID
-    external_id = f"ord_{order.id}_{uuid.uuid4().hex}"[:128]
-
-    # 3. Данные клиента
-    raw_contact = receipt_data.get("contact") or "client@example.com"
-    client_obj = {}
-    
-    if "@" in raw_contact:
-        client_obj["email"] = raw_contact
-        client_obj["phone"] = None 
-    else:
-        clean_phone = re.sub(r"[^0-9]", "", raw_contact)
-        if not raw_contact.startswith("+"):
-            if clean_phone.startswith("8") and len(clean_phone) == 11:
-                clean_phone = "+7" + clean_phone[1:]
-            else:
-                clean_phone = "+" + clean_phone
-        client_obj["phone"] = clean_phone
-        client_obj["email"] = None
-
-    # 4. Данные компании (СНО)
-    raw_tax_from_db = str(getattr(user, "tax_type", "")).strip().lower()
-    tax_map = {
-        "osn": "osn", "och": "osn", "осн": "osn", "osno": "osn", "осно": "osn", "общая": "osn",
-        "usn_income": "usn_income", "usn доход": "usn_income", "усн доход": "usn_income",
-        "usn_income_outcome": "usn_income_outcome", "usn доход-расход": "usn_income_outcome", "усн доход-расход": "usn_income_outcome",
-        "patent": "patent", "патент": "patent"
-    }
-    sno_value = tax_map.get(raw_tax_from_db, "osn")
-
-    exchange_type = getattr(order, "exchange_type", "Bybit")
-    
-    # Словарь для маппинга
-    exchange_to_url = {
-        # Строковые значения
-        "Bybit": "https://www.bybit.com/",
-        "HTX": "https://www.htx.com/",
-        "MEXC": "https://www.mexc.com/",
-        "bybit": "https://www.bybit.com/",
-        "htx": "https://www.htx.com/",
-        "mexc": "https://www.mexc.com/",
-        # Числовые значения (на случай если хранится как ID)
-        1: "https://www.bybit.com/",
-        2: "https://www.htx.com/",
-        3: "https://www.mexc.com/",
-        "1": "https://www.bybit.com/",
-        "2": "https://www.htx.com/",
-        "3": "https://www.mexc.com/",
-    }
-    
-    # Получаем URL
-    payment_address = exchange_to_url.get(exchange_type)
-    
-    # Если не нашли, пробуем привести к строке и найти
-    if not payment_address:
-        exchange_str = str(exchange_type).strip().lower()
-        if "bybit" in exchange_str:
-            payment_address = "https://www.bybit.com/"
-        elif "htx" in exchange_str:
-            payment_address = "https://www.htx.com/"
-        elif "mexc" in exchange_str:
-            payment_address = "https://www.mexc.com/"
-        else:
-            payment_address = "https://www.bybit.com/"  # значение по умолчанию
-
-    company_obj = {
-        "email": user.email or "noreply@evotor.ru",
-        "sno": sno_value,
-        "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": payment_address
-    }
-
-    # 5. Подготовка цифр (Цена, Кол-во, Сумма)
-    def to_float(val):
-        try: return float(val)
+        try: return float(str(val).replace(",", ".").strip())
         except: return 0.0
 
-    # Пытаемся достать детальные данные из receipt_data (пришли с фронта)
-    # Если их нет, берем из order (базы)
+    quantity = to_float(receipt_data.get("amount") or getattr(order, "amount", 0))
+    total_sum = to_float(receipt_data.get("sum") or getattr(order, "cost", 0))
     
-    quantity = to_float(receipt_data.get("amount") or getattr(order, "amount", 0)) # Количество (шт)
-    price = to_float(receipt_data.get("price") or getattr(order, "price", 0))      # Цена за единицу
-    total_sum = to_float(receipt_data.get("sum") or getattr(order, "cost", 0))     # Итоговая сумма
-
-    # Защита от нулевых значений (если вдруг данных нет, ставим заглушки чтобы чек не упал)
     if total_sum <= 0: total_sum = 1.0
-    
-    # ЛОГИКА ВАЛИДАЦИИ МАТЕМАТИКИ
-    # Эвотор очень строг: Price * Quantity должно быть равно Sum (с погрешностью копеек)
-    # Если данных о кол-ве нет, делаем "1 шт * Сумма"
-    if quantity <= 0 or price <= 0:
-        quantity = 1.0
-        price = total_sum
-    else:
-        # Если есть и цена и кол-во, проверяем сходится ли математика.
-        # Часто бывает: 56.54 * 82.98 = 4691.6892, а сумма 4691.69.
-        # Лучше довериться Сумме и Количеству, а Цену пересчитать под них, 
-        # так как Сумма - это то, что реально списали с карты.
-        price = round(total_sum / quantity, 2) 
-        # Или оставляем как есть, но рискуем получить ошибку валидации от АТОЛ
+    if quantity <= 0: quantity = 1.0
 
-    # 6. Позиции (Items)
-    # Формируем красивое название, как вы просили
-    # Пытаемся найти валюту в ордере, если нет - просто "Цифровая валюта"
-    currency_name = getattr(order, "currency", "USDT") # Можно заменить на 'USDT' если у вас всегда тезер
-    
-    # Если пользователь ввел свое назначение платежа - используем его, иначе шаблон
-    custom_purpose = receipt_data.get("purpose")
-    if custom_purpose:
-        item_name = custom_purpose[:128]
-    else:
-        item_name = f"Цифровая валюта {currency_name}"
+    price = round(total_sum / quantity, 2)
 
-    items_obj = [
-        {
-            "name": item_name,
-            "price": price,          # Цена за единицу (например 82.98)
-            "quantity": quantity,    # Количество (например 56.54)
-            "measure": 0,            # 0 - это штуки/единицы (по ФФД)
-            "sum": total_sum,        # Итоговая сумма позиции (например 4691.69)
-            
-            "payment_method": "full_payment",
-            
-            # ВАЖНО: Меняем 4 (Услуга) на 1 (Товар), как вы просили
-            "payment_object": 1,     # 1 = Товар, 4 = Услуга, 10 = Платеж
-            
-            "vat": {
-                "type": "none"       # Без НДС
-            }
-        }
-    ]
+    # 6. Позиции
+    currency_name = getattr(order, "currency", "USDT")
+    item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_name}"
 
-    # 7. Платежи
-    payments_obj = [{"type": 1, "sum": total_sum}]
+    items_obj = [{
+        "name": item_name[:128],
+        "price": price,
+        "quantity": quantity,
+        "measure": 0,
+        "sum": total_sum,
+        "payment_method": "full_payment",
+        "payment_object": 1, # Товар
+        "vat": {"type": "none"}
+    }]
 
     payload = {
         "timestamp": timestamp_str,
@@ -304,13 +118,11 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
             "client": client_obj,
             "company": company_obj,
             "items": items_obj,
-            "payments": payments_obj,
+            "payments": [{"type": 1, "sum": total_sum}],
             "total": total_sum
         }
     }
-
     return payload
-
 
 def evotor_register_receipt(token: str, group_code: str, operation: str, payload: dict) -> dict:
     url = f"{EVOTOR_BASE_URL}/{group_code}/{operation}"
