@@ -31,6 +31,12 @@ from django.core.paginator import Paginator
 from .receipt_service import create_or_update_and_send_receipt
 from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_service import get_mexc_orders_parallel
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.utils.dateparse import parse_datetime
+from decimal import Decimal
+from .models import Order, BankDetail
 
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
@@ -413,59 +419,167 @@ def admin_logout(request):
     return redirect('admin_login')
 
 
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_orders_editor(request):
-    """Редактор ордеров"""
+    """
+    Редактор ордеров в админке.
+    """
     order = None
-    user_details = None
-    search_id = request.GET.get('order_id_search')
+    all_banks = None
+    search_query = request.GET.get('order_id_search')
     
-    if search_id:
-        search_id = search_id.strip()
-        order = Order.objects.filter(external_id=search_id).first()
-        if not order and search_id.isdigit():
-            order = Order.objects.filter(id=search_id).first()
+    # 1. Логика поиска ордера
+    if search_query:
+        search_query = search_query.strip()
+        
+        # ИСПРАВЛЕНИЕ: используем external_id вместо order_id
+        order = Order.objects.filter(external_id__iexact=search_query).first()
+        
+        # Если не нашли по внешнему ID, пробуем по внутреннему ID (PK)
+        if not order and search_query.isdigit():
+            order = Order.objects.filter(id=int(search_query)).first()
             
         if order:
-            from .models import BankDetail
-            user_details = BankDetail.objects.filter(user=order.user)
+            all_banks = BankDetail.objects.filter(is_deleted=False).order_by('name')
         else:
-            messages.error(request, f"Заказ '{search_id}' не найден.")
+            messages.error(request, f"Ордер '{search_query}' не найден.")
 
+    # 2. Логика сохранения изменений
     if request.method == 'POST' and 'save_order' in request.POST:
         target_pk = request.POST.get('target_order_pk')
         try:
             current_order = Order.objects.get(pk=target_pk)
-            current_order.external_id = request.POST.get('external_id')
+            
+            # --- Обновляем поля ---
+            # ИСПРАВЛЕНИЕ: сохраняем в external_id
+            current_order.external_id = request.POST.get('external_id') 
+            
             current_order.exchange_type = request.POST.get('exchange_type')
-            current_order.bank_detail_id = request.POST.get('bank_detail_id')
             current_order.operation_type = request.POST.get('operation_type')
-            current_order.price = request.POST.get('price')
-            current_order.amount = request.POST.get('amount')
-            current_order.cost = request.POST.get('cost')
-            current_order.commission = request.POST.get('commission')
+            
+            # Банк
+            bank_id = request.POST.get('bank_detail_id')
+            if bank_id:
+                current_order.bank_detail_id = bank_id
+            
+            # Числовые поля
+            def to_decimal(val):
+                if not val: return Decimal('0')
+                return Decimal(str(val).replace(',', '.'))
+
+            current_order.price = to_decimal(request.POST.get('price'))
+            current_order.amount = to_decimal(request.POST.get('amount'))
+            
+            # Проверка имени поля для стоимости (cost или total_amount)
+            # Судя по ошибке Django, у тебя есть поле 'cost', используем его
+            current_order.cost = to_decimal(request.POST.get('cost'))
+
+            current_order.commission = to_decimal(request.POST.get('commission'))
             current_order.commission_type = request.POST.get('commission_type')
             
+            # Дата
             date_raw = request.POST.get('created_at')
-            if date_raw: current_order.created_at = date_raw
+            if date_raw:
+                dt = parse_datetime(date_raw)
+                if dt:
+                    current_order.created_at = dt
             
             current_order.save()
-            messages.success(request, "Заказ обновлен.")
-            return redirect('admin_orders_editor')
+            messages.success(request, f"Ордер #{current_order.id} успешно обновлен.")
+            
+            # Редирект с использованием правильного поля
+            return redirect(f'/p2p-admin/orders/?order_id_search={current_order.external_id}')
+            
         except Order.DoesNotExist:
-            messages.error(request, "Ошибка сохранения.")
+            messages.error(request, "Ошибка: Ордер не найден в базе при сохранении.")
+        except Exception as e:
+            messages.error(request, f"Ошибка сохранения: {str(e)}")
 
     return render(request, 'custom_admin/orders_editor.html', {
         'order': order,
-        'user_details': user_details
+        'all_banks': all_banks,
+        'search_query': search_query
     })
+
+
 
 
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_turnover_control(request):
+    """
+    Единая точка входа:
+    1. Если action='search_users' -> ищет юзеров (JSON).
+    2. Если action='get_turnover' -> считает оборот (JSON).
+    3. Иначе -> отдает HTML страницу.
+    """
+    action = request.GET.get('action')
+
+    # === ЛОГИКА 1: ПОИСК ПОЛЬЗОВАТЕЛЯ ===
+    if action == 'search_users':
+        q = request.GET.get('q', '').strip()
+        if len(q) < 1:
+            return JsonResponse([], safe=False)
+        
+        users = User.objects.filter(username__icontains=q)[:10]
+        data = [{'id': u.id, 'username': u.username} for u in users]
+        return JsonResponse(data, safe=False)
+
+    # === ЛОГИКА 2: РАСЧЕТ ОБОРОТА ===
+    if action == 'get_turnover':
+        user_id = request.GET.get('target_user_id')
+        start_date_str = request.GET.get('start')
+        end_date_str = request.GET.get('end')
+
+        if not user_id:
+            return JsonResponse({'error': 'No user ID'}, status=400)
+
+        orders = Order.objects.filter(user_id=user_id)
+
+        if start_date_str and end_date_str:
+            orders = orders.filter(created_at__range=[
+                f"{start_date_str} 00:00:00", 
+                f"{end_date_str} 23:59:59"
+            ])
+
+        buy_orders = orders.filter(operation_type='BUY').order_by('-created_at')
+        sell_orders = orders.filter(operation_type='SELL').order_by('-created_at')
+
+        # Считаем суммы (cost - это рубли)
+        buy_sum = buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0
+        sell_sum = sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0
+
+        # Сериализация для таблицы
+        def serialize(qs):
+            res = []
+            for o in qs:
+                display_id = o.external_id if o.external_id else str(o.id)
+                res.append({
+                    'id': o.id,
+                    'external_id': display_id,
+                    'price': float(o.price),   # Курс
+                    'amount': float(o.amount), # USDT (Объем)
+                    'cost': float(o.cost),     # RUB (Стоимость)
+                    'date': o.created_at.strftime('%d.%m.%Y %H:%M')
+                })
+            return res
+
+        return JsonResponse({
+            'buy_sum': buy_sum,
+            'buy_count': buy_orders.count(),
+            'sell_sum': sell_sum,
+            'sell_count': sell_orders.count(),
+            'total_sum': buy_sum + sell_sum,
+            'profit': "{:.2f}".format(sell_sum - buy_sum),
+            'buy_orders': serialize(buy_orders),
+            'sell_orders': serialize(sell_orders),
+        })
+
+    # === ЛОГИКА 3: ПРОСТО ОТДАТЬ СТРАНИЦУ ===
     return render(request, 'custom_admin/turnover_control.html')
 
 

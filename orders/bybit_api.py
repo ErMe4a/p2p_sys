@@ -8,8 +8,6 @@ def sync_bybit_orders(user):
     if not user.bybit_api_key or not user.bybit_api_secret:
         return False
 
-    print(f"--- [MINIMAL] ЗАПУСК BYBIT P2P (TEST 1 CONFIG) ---")
-
     try:
         # Инициализация
         api = P2P(
@@ -19,7 +17,7 @@ def sync_bybit_orders(user):
             domain="bytick"
         )
     except Exception as e:
-        print(f"Ошибка библиотеки: {e}")
+        print(f"Bybit Lib Error: {e}")
         return False
 
     # Кэш
@@ -27,11 +25,9 @@ def sync_bybit_orders(user):
         existing_ids = set(Order.objects.filter(user=user).values_list('external_id', flat=True))
     except:
         existing_ids = set(Order.objects.filter(user=user).values_list('order_id', flat=True))
+    
     existing_unprocessed = set(UnprocessedOrder.objects.filter(user=user).values_list('order_id', flat=True))
 
-    # === ИЗМЕНЕНИЕ ===
-    # Убрали tokenId="USDT". Оставили только page и size.
-    # Это точная копия "TEST 1", который сработал в консоли.
     tasks = [
         {"method": "get_pending_orders", "kwargs": {"page": 1, "size": 20}},
         {"method": "get_orders", "kwargs": {"page": 1, "size": 20}}
@@ -59,10 +55,6 @@ def sync_bybit_orders(user):
                         side_val = str(item.get("side"))
                         operation_type = "SELL" if side_val == "1" else "BUY"
                         
-                        # Определяем валюту и токен из ответа
-                        # Обычно tokenId="USDT" приходит в ответе
-                        token_id = item.get("tokenId") or "USDT"
-                        
                         price = float(item.get("price") or 0)
                         crypto_amount = float(item.get("notifyTokenQuantity") or 0)
                         fiat_amount = float(item.get("amount") or 0)
@@ -83,16 +75,16 @@ def sync_bybit_orders(user):
                             operation_type=operation_type,
                             amount=crypto_amount,
                             price=price,
-                            exchange_type="Bybit", # Или можно использовать token_id
+                            total_amount=fiat_amount, # Добавил сохранение суммы в рублях для отчетов
+                            exchange_type="Bybit",
                             created_at=aware_dt
                         )
                         count_new += 1
-                        print(f"   >>> OK: {order_id}")
             else:
+                # Ошибки API оставляем, это важно
                 print(f"Bybit Error ({method_name}): {response.get('ret_msg')}")
 
         except Exception as e:
             print(f"Crash in {method_name}: {e}")
 
-    print(f"--- ЗАВЕРШЕНО. НОВЫХ: {count_new} ---")
     return True

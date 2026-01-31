@@ -39,10 +39,13 @@
                 </div>
                 <div class="form-group">
                     <label>Биржа поиска</label>
-                    <select class="form-select">
+                    <select class="form-select" name="exchange_search">
+                        <option value="">Все</option>
                         <option>Bybit</option>
                         <option>HTX</option>
                         <option>MEXC</option>
+                        <option>Bitget</option>
+                        <option>Telegram</option>
                     </select>
                 </div>
                 <div class="form-group d-flex align-items-end">
@@ -71,9 +74,12 @@
                 <div class="form-group">
                     <label>Биржа заказа</label>
                     <select class="form-select" name="exchange_type">
-                        <option value="1" {% if order.exchange_type == 1 or order.exchange_type == '1' %}selected{% endif %}>Bybit</option>
-                        <option value="2" {% if order.exchange_type == 2 or order.exchange_type == '2' %}selected{% endif %}>HTX</option>
-                        <option value="3" {% if order.exchange_type == 3 or order.exchange_type == '3' %}selected{% endif %}>MEXC</option>
+                        <option value="Bybit" {% if order.exchange_type == 'Bybit' or order.exchange_type == '1' or order.exchange_type == 1 %}selected{% endif %}>Bybit</option>
+                        <option value="HTX" {% if order.exchange_type == 'HTX' or order.exchange_type == '2' or order.exchange_type == 2 %}selected{% endif %}>HTX</option>
+                        <option value="MEXC" {% if order.exchange_type == 'MEXC' or order.exchange_type == '3' or order.exchange_type == 3 %}selected{% endif %}>MEXC</option>
+                        
+                        <option value="Bitget" {% if order.exchange_type == 'Bitget' %}selected{% endif %}>Bitget</option>
+                        <option value="Telegram" {% if order.exchange_type == 'Telegram' %}selected{% endif %}>Telegram</option>
                     </select>
                 </div>
             </div>
@@ -87,12 +93,12 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Банк </label>
+                    <label>Банк</label>
                     <select class="form-select" name="bank_detail_id">
                         <option value="">Не выбран</option>
-                        {% for detail in user_details %}
-                            <option value="{{ detail.id }}" {% if order.bank_detail_id == detail.id %}selected{% endif %}>
-                                {{ detail.name }} ({{ detail.card_number|slice:"-4:" }})
+                        {% for bank in all_banks %}
+                            <option value="{{ bank.id }}" {% if order.bank_detail_id == bank.id %}selected{% endif %}>
+                                {{ bank.name }}
                             </option>
                         {% endfor %}
                     </select>

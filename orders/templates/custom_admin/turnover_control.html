@@ -4,10 +4,9 @@
 
 {% block extra_css %}
 <style>
-    /* Основные переменные и цвета из твоего дизайна */
+    /* Основные переменные и стили (без изменений) */
     :root { --bg:#0f1115; --card:#151923; --text:#e6e8ee; --muted:#99a1b3; --accent:#6c8cff; --danger:#ff6c6c; --ok:#58d68d; --border:#242a36; --warn:#ffc107; }
     
-    /* Убираем глобальные сбросы, чтобы не ломать админку, оставляем только нужные классы */
     .card-custom { background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow: 0 0 0 1px var(--border), 0 10px 28px rgba(108,140,255,.06); }
     
     .btn { appearance:none; border:1px solid var(--border); background:#1a2030; color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; transition:all .15s ease; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; height:36px; }
@@ -21,13 +20,11 @@
     .input { width:100%; padding:9px 12px; background:#111520; border:1px solid var(--border); color:var(--text); border-radius:10px; font-size:13px; transition:all .15s ease; }
     .input:focus { outline:none; box-shadow: 0 0 0 2px rgba(108,140,255,.25); border-color:#3c4b7a; }
 
-    /* Секции */
     .form-section { background:#111520; border-radius:10px; padding:16px; margin-bottom:16px; border:1px solid var(--border); }
     .form-section h4 { color:var(--text); margin-bottom:12px; font-size:13px; font-weight:600; }
     .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
     .form-group label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:500; }
 
-    /* Поиск пользователя */
     .user-search-container { position:relative; }
     .user-dropdown { position:absolute; top:100%; left:0; right:0; background:var(--card); border:1px solid var(--border); border-radius:10px; margin-top:4px; max-height:250px; overflow-y:auto; z-index:100; display:none; box-shadow:0 10px 30px rgba(0,0,0,.3); }
     .user-dropdown.active { display:block; }
@@ -37,19 +34,16 @@
     .user-login { font-weight:500; color:var(--text); font-size:13px; }
     .user-id { font-size:11px; color:var(--muted); }
 
-    /* Выбранный юзер */
     .selected-user-badge { display:none; align-items:center; gap:10px; background:#111520; border:1px solid var(--border); padding:12px 16px; border-radius:10px; margin-top:12px; }
     .selected-user-badge.active { display:flex; }
     .selected-user-name { font-weight:500; color:var(--accent); font-size:14px; }
     .selected-user-id { font-size:12px; color:var(--muted); }
 
-    /* Кнопки дат */
     .quick-dates { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
     .quick-date-btn { background:#111520; border:1px solid var(--border); color:var(--muted); padding:8px 14px; font-size:13px; border-radius:8px; cursor:pointer; transition:all .15s ease; }
     .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
     .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); }
 
-    /* Карточки итогов */
     .summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
     .summary-card { background:#111520; border-radius:10px; padding:20px; border:1px solid var(--border); position:relative; overflow:hidden; }
     .summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
@@ -61,7 +55,6 @@
     .summary-value { font-size:1.5rem; font-weight:300; margin-bottom:4px; }
     .summary-count { font-size:12px; color:var(--muted); }
 
-    /* Таблицы */
     .tables-container { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
     .table-section { background:#111520; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
     .table-header { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); }
@@ -71,18 +64,20 @@
     .table-header.buy .table-title { color:var(--ok); }
     .table-header.sell .table-title { color:var(--danger); }
     .table { width:100%; border-collapse:separate; border-spacing:0; }
-    .table th, .table td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); font-size:13px; color:var(--muted); }
-    .table th { color:#b6bed2; font-weight:600; background:#121622; }
+    .table th, .table td { padding:10px 12px; text-align:left; border-bottom:1px solid var(--border); font-size:12px; color:var(--muted); }
+    .table th { color:#b6bed2; font-weight:600; background:#121622; font-size: 11px; text-transform: uppercase; }
+    
     .amount-cell { font-weight:500; font-family:monospace; }
     .buy-amount { color:var(--ok); }
     .sell-amount { color:var(--danger); }
+    
     .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
     .no-data-icon { font-size:32px; margin-bottom:10px; opacity:0.5; }
     .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; }
     .timezone-info { background:rgba(108,140,255,.1); border:1px solid rgba(108,140,255,.2); border-radius:8px; padding:8px 14px; margin-top:16px; font-size:12px; color:var(--accent); display:inline-block; }
     .hidden { display:none !important; }
 
-    @media (max-width: 1000px) { .tables-container { grid-template-columns:1fr; } }
+    @media (max-width: 1200px) { .tables-container { grid-template-columns:1fr; } }
 </style>
 {% endblock %}
 
@@ -165,7 +160,15 @@
                 </div>
                 <div class="table-scroll">
                     <table class="table">
-                        <thead><tr><th>ID</th><th>Сумма</th><th>Кол-во</th><th>Дата</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>ID (Биржи)</th>
+                                <th>Курс</th>
+                                <th>Кол-во</th>
+                                <th>Сумма (RUB)</th>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
                         <tbody id="buyOrdersTable"></tbody>
                     </table>
                 </div>
@@ -178,7 +181,15 @@
                 </div>
                 <div class="table-scroll">
                     <table class="table">
-                        <thead><tr><th>ID</th><th>Сумма</th><th>Кол-во</th><th>Дата</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th>ID (Биржи)</th>
+                                <th>Курс</th>
+                                <th>Кол-во</th>
+                                <th>Сумма (RUB)</th>
+                                <th>Дата</th>
+                            </tr>
+                        </thead>
                         <tbody id="sellOrdersTable"></tbody>
                     </table>
                 </div>
@@ -190,7 +201,23 @@
 
 {% block extra_js %}
 <script>
-    // --- Логика времени ---
+    // --- ВАЖНАЯ ФУНКЦИЯ ДЛЯ ЧИСЕЛ ---
+    // Убирает пробелы, меняет запятую на точку, чтобы числа не обрезались
+    function safeFloat(val) {
+        if (!val) return 0;
+        let str = String(val).replace(/\s/g, '').replace(',', '.');
+        return parseFloat(str) || 0;
+    }
+
+    // Форматирование денег
+    function formatMoney(amount) {
+        return safeFloat(amount).toLocaleString('ru-RU', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+
+    // --- Логика времени (Часы) ---
     function updateMskTime() {
         const now = new Date();
         const options = { timeZone: 'Europe/Moscow', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' };
@@ -199,7 +226,7 @@
     setInterval(updateMskTime, 1000);
     updateMskTime();
 
-    // --- Логика дат ---
+    // --- Логика дат (Кнопки "Сегодня", "Вчера") ---
     function setDate(daysBack) {
         const end = new Date();
         const start = new Date();
@@ -234,6 +261,7 @@
     const userDropdown = document.getElementById('userDropdown');
     let selectedUserId = null;
 
+    // --- Поиск пользователя ---
     userSearchInput.addEventListener('input', async function() {
         const query = this.value.trim();
         if (query.length < 1) { 
@@ -242,11 +270,13 @@
         }
 
         try {
-            // Используем Django URL для поиска
-            const response = await fetch(`{% url 'api_search_users' %}?q=${query}`);
+            // ИЗМЕНЕНИЕ: Стучимся на текущую страницу с action=search_users
+            const currentUrl = window.location.pathname; 
+            const response = await fetch(`${currentUrl}?action=search_users&q=${query}`);
             const users = await response.json();
 
-            if (users.length > 0) {
+            // ... (остальной код отображения списка без изменений) ...
+             if (users.length > 0) {
                 userDropdown.innerHTML = users.map(user => `
                     <div class="user-option" onclick="selectUser(${user.id}, '${user.username}')">
                         <div class="user-avatar">${user.username.charAt(0).toUpperCase()}</div>
@@ -266,7 +296,6 @@
         }
     });
 
-    // Скрытие дропдауна при клике вне
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.user-search-container')) userDropdown.classList.remove('active');
     });
@@ -293,6 +322,7 @@
     }
 
     // --- Загрузка оборота ---
+    // --- Загрузка оборота ---
     async function loadTurnover() {
         if (!selectedUserId) return;
         
@@ -306,8 +336,9 @@
         errorDiv.classList.add('hidden');
 
         try {
-            // Формируем URL. Важно: параметр ID передаем в URL
-            const url = `{% url 'api_get_turnover' 0 %}`.replace('0', selectedUserId) + `?start=${start}&end=${end}`;
+            // ИЗМЕНЕНИЕ: Стучимся на текущую страницу с action=get_turnover
+            const currentUrl = window.location.pathname;
+            const url = `${currentUrl}?action=get_turnover&target_user_id=${selectedUserId}&start=${start}&end=${end}`;
             
             const response = await fetch(url);
             
@@ -317,7 +348,7 @@
             renderData(data, start, end);
             
         } catch (e) {
-            errorDiv.textContent = 'Ошибка загрузки данных. Проверьте консоль.';
+            errorDiv.textContent = 'Ошибка загрузки данных.';
             errorDiv.classList.remove('hidden');
             console.error(e);
         } finally {
@@ -325,56 +356,85 @@
             btn.disabled = false;
         }
     }
-
     function renderData(data, start, end) {
         document.getElementById('resultsSection').classList.remove('hidden');
         
-        // Инфо о периоде
         const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
         document.getElementById('periodInfo').textContent = `📅 Период: ${start} — ${end} | Загружено: ${totalCount} заказов`;
 
-        // Карточки (данные уже отформатированы на сервере)
-        document.getElementById('buyTotal').textContent = data.buy_sum + ' ₽';
+        // Карточки итогов
+        document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
         document.getElementById('buyCount').textContent = data.buy_count;
         
-        document.getElementById('sellTotal').textContent = data.sell_sum + ' ₽';
+        document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
         
-        document.getElementById('totalTurnover').textContent = data.total_sum + ' ₽';
+        document.getElementById('totalTurnover').textContent = formatMoney(data.total_sum) + ' ₽';
         document.getElementById('totalCount').textContent = totalCount;
         
+        const profit = safeFloat(data.profit);
         const profitEl = document.getElementById('profitValue');
-        profitEl.textContent = (parseFloat(data.profit.replace(/\s/g, '').replace(',', '.')) >= 0 ? '+' : '') + data.profit + ' ₽';
-        profitEl.style.color = parseFloat(data.profit.replace(/\s/g, '').replace(',', '.')) >= 0 ? 'var(--ok)' : 'var(--danger)';
+        profitEl.textContent = (profit >= 0 ? '+' : '') + formatMoney(profit) + ' ₽';
+        profitEl.style.color = profit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-        // Таблицы
+        // Рендерим таблицы
         renderTable('buyOrdersTable', data.buy_orders, 'buy');
         renderTable('sellOrdersTable', data.sell_orders, 'sell');
         
         document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
         document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
     }
-
     function renderTable(elementId, orders, type) {
         const tbody = document.getElementById(elementId);
+        
+        // Очистка таблицы
+        tbody.innerHTML = '';
+
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" class="no-data"><div class="no-data-icon">📭</div>Нет данных</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="no-data"><div class="no-data-icon">📭</div>Нет данных</td></tr>`;
             return;
         }
         
         const amountClass = type === 'buy' ? 'buy-amount' : 'sell-amount';
         
-        tbody.innerHTML = orders.map(o => `
+        // Генерируем строки
+        const rows = orders.map(o => {
+            // 1. ID: Берем external_id, который прислал сервер
+            const displayId = o.external_id;
+
+            // 2. ДАННЫЕ (Используем safeFloat на всякий случай, хотя Python прислал float)
+            // o.price  -> КУРС
+            // o.amount -> USDT (Объем)
+            // o.cost   -> РУБЛИ (Стоимость)
+
+            const rate = safeFloat(o.price);       // Курс
+            const usdtVol = safeFloat(o.amount);   // Объем (USDT)
+            const rubSum = safeFloat(o.cost);      // Сумма (Рубли)
+
+            // Если курс пришел 0 (бывает при ошибках), считаем сами: Рубли / USDT
+            let displayRate = rate;
+            if (displayRate === 0 && usdtVol > 0) {
+                displayRate = rubSum / usdtVol;
+            }
+
+            return `
             <tr>
-                <td class="order-id-cell">${o.id}</td>
-                <td class="amount-cell ${amountClass}">${parseFloat(o.amount).toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</td>
-                <td>${parseFloat(o.cost).toLocaleString('ru-RU', {maximumFractionDigits: 4})}</td>
-                <td class="date-cell">${o.date}</td>
+                <td class="order-id-cell" style="font-size:11px; font-family:monospace; color:var(--text);">${displayId}</td>
+                
+                <td>${displayRate.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                
+                <td style="font-weight:500;">${usdtVol.toLocaleString('ru-RU', {maximumFractionDigits: 8})} <span style="color:var(--muted); font-size:10px;">USDT</span></td>
+                
+                <td class="amount-cell ${amountClass}">${rubSum.toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</td>
+                
+                <td class="date-cell" style="font-size:11px;">${o.date}</td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
+
+        tbody.innerHTML = rows;
     }
 
-    // Ставим дату при загрузке
     window.onload = setToday;
 </script>
 {% endblock %}
