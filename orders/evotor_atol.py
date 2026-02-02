@@ -3,13 +3,8 @@ import uuid
 import logging
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
-
-from datetime import datetime, timedelta # Добавили timedelta
-
-
-# ... (token и Error class без изменений)
 
 logger = logging.getLogger(__name__)
 
@@ -34,23 +29,21 @@ def evotor_get_token(login: str, password: str) -> str:
         raise EvotorAtolError(f"Token Error: {str(e)}")
 
 
-
 def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -> dict:
     """
     Сборка тела запроса v5. 
-    Место расчетов всегда берется по бирже ордера.
+    Место расчетов берется по бирже ордера (Bybit, HTX, MEXC, Bitget, Telegram).
     Время корректируется на +3 часа (МСК).
     """
     
-    # 1. Исправление времени (если сервер в UTC, добавляем 3 часа для Москвы)
-    # Если ваш сервер уже в МСК, удалите .replace и + timedelta
+    # 1. Исправление времени (МСК +3)
     msk_time = datetime.now() + timedelta(hours=3)
     timestamp_str = msk_time.strftime("%d.%m.%Y %H:%M:%S")
 
     # 2. Уникальный ID
     external_id = f"ord_{order.id}_{uuid.uuid4().hex}"[:128]
 
-    # 3. Данные клиента (Email/Phone)
+    # 3. Данные клиента
     raw_contact = receipt_data.get("contact") or "client@example.com"
     client_obj = {}
     if "@" in raw_contact:
@@ -66,24 +59,29 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     tax_map = {"osn": "osn", "usn_income": "usn_income", "usn_income_outcome": "usn_income_outcome", "patent": "patent"}
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
-    # Определяем URL биржи на основе ордера
+    # === ЛОГИКА АДРЕСА БИРЖИ ===
     exchange_type = str(getattr(order, "exchange_type", "Bybit")).strip().lower()
     
     if "htx" in exchange_type or "huobi" in exchange_type:
         payment_address = "https://www.htx.com/"
     elif "mexc" in exchange_type:
         payment_address = "https://www.mexc.com/"
+    elif "bitget" in exchange_type:       # <-- Добавлено
+        payment_address = "https://www.bitget.com/"
+    elif "telegram" in exchange_type:     # <-- Добавлено
+        payment_address = "https://telegram.org/"
     else:
+        # По умолчанию Bybit
         payment_address = "https://www.bybit.com/"
 
     company_obj = {
         "email": user.email or "noreply@evotor.ru",
         "sno": sno_value,
         "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": payment_address # Это поле уйдет в "Место расчетов" и "Магазин"
+        "payment_address": payment_address # Уйдет в "Место расчетов"
     }
 
-    # 5. Цифры (Математика чека)
+    # 5. Цифры
     def to_float(val):
         try: return float(str(val).replace(",", ".").strip())
         except: return 0.0
@@ -107,7 +105,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         "measure": 0,
         "sum": total_sum,
         "payment_method": "full_payment",
-        "payment_object": 1, # Товар
+        "payment_object": 1, 
         "vat": {"type": "none"}
     }]
 
@@ -124,6 +122,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     }
     return payload
 
+
 def evotor_register_receipt(token: str, group_code: str, operation: str, payload: dict) -> dict:
     url = f"{EVOTOR_BASE_URL}/{group_code}/{operation}"
     headers = {
@@ -131,7 +130,7 @@ def evotor_register_receipt(token: str, group_code: str, operation: str, payload
         "Token": token
     }
 
-    # === ОТЛАДКА: ПЕЧАТАЕМ ТО ЧТО ОТПРАВЛЯЕМ ===
+    # === ОТЛАДКА ===
     print("\n--- EVOTOR REQUEST DEBUG ---")
     print(f"URL: {url}")
     print(f"PAYLOAD: {json.dumps(payload, indent=2, ensure_ascii=False)}")
@@ -140,18 +139,15 @@ def evotor_register_receipt(token: str, group_code: str, operation: str, payload
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=30)
         
-        # Сначала читаем JSON, даже если ошибка 400
         try:
             data = response.json()
         except:
             data = {"text": response.text}
 
-        # Если статус код ошибки (4xx, 5xx)
         if response.status_code >= 400:
             error_text = json.dumps(data, ensure_ascii=False)
             raise EvotorAtolError(f"HTTP {response.status_code}: {error_text}")
 
-        # Проверка логической ошибки внутри JSON (если 200 OK, но status fail)
         if data.get("status") == "fail" or data.get("error"):
             error_info = data.get("error", {})
             raise EvotorAtolError(f"API Logic Error: {error_info}")

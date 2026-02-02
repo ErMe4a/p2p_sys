@@ -4,24 +4,14 @@
 {% block content %}
 
 <style>
-    /* ВАЖНО: Мы удалили :root и body отсюда, чтобы они наследовались из base.html.
-       Теперь цвета берутся из переменных темы.
-    */
-
-    /* === КОНТЕЙНЕРЫ === */
+    /* ВАЖНО: Стили наследуются от темы, переопределяем только структуру */
     .form-section { background: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; }
     .table-container { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
 
-    /* === СТИЛИ ФОРМЫ === */
-    .form-label {
-        color: var(--text-muted);
-        font-size: 12px;
-        margin-bottom: 6px;
-        display: block;
-    }
+    .form-label { color: var(--text-muted); font-size: 12px; margin-bottom: 6px; display: block; }
 
     .form-control, .form-select {
-        background-color: var(--bg-input) !important; /* Исправлено имя переменной */
+        background-color: var(--bg-input) !important;
         border: 1px solid var(--border-color) !important;
         color: var(--text-main) !important;
         font-size: 14px;
@@ -35,7 +25,6 @@
         box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
     }
 
-    /* Стили для группы комиссии */
     .commission-group { display: flex; }
     .commission-group .form-control { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
     .commission-select { 
@@ -50,25 +39,16 @@
         cursor: pointer;
     }
 
-    /* === ТАБЛИЦА === */
     .table { margin-bottom: 0; color: var(--text-main); font-size: 13px; }
     .table thead th { background: rgba(255,255,255,0.02); color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding: 12px 15px; font-size: 11px; text-transform: uppercase; vertical-align: middle; }
     .table td { border-bottom: 1px solid var(--border-color); padding: 10px 15px; vertical-align: middle; }
 
-    /* === КНОПКИ === */
     .btn-create { 
-        background-color: var(--accent-blue); 
-        color: #fff; 
-        border: none; 
-        height: 42px; 
-        border-radius: 6px; 
-        width: 100%; 
-        font-weight: 600; 
-        margin-top: 23px; 
+        background-color: var(--accent-blue); color: #fff; border: none; height: 42px; 
+        border-radius: 6px; width: 100%; font-weight: 600; margin-top: 23px; 
     }
     .btn-create:hover { background-color: #304ffe; }
 
-    /* Базовый стиль для кнопок в таблице */
     .btn-action { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); font-size: 12px; padding: 4px 10px; border-radius: 4px; transition: 0.2s; cursor: pointer; }
     .btn-action:hover { background: var(--border-color); }
     .btn-delete { background: #3d2428; border: 1px solid #5a2d2d; color: #ff8080; }
@@ -77,11 +57,9 @@
     .status-sell { color: var(--danger); font-weight: 600; }
     .badge-exchange { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border-color); font-size: 11px; padding: 4px 8px; border-radius: 4px; }
 
-    /* === МОДАЛКА === */
     .modal-content { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main); }
     .modal-header { border-bottom: 1px solid var(--border-color); }
     .modal-footer { border-top: none; }
-    /* Инверсия крестика только для темной темы */
     [data-bs-theme="dark"] .btn-close { filter: invert(1); }
     
     .btn-save-modal { background-color: var(--accent-blue); color: white; border-radius: 6px; border: none; font-weight: 600; }
@@ -110,17 +88,17 @@
             </div>
             <div class="col-md-3">
                 <select class="form-select" name="operation_type">
-                    <option value="BUY">Покупка</option>
-                    <option value="SELL">Продажа</option>
+                    <option value="BUY" {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
+                    <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
                 </select>
             </div>
             <div class="col-md-3">
                 <select class="form-select" name="exchange">
-                    <option value="Bybit">Bybit</option>
-                    <option value="HTX">HTX</option>
-                    <option value="MEXC">MEXC</option>
-                    <option value="Telegram">Telegram</option>
-                    <option value="Bitget">Bitget</option>
+                    <option value="Bybit" {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                    <option value="HTX" {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                    <option value="MEXC" {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="Bitget" {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
                 </select>
             </div>
         </div>
@@ -128,17 +106,19 @@
         <div class="row g-3 align-items-start">
             <div class="col-md-3">
                 <select class="form-select" name="details">
-                    <option selected disabled value="">Выберите банк...</option>
-                    {% for bank in default_banks %}<option value="{{ bank.id }}">{{ bank.name }}</option>{% endfor %}
+                    <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
+                    {% for bank in default_banks %}
+                        <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                    {% endfor %}
                 </select>
             </div>
             
             <div class="col-md-2">
                 <div class="commission-group">
-                    <input type="number" name="commission_value" class="form-control" step="1" placeholder="0">
+                    <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
                     <select class="form-select commission-select" name="commission_type">
-                        <option value="PERCENT">%</option>
-                        <option value="RUB">₽</option>
+                        <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
+                        <option value="RUB" {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
                     </select>
                 </div>
             </div>
@@ -165,6 +145,11 @@
             </div>
         </div>
 
+        <div id="emailInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
+            <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
+        </div>
+
         <div id="fileInputWrapper" class="mt-3" style="display: none;">
             <label class="form-label">Прикрепить скриншот</label>
             <input type="file" name="screenshot" class="form-control">
@@ -181,59 +166,36 @@
         </thead>
         <tbody>
             {% for order in orders %}
-            
             {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
-            
             <tr>
                 <td class="fw-bold">{{ order.id }}</td>
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
                 <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
-                
                 <td>{{ formatted_price }}</td>
                 <td>{{ formatted_amount }}</td>
                 <td>{{ formatted_cost }}</td>
                 <td>{{ formatted_comm }}</td>
-                
                 <td class="text-muted">{% if order.commission_type == 'PERCENT' %}%{% else %}₽{% endif %}</td>
                 <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
-                <td class="small text-muted" style="line-height: 1.2;">
-                    {{ order_date }}<br>{{ order_time }}
-                </td>
+                <td class="small text-muted" style="line-height: 1.2;">{{ order_date }}<br>{{ order_time }}</td>
                 <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
                         <button class="btn btn-action" 
-                            onclick="openEditModal(
-                                '{{ order.id }}', 
-                                '{{ order.operation_type }}', 
-                                '{{ order.exchange_type }}', 
-                                '{{ order.bank_detail.name|escapejs }}', 
-                                '{{ formatted_price }}', 
-                                '{{ formatted_amount }}', 
-                                '{{ formatted_cost }}', 
-                                '{{ formatted_comm }}', 
-                                '{{ order.commission_type }}', 
-                                '{{ order.external_id|escapejs }}', 
-                                '{{ order_date }}T{{ order_time }}'
-                            )">
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.name|escapejs }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
                             Изм.
                         </button>
-
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
-                        
                         <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
                             {% csrf_token %}
                             <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
                         </form>
-
                         {% if order.screenshot %}
                             <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть">👁️</a>
                         {% endif %}
-
                         <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
                     </div>
                 </td>
             </tr>
-            
             {% endwith %}
             {% endfor %}
         </tbody>
@@ -251,45 +213,15 @@
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Тип операции</label>
-                            <select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Биржа</label>
-                            <select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option></select>
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Реквизиты</label>
-                            <select class="form-select" name="details" id="modal_details">{% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}</select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Курс</label>
-                            <input type="text" name="price" id="modal_price" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Количество</label>
-                            <input type="text" name="amount" id="modal_amount" class="form-control">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Стоимость</label>
-                            <input type="text" name="cost" id="modal_cost" class="form-control">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Комиссия</label>
-                            <div class="commission-group">
-                                <input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1">
-                                <select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Номер ордера</label>
-                            <input type="text" name="external_id" id="modal_ext_id" class="form-control">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Дата и время</label>
-                            <input type="datetime-local" name="created_at" id="modal_date" class="form-control">
-                        </div>
+                        <div class="col-md-6"><label class="form-label">Тип операции</label><select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select></div>
+                        <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option></select></div>
+                        <div class="col-12"><label class="form-label">Реквизиты</label><select class="form-select" name="details" id="modal_details">{% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}</select></div>
+                        <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control"></div>
+                        <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control"></div>
+                        <div class="col-12"><label class="form-label">Стоимость</label><input type="text" name="cost" id="modal_cost" class="form-control"></div>
+                        <div class="col-md-6"><label class="form-label">Комиссия</label><div class="commission-group"><input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1"><select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select></div></div>
+                        <div class="col-md-6"><label class="form-label">Номер ордера</label><input type="text" name="external_id" id="modal_ext_id" class="form-control"></div>
+                        <div class="col-12"><label class="form-label">Дата и время</label><input type="datetime-local" name="created_at" id="modal_date" class="form-control"></div>
                     </div>
                 </div>
                 <div class="modal-footer pb-3 pt-3 justify-content-between">
@@ -302,9 +234,33 @@
 </div>
 
 <script>
-    // Показ поля для файла при создании
     document.getElementById('checkScreen').addEventListener('change', function() {
         document.getElementById('fileInputWrapper').style.display = this.checked ? 'block' : 'none';
+    });
+
+    // === ГЕНЕРАЦИЯ ПОЧТЫ ===
+    function generateRandomEmail() {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let str = '';
+        for(let i=0; i<8; i++) {
+            str += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return str + '@gmail.com';
+    }
+
+    document.getElementById('checkDocs').addEventListener('change', function() {
+        const emailWrapper = document.getElementById('emailInputWrapper');
+        const emailInput = document.getElementById('receiptContact');
+
+        if (this.checked) {
+            emailWrapper.style.display = 'block';
+            // Если поле пустое, генерируем. Если юзер ввел своё - не трогаем.
+            if (!emailInput.value) {
+                emailInput.value = generateRandomEmail();
+            }
+        } else {
+            emailWrapper.style.display = 'none';
+        }
     });
 
     function openEditModal(id, opType, exchange, details, price, amount, cost, commVal, commType, extId, date) {
@@ -333,7 +289,6 @@
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
-    // Триггер для быстрой загрузки скриншота
     function triggerUpload(orderId) {
         const fileInput = document.getElementById('file-input-' + orderId);
         if (fileInput) fileInput.click();

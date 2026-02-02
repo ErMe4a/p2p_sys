@@ -1395,7 +1395,7 @@ function createCheckContent() {
     checkContent.appendChild(permanentInputs);
     checkContent.appendChild(createSeparator());
 
-    // === 2. Чекбокс и Индикатор ===
+    // === 2. Чекбокс ===
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
 
@@ -1407,19 +1407,39 @@ function createCheckContent() {
     const label = document.createElement('label');
     label.className = 'p2p-analytics-checkbox-label';
     label.htmlFor = 'check-checkbox';
-    
-    // Текст лейбла
-    const labelText = document.createTextNode('Чек ');
-    label.appendChild(labelText);
-
-    // Индикатор (ПРИХОД/РАСХОД)
-    const typeSpan = document.createElement('span');
-    typeSpan.style.fontWeight = 'bold';
-    typeSpan.style.marginLeft = '5px';
-    label.appendChild(typeSpan);
+    label.textContent = 'Чек (Фискализация)';
 
     checkboxWrapper.appendChild(checkbox);
     checkboxWrapper.appendChild(label);
+
+    // === НОВОЕ: Выбор типа (Приход/Расход) ===
+    const typeSelector = document.createElement('div');
+    typeSelector.className = 'p2p-analytics-type-selector';
+    typeSelector.style.display = 'none'; 
+
+    // 1. СЛЕВА: Приход (Продажа/SELL) - КРАСНЫЙ
+    const labelSell = document.createElement('label');
+    labelSell.className = 'p2p-analytics-radio-label type-sell'; // Красный класс
+    const radioSell = document.createElement('input');
+    radioSell.type = 'radio';
+    radioSell.name = 'order-type-selection';
+    radioSell.value = 'SELL';
+    labelSell.appendChild(radioSell);
+    labelSell.appendChild(document.createTextNode('Приход (Продажа)'));
+
+    // 2. СПРАВА: Расход (Покупка/BUY) - ЗЕЛЕНЫЙ
+    const labelBuy = document.createElement('label');
+    labelBuy.className = 'p2p-analytics-radio-label type-buy'; // Зеленый класс
+    const radioBuy = document.createElement('input');
+    radioBuy.type = 'radio';
+    radioBuy.name = 'order-type-selection';
+    radioBuy.value = 'BUY';
+    labelBuy.appendChild(radioBuy);
+    labelBuy.appendChild(document.createTextNode('Расход (Покупка)'));
+
+    // Порядок добавления: Сначала SELL (слева), потом BUY (справа)
+    typeSelector.appendChild(labelSell);
+    typeSelector.appendChild(labelBuy);
 
     // Сообщения
     const warningMessage = document.createElement('div');
@@ -1442,27 +1462,27 @@ function createCheckContent() {
     conditionalInputs.appendChild(contactInputWrapper);
     
     checkContent.appendChild(checkboxWrapper);
+    checkContent.appendChild(typeSelector);
     checkContent.appendChild(warningMessage);
     checkContent.appendChild(successMessage);
     checkContent.appendChild(conditionalInputs);
 
     let receiptExists = false;
 
-    // === ЛОГИКА ПРОВЕРКИ И БЛОКИРОВКИ ===
+    // === ЛОГИКА ===
     (async () => {
-        // 1. Ставим индикатор типа
-        const currentType = detectOrderType();
-        if (currentType === 'sell') {
-            typeSpan.textContent = '(ПРИХОД)';
-            typeSpan.style.color = '#0B8E5A'; // Зеленый
+        // Автоопределение для галочки по умолчанию
+        const detectedType = detectOrderType();
+        if (detectedType === 'sell') {
+            radioSell.checked = true;
         } else {
-            typeSpan.textContent = '(РАСХОД)';
-            typeSpan.style.color = '#E94359'; // Красный
+            // По умолчанию считаем расходом (правая кнопка), если не уверены
+            // Или если хочешь, чтобы по умолчанию был Приход (левая) - поменяй тут
+            radioBuy.checked = true; 
         }
 
         const orderId = await getOrderId();
         
-        // Запускаем проверки параллельно
         const orderCheckPromise = orderId 
             ? checkOrderExists(orderId).catch(() => ({ success: false, exists: false }))
             : Promise.resolve({ success: false, exists: false });
@@ -1471,48 +1491,49 @@ function createCheckContent() {
 
         Promise.all([orderCheckPromise, credentialsCheckPromise]).then(([orderResult, hasCredentials]) => {
             
-            // Стили блокировки
             const lockInputStyle = (input) => {
-                input.style.backgroundColor = '#333'; // Темный фон
-                input.style.color = '#aaa'; // Тусклый текст
+                input.style.backgroundColor = '#333';
+                input.style.color = '#aaa';
                 input.style.border = '1px solid #444';
             };
 
             const lockContainerStyle = (container) => {
-                container.style.opacity = '0.6'; // Полупрозрачность
-                container.style.pointerEvents = 'none'; // Полный запрет кликов
-                container.style.filter = 'grayscale(100%)'; // Ч/Б режим
+                container.style.opacity = '0.6';
+                container.style.pointerEvents = 'none';
+                container.style.filter = 'grayscale(100%)';
             };
 
-            // === ГЛАВНОЕ УСЛОВИЕ: ПРОВЕРЯЕМ ПОЛЕ receipt ===
-            // Теперь checkOrderExists возвращает объект с receipt, если он есть
             if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.receipt) {
                 receiptExists = true;
                 const receipt = orderResult.data.receipt;
 
-                console.log("P2P Analytics: Чек найден!", receipt);
-
-                // 1. Блокируем чекбокс
                 checkbox.checked = true;
                 checkbox.disabled = true;
                 checkbox.classList.add('p2p-analytics-checkbox-disabled');
                 
-                label.childNodes[0].textContent = 'Чек пробит '; 
-                label.style.color = '#888';
-                typeSpan.style.opacity = '0.7';
+                typeSelector.style.display = 'flex';
+                radioBuy.disabled = true;
+                radioSell.disabled = true;
 
+                // Устанавливаем радио по типу из базы
+                const orderType = orderResult.data.type || 'BUY';
+                if (orderType === 'SELL') {
+                    radioSell.checked = true;
+                } else {
+                    radioBuy.checked = true;
+                }
+
+                label.style.color = '#888';
                 successMessage.style.display = 'block';
                 conditionalInputs.style.display = 'block';
 
-                // 2. Блокируем ВСЕ контейнеры
                 lockContainerStyle(permanentInputs);
                 lockContainerStyle(conditionalInputs);
 
-                // 3. Жестко прописываем значения из базы и блокируем инпуты
                 const fields = [
                     { el: rateInput, val: receipt.price },
-                    { el: quantityInput, val: receipt.amount }, // amount в базе = кол-во крипты
-                    { el: costInput, val: receipt.sum },        // sum в базе = рубли
+                    { el: quantityInput, val: receipt.amount }, 
+                    { el: costInput, val: receipt.sum },        
                     { el: contactInput, val: receipt.contact }
                 ];
 
@@ -1527,20 +1548,21 @@ function createCheckContent() {
                 });
 
             } else {
-                // === ЧЕКА НЕТ ===
-                // Заполняем данными из сохраненного ордера или парсим со страницы
                 if (orderResult.success && orderResult.exists && orderResult.data) {
                     const order = orderResult.data;
                     rateInput.value = order.price || parsePriceFromPage();
                     quantityInput.value = order.quantity || parseQuantityFromPage();
                     if (costInput) costInput.value = order.amount || parseAmountFromPage();
+                    
+                    if (order.type === 'SELL') radioSell.checked = true;
+                    else radioBuy.checked = true;
+
                 } else {
                     rateInput.value = parsePriceFromPage();
                     quantityInput.value = parseQuantityFromPage();
                     if (costInput) costInput.value = parseAmountFromPage();
                 }
 
-                // Разблокируем поля (на случай повторного рендера)
                 [rateInput, quantityInput, costInput, contactInput].forEach(el => {
                     if (el) {
                         el.readOnly = false;
@@ -1559,9 +1581,10 @@ function createCheckContent() {
                     checkbox.classList.add('p2p-analytics-checkbox-disabled');
                     warningMessage.style.display = 'block';
                 } else {
-                    // Ставим галочку по умолчанию, если есть доступы
                     checkbox.checked = true;
                     checkbox.disabled = false;
+                    
+                    typeSelector.style.display = 'flex';
                     conditionalInputs.style.display = 'block';
                     
                     if (contactInput && !contactInput.value) {
@@ -1572,11 +1595,13 @@ function createCheckContent() {
         });
     })();
     
-    // Ручное переключение (работает только если чека нет)
     checkbox.addEventListener('change', () => {
         if (!receiptExists) {
-            conditionalInputs.style.display = checkbox.checked ? 'block' : 'none';
-            if (checkbox.checked && contactInput && !contactInput.value) {
+            const isChecked = checkbox.checked;
+            conditionalInputs.style.display = isChecked ? 'block' : 'none';
+            typeSelector.style.display = isChecked ? 'flex' : 'none';
+
+            if (isChecked && contactInput && !contactInput.value) {
                 contactInput.value = generateRandomGmail();
             }
         }
@@ -1615,6 +1640,7 @@ function collectFormData() {
     formData.price = (parsedPrice !== null && !isNaN(parsedPrice)) ? parsedPrice : 0;
     formData.amount = (parsedAmount !== null && !isNaN(parsedAmount)) ? parsedAmount : 0;  
     formData.quantity = (parsedQuantity !== null && !isNaN(parsedQuantity)) ? parseFloat(parsedQuantity.toFixed(3)) : 0;
+    
     // Логика Чека
     const receiptCheckbox = document.querySelector('#check-checkbox');
     formData.hasReceipt = receiptCheckbox ? receiptCheckbox.checked : false;
@@ -1631,17 +1657,29 @@ function collectFormData() {
             contact: contactValue,
             price: formData.price,    
             amount: formData.quantity, 
-            sum: formData.amount,      
+            sum: formData.amount,       
         };
     } else {
         formData.receipt = null;
     }
     
-    // Тип ордера
+    // === ВАЖНОЕ ИЗМЕНЕНИЕ: ТИП ОРДЕРА ===
+    // Берем тип из выбранной радио-кнопки
+    const selectedType = document.querySelector('input[name="order-type-selection"]:checked');
+    
+    if (selectedType) {
+        // Если пользователь выбрал руками - верим ему на 100%
+        formData.type = selectedType.value;
+    } else {
+        // Fallback: если радиокнопки не видны или не выбраны (редкий случай),
+        // пробуем определить автоматически
+        const orderInfo = parseOrderInfo();
+        formData.type = (orderInfo.type === 'UNKNOWN' || !orderInfo.type) ? 'BUY' : orderInfo.type;
+    }
+
+    // Добавляем дату создания
     const orderInfo = parseOrderInfo();
     formData.createdAt = orderInfo.createdAt;
-    // Честно отправляем тот тип, который нашли (BUY или SELL)
-    formData.type = (orderInfo.type === 'UNKNOWN' || !orderInfo.type) ? 'BUY' : orderInfo.type;
     
     return formData;
 }
@@ -1716,6 +1754,32 @@ function addStyles() {
                 opacity: 0;
             }
         }
+        /* ... начало стилей ... */
+        .p2p-analytics-type-selector {
+            display: flex;
+            gap: 15px; /* Чуть увеличил отступ между ними */
+            margin-top: 10px;
+            margin-bottom: 10px;
+            padding: 0 5px;
+        }
+
+        .p2p-analytics-radio-label {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            font-size: 12px;
+            user-select: none;
+        }
+
+        .p2p-analytics-radio-label input {
+            margin-right: 6px;
+            cursor: pointer;
+        }
+
+        /* Цвета по твоему запросу */
+        .type-sell { color: #E94359; font-weight: bold; } /* Приход (Продажа) -> КРАСНЫЙ */
+        .type-buy { color: #0B8E5A; font-weight: bold; }  /* Расход (Покупка) -> ЗЕЛЕНЫЙ */
+        /* ... конец стилей ... */
     `;
     
     if (document.head) {
