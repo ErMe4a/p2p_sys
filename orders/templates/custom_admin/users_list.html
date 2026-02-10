@@ -339,10 +339,9 @@
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
 
-        if (!start || !end) {
-            alert('Выберите период дат');
-            return;
-        }
+        // Я УБРАЛ ПРОВЕРКУ НА НАЛИЧИЕ ДАТ (if (!start || !end) alert...)
+        // Теперь если даты пустые, они просто передаются пустыми,
+        // и бэкенд отдаст отчет за всё время.
 
         const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
         window.location.href = url;

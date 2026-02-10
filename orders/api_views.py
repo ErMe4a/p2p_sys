@@ -111,7 +111,6 @@ def details_delete(request, pk: int):
     return Response({"message": "Deletion disabled"}, status=403)
 
 
-# ---------- ORDER ----------
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def order(request):
@@ -172,25 +171,21 @@ def order(request):
     if "createdAt" in data:
         created_at = parse_datetime(data.get("createdAt"))
 
-    # ИЗМЕНЕНИЕ: Обработка банка ТОЛЬКО по ID
+    # Обработка банка
     bank = None
     details_obj = data.get("details")
     
     if isinstance(details_obj, dict):
         bank_id = details_obj.get("id")
         if bank_id:
-            # Ищем банк по ID в общем списке
             bank = BankDetail.objects.filter(id=bank_id, is_deleted=False).first()
-    # На случай если придет просто ID числом
     elif isinstance(details_obj, int):
         bank = BankDetail.objects.filter(id=details_obj, is_deleted=False).first()
 
-    # --- ПОДГОТОВКА ДАННЫХ ЧЕКА И ЦИФР ---
-    # Получаем словарь чека с фронта. В нем лежит ключ 'contact' - это ПОКУПАТЕЛЬ.
+    # --- ПОДГОТОВКА ЦИФР ---
     receipt_data_raw = data.get("receipt")
     receipt_dict = receipt_data_raw if isinstance(receipt_data_raw, dict) else {}
 
-    # Получаем цифры: приоритет у корня JSON, запасной вариант - данные из чека
     price = data.get("price")
     quantity = data.get("quantity") # Крипта
     cost = data.get("amount")       # Фиат
@@ -201,7 +196,7 @@ def order(request):
 
     # Сохранение (update_or_create)
     o, created = Order.objects.update_or_create(
-        user=request.user, # ВАЖНО: Order привязывается к текущему юзеру (ОТПРАВИТЕЛЮ)
+        user=request.user, 
         external_id=external_id,
         exchange_type=exchange_name, 
         defaults={
@@ -213,7 +208,28 @@ def order(request):
     o.operation_type = op_type
     o.commission = commission
     o.commission_type = commission_type
-    o.bank_detail = bank # Привязываем найденный общий банк
+    o.bank_detail = bank 
+    
+    # === НОВАЯ ЛОГИКА: ФИКСИРУЕМ ПРОЦЕНТ ТОЛЬКО ПРИ СОЗДАНИИ (CREATED=True) ===
+    # Если ордер уже был, мы НЕ меняем исторический процент, чтобы не сломать старые отчеты.
+    # Но если очень нужно обновлять и при update, убери условие "if created".
+    if created:
+        ex_lower = str(exchange_name).lower()
+        user_comm_rate = 0.0
+        
+        if 'bybit' in ex_lower:
+            user_comm_rate = request.user.bybit_commission
+        elif 'htx' in ex_lower or 'huobi' in ex_lower:
+            user_comm_rate = request.user.htx_commission
+        elif 'mexc' in ex_lower:
+            user_comm_rate = request.user.mexc_commission
+        elif 'bitget' in ex_lower:
+            user_comm_rate = request.user.bitget_commission
+        elif 'telegram' in ex_lower:
+            user_comm_rate = request.user.telegram_commission
+            
+        o.exchange_commission_rate = user_comm_rate
+    # ===========================================================================
     
     if created_at: o.created_at = created_at
     if "screenshotName" in data: o.screenshot_name = data.get("screenshotName")
@@ -228,9 +244,6 @@ def order(request):
     # --- ЛОГИКА ОТПРАВКИ ЧЕКА ---
     receipt_debug = None
     if should_make_receipt(data):
-        # В функцию передаем:
-        # 1. Объект order (в нем order.user - это ВЫ, отправитель)
-        # 2. Словарь receipt_dict (в нем receipt_dict['contact'] - это ПОКУПАТЕЛЬ с расширения)
         receipt_debug = create_or_update_and_send_receipt(o, receipt_dict)
     
     return Response({
@@ -243,7 +256,6 @@ def order(request):
             "evotorUuid": getattr(receipt_debug, "evotor_uuid", None),
         } if receipt_debug else {"enabled": False}
     })
-
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])

@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 class User(AbstractUser):
     inn = models.CharField(max_length=12, blank=True, null=True, verbose_name="ИНН")
@@ -15,6 +16,12 @@ class User(AbstractUser):
     bybit_api_secret = models.CharField(max_length=255, blank=True, null=True, verbose_name="Bybit API Secret")
     mexc_api_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="MEXC Access Key")
     mexc_api_secret = models.CharField(max_length=255, blank=True, null=True, verbose_name="MEXC API Secret")
+
+    bybit_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия Bybit (%)")
+    htx_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия HTX (%)")
+    mexc_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия MEXC (%)")
+    bitget_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия Bitget (%)")
+    telegram_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия Telegram (%)")
 
 
     def __str__(self):
@@ -62,8 +69,13 @@ class Order(models.Model):
     commission = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commission_type = models.CharField(max_length=10, choices=COMMISSION_CHOICES, default='PERCENT')
     screenshot = models.ImageField(upload_to='orders/screenshots/', null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
+    created_at = models.DateTimeField(default=timezone.now)
+    exchange_commission_rate = models.DecimalField(
+        max_digits=6, 
+        decimal_places=4, 
+        default=0.0000, 
+        verbose_name="Зафиксированный % биржи"
+    )
 
     def __str__(self):
         return f"{self.operation_type} - {self.external_id}"

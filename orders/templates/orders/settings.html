@@ -158,6 +158,30 @@
                 <input type="text" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
             </div>
         </div>
+
+        <div class="section-divider">Комиссии бирж (%)</div>
+        <div class="row">
+            <div class="col-6 col-md">
+                <label class="field-label">Bybit</label>
+                <input type="number" step="0.0001" name="bybit_commission" class="form-control" placeholder="0" value="{{ user.bybit_commission|default:'0' }}">
+            </div>
+            <div class="col-6 col-md">
+                <label class="field-label">HTX</label>
+                <input type="number" step="0.0001" name="htx_commission" class="form-control" placeholder="0" value="{{ user.htx_commission|default:'0' }}">
+            </div>
+            <div class="col-6 col-md">
+                <label class="field-label">MEXC</label>
+                <input type="number" step="0.0001" name="mexc_commission" class="form-control" placeholder="0" value="{{ user.mexc_commission|default:'0' }}">
+            </div>
+            <div class="col-6 col-md">
+                <label class="field-label">Bitget</label>
+                <input type="number" step="0.0001" name="bitget_commission" class="form-control" placeholder="0" value="{{ user.bitget_commission|default:'0' }}">
+            </div>
+            <div class="col-6 col-md">
+                <label class="field-label">Telegram</label>
+                <input type="number" step="0.0001" name="telegram_commission" class="form-control" placeholder="0" value="{{ user.telegram_commission|default:'0' }}">
+            </div>
+        </div>
         <div class="section-divider">Безопасность</div>
         <div class="row">
             <div class="col-md-12">

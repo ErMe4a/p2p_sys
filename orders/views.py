@@ -82,7 +82,14 @@ def my_orders_list(request):
     # ЛОГИКА СОЗДАНИЯ
     if request.method == 'POST' and 'create_order' in request.POST:
         raw_date = request.POST.get('created_at')
-        order_date = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M') if raw_date else timezone.now()
+        if raw_date:
+            # 1. Парсим строку в дату (пока без зоны)
+            naive_date = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+            # 2. Добавляем текущую временную зону проекта (делаем дату "aware")
+            order_date = timezone.make_aware(naive_date)
+        else:
+            # Если дату не выбрали, берем текущую
+            order_date = timezone.now()
 
         # 1. Сохраняем настройки формы В ТОМ ВИДЕ, КАК ВВЕЛ ЮЗЕР
         request.session['saved_order_form'] = {
@@ -91,6 +98,7 @@ def my_orders_list(request):
             'details': request.POST.get('details'),
             'commission_value': request.POST.get('commission_value'),
             'commission_type': request.POST.get('commission_type'),
+            'created_at': raw_date
         }
 
         bank_id = request.POST.get('details') 
@@ -103,6 +111,22 @@ def my_orders_list(request):
         amount_val = safe_decimal(request.POST.get('amount'))
         cost_val = safe_decimal(request.POST.get('cost'))
         commission_val = safe_decimal(request.POST.get('commission_value'))
+
+        # === НОВАЯ ЛОГИКА: ОПРЕДЕЛЯЕМ ПРОЦЕНТ БИРЖИ ===
+        exchange_name = request.POST.get('exchange', '').lower()
+        user_comm_rate = 0.0
+        
+        if 'bybit' in exchange_name:
+            user_comm_rate = request.user.bybit_commission
+        elif 'htx' in exchange_name or 'huobi' in exchange_name:
+            user_comm_rate = request.user.htx_commission
+        elif 'mexc' in exchange_name:
+            user_comm_rate = request.user.mexc_commission
+        elif 'bitget' in exchange_name:
+            user_comm_rate = request.user.bitget_commission
+        elif 'telegram' in exchange_name:
+            user_comm_rate = request.user.telegram_commission
+        # ===============================================
 
         # Создаем ордер
         order = Order.objects.create(
@@ -119,6 +143,9 @@ def my_orders_list(request):
             bank_detail=bank_instance,
             commission_type=request.POST.get('commission_type'),
             
+            # ЗАПИСЫВАЕМ ИСТОРИЧЕСКИЙ ПРОЦЕНТ
+            exchange_commission_rate=user_comm_rate,
+            
             screenshot=request.FILES.get('screenshot'),
             created_at=order_date
         )
@@ -131,16 +158,11 @@ def my_orders_list(request):
             if not contact_email:
                 contact_email = request.user.email
 
-            # === АДАПТЕР ТИПОВ ===
-            # Дублируем логику здесь для надежности или полагаемся на receipt_service
-            # В receipt_data мы просто передаем данные, сервис сам выберет тип
-            
             receipt_data = {
                 "contact": contact_email, 
                 "sum": order.cost,
                 "price": order.price,
                 "amount": order.amount,
-                # Тип определится внутри create_or_update_and_send_receipt -> get_evotor_operation_type
             }
             
             create_or_update_and_send_receipt(order, receipt_data)
@@ -159,6 +181,11 @@ def my_orders_list(request):
             'exchange': 'Bybit',
             'commission_type': 'PERCENT'
         }
+    
+    if saved_data.get('created_at'):
+        current_time = saved_data['created_at']
+    else:
+        current_time = timezone.now().strftime('%Y-%m-%dT%H:%M')
 
     return render(request, 'orders/my_orders.html', {
         'orders': orders,
@@ -259,6 +286,13 @@ def profile_settings(request):
         user.mexc_api_secret = request.POST.get('mexc_secret')
         user.bybit_api_key = request.POST.get('bybit_key')
         user.bybit_api_secret = request.POST.get('bybit_secret')
+
+        # 3. Сохраняем комиссии бирж
+        user.bybit_commission = request.POST.get('bybit_commission') or 0
+        user.htx_commission = request.POST.get('htx_commission') or 0
+        user.mexc_commission = request.POST.get('mexc_commission') or 0
+        user.bitget_commission = request.POST.get('bitget_commission') or 0
+        user.telegram_commission = request.POST.get('telegram_commission') or 0
 
         # 3. ЛОГИКА СМЕНЫ ПАРОЛЯ
         new_password = request.POST.get('new_password')
@@ -389,8 +423,10 @@ def export_excel_report(request):
 
     orders = Order.objects.filter(user_id=user_id).order_by('created_at')
 
+    # Фильтрация дат
     if start_date: orders = orders.filter(created_at__date__gte=start_date)
     if end_date: orders = orders.filter(created_at__date__lte=end_date)
+    
     if bank_id and bank_id.isdigit(): orders = orders.filter(bank_detail_id=bank_id)
     if op_type: orders = orders.filter(operation_type=op_type)
 
@@ -402,7 +438,7 @@ def export_excel_report(request):
     bold_font = Font(bold=True)
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    ws.merge_cells('A1:L1')
+    ws.merge_cells('A1:M1')
     ws['A1'] = "Учет приобретенной и проданной цифровой валюты (ЦВ)"
     ws['A1'].font = Font(size=14, bold=True)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -412,21 +448,50 @@ def export_excel_report(request):
     ws.merge_cells('C2:C3'); ws['C2'] = "Номер документа"
     ws.merge_cells('D2:D3'); ws['D2'] = "Наименование ЦВ"
     ws.merge_cells('E2:H2'); ws['E2'] = "Приобретение цифровой валюты"
-    ws.merge_cells('I2:L2'); ws['I2'] = "Продажа цифровой валюты"
+    ws.merge_cells('I2:M2'); ws['I2'] = "Продажа цифровой валюты"
 
-    ws.append(["", "", "", "", "Кол-во", "Курс", "Стоимость", "Комиссия", "Кол-во", "Курс", "Стоимость", "Комиссия"])
+    ws.append([
+        "", "", "", "", 
+        "Кол-во", "Курс", "Стоимость", "Комиссия", 
+        "Кол-во", "Курс", "Стоимость", "Комиссия", "Комиссия биржи"
+    ])
+
+    # Переменные для итогов
+    t_buy_qty = 0; t_buy_cost = 0; t_buy_comm = 0
+    t_sell_qty = 0; t_sell_cost = 0; t_sell_comm = 0; t_sell_exch_comm = 0
+    
+    buys_list = []
 
     for idx, o in enumerate(orders, 1):
-        b_data = [o.amount, o.price, o.cost, o.commission] if o.operation_type == 'BUY' else ["", "", "", ""]
-        s_data = [o.amount, o.price, o.cost, o.commission] if o.operation_type == 'SELL' else ["", "", "", ""]
-        
-        # Пересчет комиссии (если нужно)
         comm_val = float(o.commission or 0)
         total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
-        
-        # Обновляем ячейку с комиссией
-        if o.operation_type == 'BUY': b_data[3] = total_comm
-        else: s_data[3] = total_comm
+
+        amount_float = float(o.amount or 0)
+        cost_float = float(o.cost or 0)
+        price_float = float(o.price or 0)
+
+        if o.operation_type == 'BUY':
+            b_data = [amount_float, price_float, cost_float, total_comm]
+            s_data = ["", "", "", "", ""]
+            
+            t_buy_qty += amount_float
+            t_buy_cost += cost_float
+            t_buy_comm += total_comm
+            
+            buys_list.append({'qty': amount_float, 'cost': cost_float})
+
+        else: # SELL
+            b_data = ["", "", "", ""]
+            
+            hist_percent = float(o.exchange_commission_rate or 0)
+            exchange_comm_val = (amount_float * hist_percent) / 100
+
+            s_data = [amount_float, price_float, cost_float, total_comm, exchange_comm_val]
+            
+            t_sell_qty += amount_float
+            t_sell_cost += cost_float
+            t_sell_comm += total_comm
+            t_sell_exch_comm += exchange_comm_val
 
         row = [
             idx,
@@ -438,14 +503,77 @@ def export_excel_report(request):
         ]
         ws.append(row)
 
+    # === РАСЧЕТ НИЖНЕЙ ПЛАШКИ ===
+    remainder_qty = t_buy_qty - t_sell_qty - t_sell_exch_comm
+    
+    remainder_cost = 0
+    temp_qty = remainder_qty
+    
+    for buy in reversed(buys_list):
+        if temp_qty <= 0: break
+        
+        if buy['qty'] >= temp_qty:
+            buy_price_unit = buy['cost'] / buy['qty'] if buy['qty'] else 0
+            remainder_cost += temp_qty * buy_price_unit
+            temp_qty = 0
+        else:
+            remainder_cost += buy['cost']
+            temp_qty -= buy['qty']
+            
+    equalized_buy_cost = t_buy_cost - remainder_cost
+    profit = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
+    remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
+
+    # === ЗАПИСЬ ИТОГОВ В EXCEL ===
+    ws.append([])
+
+    row_trade_res = [
+        "Торговый результат по итогам дня:", "", "", "",
+        t_buy_qty, "", t_buy_cost, t_buy_comm,
+        t_sell_qty, "", t_sell_cost, t_sell_comm, t_sell_exch_comm
+    ]
+    ws.append(row_trade_res)
+
+    row_equal_res = [
+        "Уравненный результат по итогам дня:", "", "", "",
+        t_sell_qty, "", equalized_buy_cost, t_sell_comm,
+        t_sell_qty, "", t_sell_cost, "", ""
+    ]
+    ws.append(row_equal_res)
+
+    row_profit = [
+        "Прибыль:", "", "", "",
+        profit, "", "", "",
+        "", "", "", "", ""
+    ]
+    ws.append(row_profit)
+
+    row_remainder = [
+        "Остаток (не реализованная ЦВ):", "", "", "",
+        remainder_qty, remainder_price, remainder_cost, 0,
+        "", "", "", "", ""
+    ]
+    ws.append(row_remainder)
+
     # Оформление
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=12):
+    # ИСПРАВЛЕНИЕ ОШИБКИ: Заменили cell.col_idx на cell.column
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=13):
         for cell in row:
             cell.border = thin_border
-            cell.alignment = center_align if cell.row <= 3 else Alignment(horizontal='center')
+            
+            # cell.column возвращает числовой индекс (1, 2, 3...)
+            if cell.column == 1 and cell.row > len(orders) + 3:
+                 cell.alignment = Alignment(horizontal='left')
+            else:
+                 cell.alignment = center_align if cell.row <= 3 else Alignment(horizontal='center')
+            
             if cell.row <= 3: cell.font = bold_font
 
-    col_widths = {'A': 6, 'B': 15, 'C': 25, 'D': 15, 'E': 15, 'F': 15, 'G': 18, 'H': 18, 'I': 15, 'J': 15, 'K': 18, 'L': 18}
+    col_widths = {
+        'A': 35, 'B': 15, 'C': 25, 'D': 15, 
+        'E': 15, 'F': 15, 'G': 18, 'H': 18, 
+        'I': 15, 'J': 15, 'K': 18, 'L': 18, 'M': 18
+    }
     for k, v in col_widths.items(): ws.column_dimensions[k].width = v
 
     filename = f"report_{user_id}.xlsx"
@@ -453,7 +581,6 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
-
 
 def admin_login(request):
     """Вход в админку"""
