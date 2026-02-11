@@ -308,22 +308,69 @@
         { id: 'raiff', name: 'Райффайзен' }
     ];
 
-    function openReportsModal(userId, username) {
+    
+async function openReportsModal(userId, username) {
         document.getElementById('reportsUserId').value = userId;
         document.getElementById('reportsUserLogin').innerText = username;
         
         const detailsSelect = document.getElementById('reportsUserDetails');
-        
-        // Очищаем и заполняем список из нашего массива
-        detailsSelect.innerHTML = '<option value="">Выберите реквизиты</option>';
-        
-        availableBanks.forEach(bank => {
-            let opt = document.createElement('option');
-            opt.value = bank.id;
-            opt.innerHTML = bank.name;
-            detailsSelect.appendChild(opt);
-        });
+        detailsSelect.innerHTML = '<option value="">Загрузка...</option>';
 
+        // Список банков точно как в вашей базе данных
+        const dbBanks = [
+            { id: '1', name: 'Сбербанк' },
+            { id: '2', name: 'Тинькофф' },
+            { id: '3', name: 'Райффайзен' },
+            { id: '4', name: 'ВТБ' },
+            { id: '5', name: 'Альфа-Банк' },
+            { id: '6', name: 'Газпромбанк' },
+            { id: '7', name: 'Росбанк' },
+            { id: '8', name: 'СБП' },
+            { id: '9', name: 'Озон Банк' },
+            { id: '10', name: 'Уралсиб' },
+            { id: '11', name: 'Хайс' }
+        ];
+
+        try {
+            // 1. Сначала пробуем загрузить актуальный список через API
+            const response = await fetch('/api/details'); 
+            
+            if (response.ok) {
+                const apiBanks = await response.json();
+                
+                // Очищаем и добавляем "Все банки"
+                detailsSelect.innerHTML = '<option value="">Все банки</option>';
+                
+                // Заполняем из API
+                apiBanks.forEach(bank => {
+                    let opt = document.createElement('option');
+                    opt.value = bank.id; 
+                    opt.innerHTML = bank.name;
+                    detailsSelect.appendChild(opt);
+                });
+            } else {
+                throw new Error('API недоступен');
+            }
+        } catch (e) {
+            console.log("API недоступен, используем встроенный список банков.");
+            
+            // 2. ЕСЛИ API НЕ СРАБОТАЛ — используем ваш жесткий список
+            detailsSelect.innerHTML = '<option value="">Все банки</option>';
+            
+            dbBanks.forEach(bank => {
+                let opt = document.createElement('option');
+                opt.value = bank.id; // Передаем ID (1, 2, 3...), а не название
+                opt.innerHTML = bank.name;
+                detailsSelect.appendChild(opt);
+            });
+        }
+
+        // Сбрасываем остальные поля фильтров
+        document.getElementById('reportsStartDate').value = '';
+        document.getElementById('reportsEndDate').value = '';
+        document.getElementById('reportsOperationType').value = '';
+
+        // Показываем модалку
         document.getElementById('reportsModal').classList.add('active');
     }
 
@@ -355,7 +402,23 @@
 
     function downloadScreenshots() {
         const userId = document.getElementById('reportsUserId').value;
-        alert('Запрос на сбор архива скриншотов отправлен для ID: ' + userId);
+        const start = document.getElementById('reportsStartDate').value;
+        const end = document.getElementById('reportsEndDate').value;
+        // Берем value из select (там id банка, например 'sber')
+        const bank = document.getElementById('reportsUserDetails').value; 
+        const type = document.getElementById('reportsOperationType').value;
+
+        // Проверка: выбран ли пользователь
+        if (!userId) {
+            alert("Ошибка: Не выбран пользователь");
+            return;
+        }
+
+        // Формируем URL для скачивания (путь должен совпадать с urls.py)
+        const url = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
+        
+        // Переходим по ссылке, чтобы браузер начал скачивание
+        window.location.href = url;
     }
 
     window.onclick = function(e) {

@@ -48,6 +48,12 @@ from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
 
 User = get_user_model()
 
+import zipfile
+import io
+import os
+from django.contrib.auth.decorators import user_passes_test
+from django.utils.dateparse import parse_date
+from datetime import datetime, time
 
 
 # === ХЕЛПЕР ДЛЯ ЧИСЕЛ (Чтобы 1,4 не ломало базу) ===
@@ -901,3 +907,79 @@ def api_get_turnover(request, user_id):
         'buy_orders': serialize(buy_orders), 'sell_orders': serialize(sell_orders),
     }
     return JsonResponse(data)
+
+
+
+@user_passes_test(lambda u: u.is_superuser)
+def export_screenshots_view(request):
+    # 1. Получаем параметры
+    user_id = request.GET.get('user_id')
+    start_str = request.GET.get('start')
+    end_str = request.GET.get('end')
+    bank_id = request.GET.get('bank')
+    op_type = request.GET.get('type')
+
+    if not user_id:
+        return HttpResponse("User ID required", status=400)
+
+    # 2. Базовая фильтрация
+    orders = Order.objects.filter(user_id=user_id).exclude(screenshot='').exclude(screenshot__isnull=True)
+
+    # 3. Фильтры
+    if start_str:
+        start_date = parse_date(start_str)
+        if start_date:
+            start_dt = timezone.make_aware(datetime.combine(start_date, time.min))
+            orders = orders.filter(created_at__gte=start_dt)
+    
+    if end_str:
+        end_date = parse_date(end_str)
+        if end_date:
+            end_dt = timezone.make_aware(datetime.combine(end_date, time.max))
+            orders = orders.filter(created_at__lte=end_dt)
+
+    if op_type and op_type in ['BUY', 'SELL']:
+        orders = orders.filter(operation_type=op_type)
+
+    if bank_id and bank_id.isdigit():
+        orders = orders.filter(bank_detail_id=int(bank_id))
+
+    if not orders.exists():
+        return HttpResponse("Нет скриншотов по выбранным критериям", content_type="text/plain; charset=utf-8")
+
+    # 4. Создание архива
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for order in orders:
+            try:
+                # Проверяем, существует ли файл
+                if order.screenshot and order.screenshot.storage.exists(order.screenshot.name):
+                    
+                    # === ИЗМЕНЕНИЕ: БЕРЕМ ОРИГИНАЛЬНОЕ ИМЯ ФАЙЛА ===
+                    # os.path.basename берет "d12345.png" из пути "uploads/2026/d12345.png"
+                    filename = os.path.basename(order.screenshot.name)
+                    
+                    # Если вдруг имя файла пустое (маловероятно), генерируем запасное
+                    if not filename:
+                        filename = f"order_{order.id}.png"
+
+                    # Читаем и пишем в архив
+                    with order.screenshot.open('rb') as f:
+                        zip_file.writestr(filename, f.read())
+                        
+            except Exception as e:
+                print(f"Ошибка с файлом ордера {order.id}: {e}")
+                continue
+
+    zip_buffer.seek(0)
+    response = HttpResponse(zip_buffer, content_type='application/zip')
+    
+    # === ИСПРАВЛЕНИЕ ОШИБКИ DATETIME ===
+    # Используем timezone.now() вместо datetime.now()
+    filename_zip = f"screens_{user_id}_{timezone.now().strftime('%Y%m%d')}.zip"
+    
+    response['Content-Disposition'] = f'attachment; filename="{filename_zip}"'
+    
+    return response
+
+
