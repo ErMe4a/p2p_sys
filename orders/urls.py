@@ -8,7 +8,7 @@ urlpatterns = [
     
     # Имя 'unprocessed_orders' используется в {% url 'unprocessed_orders' %}
     path('unprocessed/', views.unprocessed_orders_list, name='unprocessed_orders'),
-    
+    path('unprocessed/delete/<int:pk>/', views.delete_unprocessed_order, name='delete_unprocessed_order'),
     # Имя 'settings' используется в {% url 'settings' %}
     path('settings/', views.profile_settings, name='settings'),
 

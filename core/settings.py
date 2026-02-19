@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import os
 import environ
@@ -44,6 +43,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'corsheaders',
     'storages',
+    'django_celery_beat',  # <-- ДОБАВЛЕНО ДЛЯ ПЕРИОДИЧЕСКИХ ЗАДАЧ
     # Your apps
     'orders',
 ]
@@ -168,6 +168,7 @@ CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default=CELERY_BROKER_URL)
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE  # <-- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ ВРЕМЕНИ
 
 # ------------------------------------------------------------------------------
 # Other settings
@@ -181,8 +182,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 # this size (in bytes) before writing to disk. Raising it prevents Django
 # from rejecting moderately sized uploads (e.g., screenshots or documents).
 # Note: Nginx or your reverse proxy must also allow uploads at least as
-# large via `client_max_body_size`. Here we permit up to 10 MB per request.
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
+# large via `client_max_body_size`. Here we permit up to 10 MB per request.
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = DATA_UPLOAD_MAX_MEMORY_SIZE
 
 # Logging: basic configuration to console. Extend as needed.

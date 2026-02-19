@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 
-from .models import BankDetail, Order
+from .models import BankDetail, Order, UnprocessedOrder
 from .receipt_service import should_make_receipt, create_or_update_and_send_receipt
 
 # --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
@@ -118,7 +118,7 @@ def order(request):
     GET  /api/order?id=...&exchangeType=1
     POST /api/order (save/update)
     """
-    # === GET: Поиск конкретного ордера ===
+    # === GET: Поиск (БЕЗ ИЗМЕНЕНИЙ) ===
     if request.method == "GET":
         order_id = (request.query_params.get("id") or "").strip()
         exchange_name = get_exchange_name(request.query_params.get("exchangeType", 1))
@@ -147,14 +147,14 @@ def order(request):
             "commission": str(getattr(o, "commission", 0)),
             "commissionType": getattr(o, "commission_type", "PERCENT"),
             "details": {"id": o.bank_detail_id} if getattr(o, "bank_detail_id", None) else None,
-            "createdAt": o.created_at.isoformat() if getattr(o, "created_at", None) else None,
+            "created_at": o.created_at.isoformat() if getattr(o, "created_at", None) else None,
             "price": str(getattr(o, "price", 0)),
-            "amount": str(getattr(o, "cost", 0)),     # Фиат
-            "quantity": str(getattr(o, "amount", 0)), # Крипта
+            "amount": str(getattr(o, "cost", 0)),     
+            "quantity": str(getattr(o, "amount", 0)), 
             "receipt": receipt_data
         })
 
-    # === POST: Сохранение ордера ===
+    # === POST: Сохранение ордера (ТУТ ПРАВКИ) ===
     data = request.data
     
     external_id = str(data.get("orderId") or data.get("stringOrderId") or "").strip()
@@ -187,8 +187,8 @@ def order(request):
     receipt_dict = receipt_data_raw if isinstance(receipt_data_raw, dict) else {}
 
     price = data.get("price")
-    quantity = data.get("quantity") # Крипта
-    cost = data.get("amount")       # Фиат
+    quantity = data.get("quantity") 
+    cost = data.get("amount")       
 
     if not price: price = receipt_dict.get("price")
     if not quantity: quantity = receipt_dict.get("amount")
@@ -210,26 +210,18 @@ def order(request):
     o.commission_type = commission_type
     o.bank_detail = bank 
     
-    # === НОВАЯ ЛОГИКА: ФИКСИРУЕМ ПРОЦЕНТ ТОЛЬКО ПРИ СОЗДАНИИ (CREATED=True) ===
-    # Если ордер уже был, мы НЕ меняем исторический процент, чтобы не сломать старые отчеты.
-    # Но если очень нужно обновлять и при update, убери условие "if created".
+    # ФИКСИРУЕМ ПРОЦЕНТ (Твоя логика)
     if created:
         ex_lower = str(exchange_name).lower()
         user_comm_rate = 0.0
         
-        if 'bybit' in ex_lower:
-            user_comm_rate = request.user.bybit_commission
-        elif 'htx' in ex_lower or 'huobi' in ex_lower:
-            user_comm_rate = request.user.htx_commission
-        elif 'mexc' in ex_lower:
-            user_comm_rate = request.user.mexc_commission
-        elif 'bitget' in ex_lower:
-            user_comm_rate = request.user.bitget_commission
-        elif 'telegram' in ex_lower:
-            user_comm_rate = request.user.telegram_commission
+        if 'bybit' in ex_lower: user_comm_rate = request.user.bybit_commission
+        elif 'htx' in ex_lower or 'huobi' in ex_lower: user_comm_rate = request.user.htx_commission
+        elif 'mexc' in ex_lower: user_comm_rate = request.user.mexc_commission
+        elif 'bitget' in ex_lower: user_comm_rate = request.user.bitget_commission
+        elif 'telegram' in ex_lower: user_comm_rate = request.user.telegram_commission
             
         o.exchange_commission_rate = user_comm_rate
-    # ===========================================================================
     
     if created_at: o.created_at = created_at
     if "screenshotName" in data: o.screenshot_name = data.get("screenshotName")
@@ -240,6 +232,15 @@ def order(request):
     if quantity: o.amount = quantity
 
     o.save()
+
+    # !!! ВСТАВКА: ОЧИСТКА НЕОБРАБОТАННЫХ !!!
+    # Как только ордер сохранен в Order, удаляем его из буфера
+    if external_id:
+        UnprocessedOrder.objects.filter(
+            user=request.user, 
+            order_id=external_id
+        ).delete()
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     
     # --- ЛОГИКА ОТПРАВКИ ЧЕКА ---
     receipt_debug = None
@@ -256,6 +257,7 @@ def order(request):
             "evotorUuid": getattr(receipt_debug, "evotor_uuid", None),
         } if receipt_debug else {"enabled": False}
     })
+
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])

@@ -19,7 +19,6 @@ from django.db.models import Sum, Q
 from django.contrib.auth.models import User  # Или твоя модель пользователя
 
 
-from django.contrib.auth.decorators import user_passes_test
 
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db.models import Sum, Q # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
@@ -31,15 +30,11 @@ from django.core.paginator import Paginator
 from .receipt_service import create_or_update_and_send_receipt
 from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_service import get_mexc_orders_parallel
-from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required, user_passes_test
 from django.utils.dateparse import parse_datetime
 from decimal import Decimal
-from .models import Order, BankDetail
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
+
+
 from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
 
 
@@ -56,16 +51,20 @@ from django.utils.dateparse import parse_date
 from datetime import datetime, time
 
 
-# === ХЕЛПЕР ДЛЯ ЧИСЕЛ (Чтобы 1,4 не ломало базу) ===
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-import datetime
-from .models import Order, BankDetail
 # Импортируем функцию из твоего receipt_service.py
-from .receipt_service import create_or_update_and_send_receipt
+
+
+from django.core.cache import cache # Импортируем кэш
+
+
+# Импорт твоих функций
+# from .services import sync_bybit_orders, sync_mexc_orders 
 
 # === ХЕЛПЕР ДЛЯ ОЧИСТКИ ЧИСЕЛ ===
+
+
+
 def safe_decimal(value):
     """
     Превращает '1,4' -> 1.4, '1 000' -> 1000.0
@@ -134,10 +133,12 @@ def my_orders_list(request):
             user_comm_rate = request.user.telegram_commission
         # ===============================================
 
+        external_id = request.POST.get('external_id')
+
         # Создаем ордер
         order = Order.objects.create(
             user=request.user,
-            external_id=request.POST.get('external_id'),
+            external_id=external_id,
             
             price=price_val,
             amount=amount_val,
@@ -155,6 +156,14 @@ def my_orders_list(request):
             screenshot=request.FILES.get('screenshot'),
             created_at=order_date
         )
+
+        # !!! ВАЖНОЕ ИЗМЕНЕНИЕ: УДАЛЯЕМ ИЗ НЕОБРАБОТАННЫХ !!!
+        if external_id:
+            UnprocessedOrder.objects.filter(
+                user=request.user, 
+                order_id=external_id
+            ).delete()
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         # 4. ЛОГИКА ЧЕКА (Эвотор)
         need_receipt = request.POST.get('need_receipt') == 'on'
@@ -176,7 +185,6 @@ def my_orders_list(request):
         return redirect('my_orders')
 
     orders = Order.objects.filter(user=request.user).order_by('-created_at')
-    current_time = timezone.now().strftime('%Y-%m-%dT%H:%M')
     
     # Достаем сохраненные настройки
     saved_data = request.session.get('saved_order_form', {})
@@ -318,43 +326,64 @@ def profile_settings(request):
     return render(request, 'orders/settings.html', {'user': user})
 
 
+
+
 @login_required
 def unprocessed_orders_list(request):
     """
     Страница необработанных ордеров.
-    Синхронизирует Bybit и MEXC.
+    Синхронизирует Bybit и MEXC (не чаще 1 раза в 3 минуты).
     """
     user = request.user
     
-    # 1. Синхронизация Bybit
-    try:
-        sync_bybit_orders(user)
-    except Exception as e:
-        # Логируем ошибку, но не роняем страницу
-        print(f"Error syncing Bybit: {e}") 
-        if user.bybit_api_key:
-            messages.error(request, "Ошибка синхронизации Bybit")
+    # 1. Сразу проверяем наличие ключей (чтобы не запускать логику впустую)
+    bybit_ok = bool(user.bybit_api_key and user.bybit_api_secret)
+    mexc_ok = bool(user.mexc_api_key and user.mexc_api_secret)
 
-    # 2. Синхронизация MEXC
-    try:
-        sync_mexc_orders(user)
-    except Exception as e:
-        print(f"Error syncing MEXC: {e}")
-        if user.mexc_api_key:
-             messages.error(request, "Ошибка синхронизации MEXC")
+    # 2. УМНАЯ СИНХРОНИЗАЦИЯ (Защита от бана)
+    # Создаем ключ кэша: уникальный для каждого юзера
+    cache_key = f"sync_cooldown_{user.id}"
+    
+    # Если кэша НЕТ (значит прошло 3 минуты или это первый заход)
+    if not cache.get(cache_key):
+        
+        # --- BYBIT ---
+        if bybit_ok:
+            try:
+                # count - это то, что возвращает твоя функция (return len(new_orders))
+                count = sync_bybit_orders(user)
+                if count > 0:
+                    messages.success(request, f"Bybit: +{count} новых ордеров.")
+            except Exception as e:
+                print(f"Bybit Sync Error: {e}")
+                # Ошибку юзеру можно не показывать каждый раз, чтобы не раздражать
 
-    # 3. Получаем список ордеров из базы (уже смешанный Bybit + MEXC)
+        # --- MEXC ---
+        if mexc_ok:
+            try:
+                # sync_mexc_orders(user) 
+                pass
+            except Exception as e:
+                print(f"MEXC Sync Error: {e}")
+
+        # СТАВИМ БЛОКИРОВКУ НА 3 МИНУТЫ (180 секунд)
+        # В течение этого времени скрипт не будет стучаться на биржи
+        cache.set(cache_key, True, 180)
+        
+    else:
+        # Если кэш есть, мы просто пропускаем синхронизацию
+        # Можно вывести в консоль для отладки
+        # print(f"User {user.username}: Sync skipped (cooldown active)")
+        pass
+
+    # 3. Сообщение, если ключей нет совсем
+    if not bybit_ok and not mexc_ok:
+        messages.warning(request, "API ключи не настроены. Добавьте Bybit или MEXC.")
+
+    # 4. Загрузка из БД (работает всегда мгновенно)
     unprocessed_orders = UnprocessedOrder.objects.filter(
         user=user
     ).order_by('-created_at')
-    
-    # 4. Проверка ключей для UI
-    # Проверяем, настроена ли ХОТЯ БЫ ОДНА биржа
-    bybit_ok = bool(user.bybit_api_key and user.bybit_api_secret)
-    mexc_ok = bool(user.mexc_api_key and user.mexc_api_secret)
-    
-    if not bybit_ok and not mexc_ok:
-        messages.warning(request, "API ключи не настроены. Добавьте Bybit или MEXC.")
 
     context = {
         'unprocessed_orders': unprocessed_orders,
@@ -364,9 +393,15 @@ def unprocessed_orders_list(request):
     
     return render(request, 'orders/unprocessed.html', context)
 
-
-
-
+@login_required
+def delete_unprocessed_order(request, pk):
+    try:
+        order = UnprocessedOrder.objects.get(pk=pk, user=request.user)
+        order.delete()
+        messages.success(request, "Ордер удален из списка.")
+    except UnprocessedOrder.DoesNotExist:
+        messages.error(request, "Ордер не найден.")
+    return redirect('unprocessed_orders_list')
 
 # --- АДМИН ПАНЕЛЬ ---
 

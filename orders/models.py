@@ -92,8 +92,15 @@ class UnprocessedOrder(models.Model):
     operation_type = models.CharField(max_length=10, verbose_name="Тип") # BUY/SELL
     price = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="Цена")
     amount = models.DecimalField(max_digits=20, decimal_places=8, verbose_name="Кол-во")
+    cost = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="Стоимость", default=0)
     created_at = models.DateTimeField(verbose_name="Дата создания на бирже")
     exchange_type = models.CharField(max_length=20, default='BYBIT')
+
+    class Meta:
+        # Эта настройка гарантирует, что у одного юзера не будет двух ордеров с одним ID
+        unique_together = ('user', 'order_id') 
+        verbose_name = "Необработанный ордер"
+        verbose_name_plural = "Необработанные ордера"
 
     def __str__(self):
         return f"Unprocessed {self.order_id}"

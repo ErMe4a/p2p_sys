@@ -51,6 +51,13 @@
         box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
     }
 
+    /* Стили для заблокированного поля Telegram, чтобы оно выглядело органично */
+    .form-control:disabled, .form-control[readonly] {
+        background-color: var(--bg-card) !important;
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
     .btn-save {
         background: var(--bg-input); /* Фон кнопки подстраивается под тему */
         border: 1px solid var(--accent-blue);
@@ -163,8 +170,13 @@
         <div class="row">
             <div class="col-6 col-md">
                 <label class="field-label">Bybit</label>
-                <input type="number" step="0.0001" name="bybit_commission" class="form-control" placeholder="0" value="{{ user.bybit_commission|default:'0' }}">
+                <select name="bybit_commission" class="form-select">
+                    <option value="0.3" {% if user.bybit_commission == 0.3 or not user.bybit_commission %}selected{% endif %}>Мейкер (0.3%)</option>
+                    <option value="0.275" {% if user.bybit_commission == 0.275 %}selected{% endif %}>Проверенный мерчант (0.275%)</option>
+                    <option value="0.25" {% if user.bybit_commission == 0.25 %}selected{% endif %}>Блочный мерчант (0.25%)</option>
+                </select>
             </div>
+            
             <div class="col-6 col-md">
                 <label class="field-label">HTX</label>
                 <input type="number" step="0.0001" name="htx_commission" class="form-control" placeholder="0" value="{{ user.htx_commission|default:'0' }}">
@@ -177,11 +189,15 @@
                 <label class="field-label">Bitget</label>
                 <input type="number" step="0.0001" name="bitget_commission" class="form-control" placeholder="0" value="{{ user.bitget_commission|default:'0' }}">
             </div>
+            
             <div class="col-6 col-md">
                 <label class="field-label">Telegram</label>
-                <input type="number" step="0.0001" name="telegram_commission" class="form-control" placeholder="0" value="{{ user.telegram_commission|default:'0' }}">
+                <input type="text" class="form-control" value="0.9" disabled readonly title="Фиксированная комиссия">
+                
+                <input type="hidden" name="telegram_commission" value="0.9">
             </div>
         </div>
+        
         <div class="section-divider">Безопасность</div>
         <div class="row">
             <div class="col-md-12">

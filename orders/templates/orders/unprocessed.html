@@ -201,44 +201,58 @@
             <thead>
                 <tr>
                     <th>ID ордера</th>
-                    <th>Тип</th>
+                    <th>Биржа</th> <th>Тип</th>
                     <th>Цена</th>
-                    <th>Кол-во</th>
-                    <th>Создан</th>
-                    <th class="text-center">Действия</th>
-                </tr>
+                    <th>Кол-во (Crypto)</th>
+                    <th>Сумма (Fiat)</th> <th>Создан</th>
+                    <th class="text-end">Действия</th> </tr>
             </thead>
             <tbody>
                 {% for item in unprocessed_orders %}
                 <tr>
-                    <td class="col-id">{{ item.order_id }}</td>
+                    <td class="col-id">
+                        <span title="{{ item.order_id }}">{{ item.order_id|truncatechars:12 }}</span>
+                    </td>
+
+                    <td><span class="badge bg-secondary">{{ item.exchange_type }}</span></td>
 
                     <td>
                         {% if item.operation_type == 'BUY' %}
-                            <span class="col-type-buy">Покупка</span>
+                            <span class="text-success fw-bold">Покупка</span>
                         {% else %}
-                            <span class="col-type-sell">Продажа</span>
+                            <span class="text-danger fw-bold">Продажа</span>
                         {% endif %}
                     </td>
 
-                    <td>{{ item.price|default:"—" }}</td>
+                    <td>{{ item.price|floatformat:2 }}</td>
 
-                    <td>{{ item.amount }}</td>
+                    <td>{{ item.amount|floatformat:4 }}</td>
 
-                    <td class="text-muted">{{ item.created_at|date:"d.m.Y, H:i:s" }}</td>
+                    <td class="fw-bold">{{ item.cost|floatformat:2 }} ₽</td>
+
+                    <td class="text-muted small">{{ item.created_at|date:"d.m H:i" }}</td>
 
                     <td class="text-end">
-                        <a href="https://www.bybit.com/ru-RU/p2p/orderList/{{ item.order_id }}" target="_blank" class="btn-bybit">
-                            Bybit
-                        </a>
-                        <a href="#" class="btn-delete-row" onclick="return confirm('Удалить из списка?')">
+                        {% if item.exchange_type == 'Bybit' or item.exchange_type == 'BYBIT' %}
+                            <a href="https://www.bybit.com/ru-RU/p2p/orderList/{{ item.order_id }}" target="_blank" class="btn-bybit">
+                                Bybit
+                            </a>
+                        {% elif item.exchange_type == 'MEXC' %}
+                             <a href="https://www.mexc.com/ru-RU/p2p/orders" target="_blank" class="btn-bybit" style="background-color: #2655eb; color: white;">
+                                MEXC
+                            </a>
+                        {% else %}
+                            <span class="badge bg-light text-dark border">{{ item.exchange_type }}</span>
+                        {% endif %}
+
+                        <a href="{% url 'delete_unprocessed_order' item.id %}" class="btn-delete-row" onclick="return confirm('Удалить этот ордер из необработанных?')">
                             Удалить
                         </a>
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="6" class="text-center py-5 text-muted">
+                    <td colspan="8" class="text-center py-5 text-muted">
                         Список пуст. Новых ордеров не найдено.
                     </td>
                 </tr>
