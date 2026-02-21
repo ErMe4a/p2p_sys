@@ -89,7 +89,7 @@ def my_orders_list(request):
         raw_date = request.POST.get('created_at')
         if raw_date:
             # 1. Парсим строку в дату (пока без зоны)
-            naive_date = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+            naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
             # 2. Добавляем текущую временную зону проекта (делаем дату "aware")
             order_date = timezone.make_aware(naive_date)
         else:
@@ -302,11 +302,11 @@ def profile_settings(request):
         user.bybit_api_secret = request.POST.get('bybit_secret')
 
         # 3. Сохраняем комиссии бирж
-        user.bybit_commission = request.POST.get('bybit_commission') or 0
-        user.htx_commission = request.POST.get('htx_commission') or 0
-        user.mexc_commission = request.POST.get('mexc_commission') or 0
-        user.bitget_commission = request.POST.get('bitget_commission') or 0
-        user.telegram_commission = request.POST.get('telegram_commission') or 0
+        user.bybit_commission = float(request.POST.get('bybit_commission') or 0.3)
+        user.htx_commission = float(request.POST.get('htx_commission') or 0)
+        user.mexc_commission = float(request.POST.get('mexc_commission') or 0)
+        user.bitget_commission = float(request.POST.get('bitget_commission') or 0)
+        user.telegram_commission = float(request.POST.get('telegram_commission') or 0.9)
 
         # 3. ЛОГИКА СМЕНЫ ПАРОЛЯ
         new_password = request.POST.get('new_password')

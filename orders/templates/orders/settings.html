@@ -168,14 +168,18 @@
 
         <div class="section-divider">Комиссии бирж (%)</div>
         <div class="row">
+            
             <div class="col-6 col-md">
                 <label class="field-label">Bybit</label>
                 <select name="bybit_commission" class="form-select">
-                    <option value="0.3" {% if user.bybit_commission == 0.3 or not user.bybit_commission %}selected{% endif %}>Мейкер (0.3%)</option>
-                    <option value="0.275" {% if user.bybit_commission == 0.275 %}selected{% endif %}>Проверенный мерчант (0.275%)</option>
-                    <option value="0.25" {% if user.bybit_commission == 0.25 %}selected{% endif %}>Блочный мерчант (0.25%)</option>
+                    <option value="0.3" {% if user.bybit_commission|floatformat:"4" == "0.3000" or not user.bybit_commission %}selected{% endif %}>Мейкер (0.3%)</option>
+                    
+                    <option value="0.275" {% if user.bybit_commission|floatformat:"4" == "0.2750" %}selected{% endif %}>Проверенный мерчант (0.275%)</option>
+                    
+                    <option value="0.25" {% if user.bybit_commission|floatformat:"4" == "0.2500" %}selected{% endif %}>Блочный мерчант (0.25%)</option>
                 </select>
             </div>
+            
             
             <div class="col-6 col-md">
                 <label class="field-label">HTX</label>
