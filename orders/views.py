@@ -333,81 +333,43 @@ def profile_settings(request):
 
 
 
-
 @login_required
 def unprocessed_orders_list(request):
-    """
-    Страница необработанных ордеров.
-    Синхронизирует Bybit и MEXC (не чаще 1 раза в 3 минуты).
-    """
     user = request.user
-    
-    # 1. Сразу проверяем наличие ключей (чтобы не запускать логику впустую)
     bybit_ok = bool(user.bybit_api_key and user.bybit_api_secret)
-    mexc_ok = bool(user.mexc_api_key and user.mexc_api_secret)
+    mexc_ok  = bool(
+        getattr(user, 'mexc_api_key', None) and getattr(user, 'mexc_api_secret', None)
+    )
 
-    # 2. УМНАЯ СИНХРОНИЗАЦИЯ (Защита от бана)
-    # Создаем ключ кэша: уникальный для каждого юзера
-    cache_key = f"sync_cooldown_{user.id}"
-    
-    # Если кэша НЕТ (значит прошло 3 минуты или это первый заход)
-    if not cache.get(cache_key):
-        
-        # --- BYBIT ---
-        if bybit_ok:
-            try:
-                # count - это то, что возвращает твоя функция (return len(new_orders))
-                count = sync_bybit_orders(user)
-                if count > 0:
-                    messages.success(request, f"Bybit: +{count} новых ордеров.")
-            except Exception as e:
-                print(f"Bybit Sync Error: {e}")
-                # Ошибку юзеру можно не показывать каждый раз, чтобы не раздражать
-
-        # --- MEXC ---
-        if mexc_ok:
-            try:
-                # sync_mexc_orders(user) 
-                pass
-            except Exception as e:
-                print(f"MEXC Sync Error: {e}")
-
-        # СТАВИМ БЛОКИРОВКУ НА 3 МИНУТЫ (180 секунд)
-        # В течение этого времени скрипт не будет стучаться на биржи
-        cache.set(cache_key, True, 180)
-        
-    else:
-        # Если кэш есть, мы просто пропускаем синхронизацию
-        # Можно вывести в консоль для отладки
-        # print(f"User {user.username}: Sync skipped (cooldown active)")
-        pass
-
-    # 3. Сообщение, если ключей нет совсем
     if not bybit_ok and not mexc_ok:
-        messages.warning(request, "API ключи не настроены. Добавьте Bybit или MEXC.")
+        messages.warning(request, "API ключи не настроены. Зайди в настройки.")
 
-    # 4. Загрузка из БД (работает всегда мгновенно)
-    unprocessed_orders = UnprocessedOrder.objects.filter(
-        user=user
-    ).order_by('-created_at')
+    unprocessed_orders = (
+        UnprocessedOrder.objects
+        .filter(user=user)
+        .order_by('-created_at')
+    )
 
     context = {
         'unprocessed_orders': unprocessed_orders,
-        'bybit_configured': bybit_ok,
-        'mexc_configured': mexc_ok
+        'bybit_configured':   bybit_ok,
+        'mexc_configured':    mexc_ok,
     }
-    
     return render(request, 'orders/unprocessed.html', context)
 
 @login_required
 def delete_unprocessed_order(request, pk):
+    """
+    Удаляет ордер из буфера необработанных.
+    Используется, когда ордер уже обработан вручную или не нужен.
+    """
     try:
         order = UnprocessedOrder.objects.get(pk=pk, user=request.user)
         order.delete()
-        messages.success(request, "Ордер удален из списка.")
+        messages.success(request, "Ордер удалён из списка.")
     except UnprocessedOrder.DoesNotExist:
         messages.error(request, "Ордер не найден.")
-    return redirect('unprocessed_orders_list')
+    return redirect("unprocessed_orders_list")
 
 
 

@@ -2,143 +2,190 @@ import logging
 from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
-from bybit_p2p import P2P 
+from bybit_p2p import P2P
 from .models import UnprocessedOrder, Order
 
-# Настраиваем логгер, чтобы видеть ошибки в консоли/файле
 logger = logging.getLogger(__name__)
+
 
 def sync_bybit_orders(user):
     """
-    Синхронизация ордеров Bybit.
-    Возвращает количество добавленных ордеров.
+    Синхронизация ЗАВЕРШЁННЫХ P2P ордеров Bybit (status=50).
+
+    Алгоритм:
+      1. Проверяем ключи — если нет, выходим.
+      2. Собираем все ID, которые уже есть в Order и UnprocessedOrder — чтобы не дублировать.
+      3. Постранично тянем завершённые ордера с Bybit (status=50, по 30 штук).
+         Останавливаемся, когда страница пришла неполной (значит, это последняя).
+      4. Парсим каждый ордер, пропускаем уже известные.
+      5. Массово сохраняем новые в UnprocessedOrder (bulk_create + ignore_conflicts).
+
+    Возвращает: количество добавленных ордеров (int).
     """
-    # 1. Проверка ключей
+
+    # ── 1. Проверка ключей ────────────────────────────────────────────────────
     if not user.bybit_api_key or not user.bybit_api_secret:
+        logger.debug("User %s: Bybit keys not set, skipping.", user.username)
         return 0
 
+    # ── 2. Инициализация клиента ──────────────────────────────────────────────
     try:
-        # Инициализация библиотеки
         api = P2P(
             testnet=False,
             api_key=user.bybit_api_key,
             api_secret=user.bybit_api_secret,
-            domain="bytick" # Если не работает, можно попробовать "main"
+            # domain="bytick"  ← раскомментировать, если api.bybit.com недоступен
         )
     except Exception as e:
-        logger.error(f"Bybit Init Error for {user.username}: {e}")
+        logger.error("Bybit Init Error for %s: %s", user.username, e)
         return 0
 
-    # 2. Сбор "Черных списков" (ID, которые уже есть в системе)
-    
-    # А) Уже обработанные (чистовые) ордера. В модели Order поле называется external_id
+    # ── 3. Собираем «чёрный список» уже известных ID ─────────────────────────
+    # Обработанные (уже занесены в журнал вручную)
     processed_ids = set(
         Order.objects.filter(user=user)
         .exclude(external_id="")
-        .values_list('external_id', flat=True)
+        .exclude(external_id__isnull=True)
+        .values_list("external_id", flat=True)
     )
-    
-    # Б) Уже загруженные необработанные. В модели UnprocessedOrder поле называется order_id
+    # Необработанные (уже лежат в буфере, ждут обработки)
     unprocessed_ids = set(
         UnprocessedOrder.objects.filter(user=user)
-        .values_list('order_id', flat=True)
+        .values_list("order_id", flat=True)
     )
+    ignore_ids = processed_ids | unprocessed_ids
 
-    # Объединяем, чтобы проверять в одном месте
-    ignore_ids = processed_ids.union(unprocessed_ids)
+    # ── 4. Постраничная выгрузка с Bybit ─────────────────────────────────────
+    raw_items = []
+    page = 1
 
-    # 3. Задачи для API (тянем и активные, и историю)
-    tasks = [
-        {"method": "get_pending_orders", "kwargs": {"page": 1, "size": 20}},
-        {"method": "get_orders", "kwargs": {"page": 1, "size": 20}}
-    ]
-
-    new_orders_list = [] # Список объектов для массового сохранения
-
-    for task in tasks:
-        method_name = task["method"]
+    while True:
         try:
-            if not hasattr(api, method_name):
-                continue
-            
-            func = getattr(api, method_name)
-            response = func(**task["kwargs"])
-            
-            # Проверяем успешность ответа Bybit
-            if response.get("ret_code") == 0:
-                items = response.get("result", {}).get("items", [])
-                
-                for item in items:
-                    # Bybit может отдавать id или orderId в зависимости от эндпоинта
-                    # Приводим к строке
-                    bybit_id = str(item.get("id") or item.get("orderId"))
-                    
-                    # --- ГЛАВНЫЙ ФИЛЬТР ---
-                    # 1. Если ID пустой - пропускаем
-                    # 2. Если ID уже есть в БД (в Order или Unprocessed) - пропускаем
-                    if not bybit_id or bybit_id in ignore_ids:
-                        continue
-                    
-                    # 3. Если мы уже добавили этот ордер в текущем цикле (защита от дублей внутри пачки)
-                    if any(o.order_id == bybit_id for o in new_orders_list):
-                        continue
-
-                    # --- ПАРСИНГ ДАННЫХ ---
-                    
-                    # Тип операции: Bybit отдает "1" для SELL (мы продаем крипту)
-                    side_val = str(item.get("side"))
-                    operation_type = "SELL" if side_val == "1" else "BUY"
-                    
-                    price = float(item.get("price") or 0)
-                    
-                    # notifyTokenQuantity - это количество криптовалюты (USDT)
-                    crypto_amount = float(item.get("notifyTokenQuantity") or 0)
-                    
-                    # amount - это сумма в фиате (RUB)
-                    fiat_amount = float(item.get("amount") or 0)
-
-                    # Если крипта пришла 0 (бывает глюк), пробуем посчитать через цену
-                    if crypto_amount == 0 and price > 0:
-                        crypto_amount = fiat_amount / price
-
-                    # Дата создания
-                    try:
-                        created_ms = int(item.get("createDate") or item.get("createTime") or 0)
-                        if created_ms > 0:
-                            dt = datetime.fromtimestamp(created_ms / 1000.0)
-                            aware_dt = make_aware(dt)
-                        else:
-                            aware_dt = timezone.now()
-                    except:
-                        aware_dt = timezone.now()
-
-                    # --- СОЗДАНИЕ ОБЪЕКТА В ПАМЯТИ ---
-                    new_order_obj = UnprocessedOrder(
-                        user=user,
-                        order_id=bybit_id,          # Поле модели: order_id
-                        operation_type=operation_type,
-                        amount=crypto_amount,       # Поле модели: amount (крипта)
-                        price=price,                # Поле модели: price
-                        cost=fiat_amount,           # Поле модели: cost (рубли)
-                        exchange_type="Bybit",      # Поле модели: exchange_type
-                        created_at=aware_dt
-                    )
-                    
-                    new_orders_list.append(new_order_obj)
-                    
-                    # Добавляем ID в игнор, чтобы не обработать его снова, если он встретится в другом методе
-                    ignore_ids.add(bybit_id)
-
-            else:
-                logger.warning(f"Bybit API Error ({method_name}) user {user.username}: {response.get('ret_msg')}")
-
+            response = api.get_orders(
+                page=page,
+                size=30,
+                status=50,  # 50 = завершённые (COMPLETED)
+            )
         except Exception as e:
-            logger.error(f"Crash in {method_name} for {user.username}: {e}")
+            logger.error(
+                "Bybit get_orders page=%d for %s: %s", page, user.username, e
+            )
+            break
 
-    # 4. МАССОВОЕ СОХРАНЕНИЕ В БД (1 запрос вместо N)
-    if new_orders_list:
-        UnprocessedOrder.objects.bulk_create(new_orders_list)
-        logger.info(f"User {user.username}: Saved {len(new_orders_list)} new Bybit orders.")
-        return len(new_orders_list)
-    
-    return 0
+        ret_code = response.get("ret_code") or response.get("retCode")
+        if ret_code != 0:
+            logger.warning(
+                "Bybit API error for %s (code %s): %s",
+                user.username,
+                ret_code,
+                response.get("ret_msg") or response.get("retMsg"),
+            )
+            break
+
+        items = (
+            response.get("result", {}).get("items")
+            or response.get("result", {}).get("list")
+            or []
+        )
+
+        if not items:
+            break  # пустая страница → всё скачали
+
+        raw_items.extend(items)
+        logger.debug(
+            "Bybit [%s] page %d: got %d items", user.username, page, len(items)
+        )
+
+        # Меньше 30 → это последняя страница, дальше не идём
+        if len(items) < 30:
+            break
+
+        page += 1
+
+    if not raw_items:
+        logger.debug("Bybit [%s]: no items from API.", user.username)
+        return 0
+
+    # ── 5. Парсим, фильтруем дубли, формируем объекты ────────────────────────
+    new_orders = []
+    seen_in_batch = set()  # защита от дублей внутри одной выгрузки
+
+    for item in raw_items:
+        bybit_id = str(
+            item.get("id") or item.get("orderId") or ""
+        ).strip()
+
+        if not bybit_id:
+            continue
+        if bybit_id in ignore_ids:
+            continue
+        if bybit_id in seen_in_batch:
+            continue
+
+        seen_in_batch.add(bybit_id)
+        ignore_ids.add(bybit_id)  # чтобы не добавить дубль из следующей страницы
+
+        # Сторона: "1" = продаём крипту за фиат (SELL), "0" = покупаем (BUY)
+        operation_type = "SELL" if str(item.get("side")) == "1" else "BUY"
+
+        price        = _to_float(item.get("price"))
+        crypto_amount = _to_float(
+            item.get("notifyTokenQuantity") or item.get("quantity")
+        )
+        fiat_amount  = _to_float(item.get("amount"))
+
+        # Если крипты нет — восстанавливаем через цену
+        if crypto_amount == 0 and price > 0 and fiat_amount > 0:
+            crypto_amount = round(fiat_amount / price, 8)
+
+        aware_dt = _parse_date(
+            item.get("createDate") or item.get("createTime")
+        )
+
+        new_orders.append(
+            UnprocessedOrder(
+                user=user,
+                order_id=bybit_id,
+                operation_type=operation_type,
+                amount=crypto_amount,
+                price=price,
+                cost=fiat_amount,
+                exchange_type="Bybit",
+                created_at=aware_dt,
+            )
+        )
+
+    # ── 6. Массовое сохранение ────────────────────────────────────────────────
+    if new_orders:
+        # ignore_conflicts=True — страховка от гонки двух воркеров
+        UnprocessedOrder.objects.bulk_create(new_orders, ignore_conflicts=True)
+        logger.info(
+            "Bybit [%s]: saved %d new orders.", user.username, len(new_orders)
+        )
+
+    return len(new_orders)
+
+
+# ── Вспомогательные функции ───────────────────────────────────────────────────
+
+def _to_float(value) -> float:
+    """Безопасное приведение к float."""
+    try:
+        return float(value or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _parse_date(raw) -> datetime:
+    """
+    Bybit отдаёт время в миллисекундах (int или str).
+    Конвертируем в aware datetime по московскому времени (задано в settings.py).
+    """
+    try:
+        ms = int(raw or 0)
+        if ms > 0:
+            dt = datetime.fromtimestamp(ms / 1000.0)
+            return make_aware(dt)
+    except (ValueError, TypeError, OSError):
+        pass
+    return timezone.now()
