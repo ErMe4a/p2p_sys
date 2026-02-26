@@ -72,7 +72,10 @@ def sync_bybit_orders(user):
             )
             break
 
-        ret_code = response.get("ret_code") or response.get("retCode")
+        ret_code = response.get("ret_code")
+        if ret_code is None:
+            ret_code = response.get("retCode")
+
         if ret_code != 0:
             logger.warning(
                 "Bybit API error for %s (code %s): %s",
