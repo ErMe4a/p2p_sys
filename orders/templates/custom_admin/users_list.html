@@ -148,6 +148,20 @@
             <input type="hidden" name="user_id" id="editUserId">
             
             <div class="form-section-inner">
+                <h4><span class="indicator ok"></span> Основные данные</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Логин</label>
+                        <input class="form-control" type="text" name="username" id="editUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Новый пароль </label>
+                        <input class="form-control" type="text" name="password" id="editPassword" placeholder="****">
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-section-inner">
                 <h4><span id="bybitInd" class="indicator"></span> Bybit API</h4>
                 <div class="form-row">
                     <div class="form-group">
@@ -268,15 +282,18 @@
     function openAddUserModal() { document.getElementById('addUserModal').classList.add('active'); }
     function closeAddUserModal() { document.getElementById('addUserModal').classList.remove('active'); }
 
-    // Обновил функцию, добавив параметры MEXC
+    // Обновил функцию: добавлены подстановка логина и очистка пароля
     function openEditUserModal(id, login, bKey, bSec, hKey, hSec, mKey, mSec, eLog, ePass) {
         document.getElementById('editUserId').value = id;
         document.getElementById('editUserLoginLabel').innerText = login;
         
+        // НОВОЕ: подставляем текущий логин и сбрасываем поле ввода пароля
+        document.getElementById('editUsername').value = login;
+        document.getElementById('editPassword').value = ''; 
+        
         // Bybit
         document.getElementById('editBybitKey').value = bKey;
         document.getElementById('editBybitSecret').value = bSec;
-        // Лампочка в модалке: горит только если оба поля не пустые
         document.getElementById('bybitInd').className = (bKey && bSec) ? 'indicator ok' : 'indicator';
 
         // HTX
@@ -284,7 +301,7 @@
         document.getElementById('editHtxSecret').value = hSec;
         document.getElementById('htxInd').className = (hKey && hSec) ? 'indicator ok' : 'indicator';
         
-        // MEXC (Новое)
+        // MEXC
         document.getElementById('editMexcKey').value = mKey;
         document.getElementById('editMexcSecret').value = mSec;
         document.getElementById('mexcInd').className = (mKey && mSec) ? 'indicator ok' : 'indicator';
@@ -385,10 +402,6 @@ async function openReportsModal(userId, username) {
         const end = document.getElementById('reportsEndDate').value;
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-
-        // Я УБРАЛ ПРОВЕРКУ НА НАЛИЧИЕ ДАТ (if (!start || !end) alert...)
-        // Теперь если даты пустые, они просто передаются пустыми,
-        // и бэкенд отдаст отчет за всё время.
 
         const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
         window.location.href = url;

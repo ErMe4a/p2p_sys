@@ -213,38 +213,44 @@ def edit_order(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
     
     if request.method == 'POST':
-        # 1. Получаем название банка из формы
-        details_name = request.POST.get('details')
-        
-        # Обработка банка
-        if details_name:
-            # Ищем банк просто по имени (так как модель общая)
-            bank_instance, created = BankDetail.objects.get_or_create(
-                name=details_name
-            )
-            order.bank_detail = bank_instance
-        # Если details_name пустой, мы просто не меняем order.bank_detail 
-        # или можно добавить else: order.bank_detail = None, если нужно удалять банк
+        # 1. Обработка банка (ищем по ID, как и при создании)
+        # 1. Обработка банка
+        bank_id_or_name = request.POST.get('details')
+        if bank_id_or_name:
+            if bank_id_or_name.isdigit():
+                # Если пришло число (ID)
+                bank_instance = BankDetail.objects.filter(id=bank_id_or_name, is_deleted=False).first()
+            else:
+                # Если пришла строка (Название)
+                bank_instance = BankDetail.objects.filter(name=bank_id_or_name, is_deleted=False).first()
+            
+            if bank_instance:
+                order.bank_detail = bank_instance
 
         order.external_id = request.POST.get('external_id')
-        order.price = request.POST.get('price') or 0
-        order.amount = request.POST.get('amount') or 0
-        order.cost = request.POST.get('cost') or 0
+        
+        # 2. Обязательно используем safe_decimal для чисел!
+        order.price = safe_decimal(request.POST.get('price'))
+        order.amount = safe_decimal(request.POST.get('amount'))
+        order.cost = safe_decimal(request.POST.get('cost'))
+        order.commission = safe_decimal(request.POST.get('commission_value'))
+        
         order.operation_type = request.POST.get('operation_type')
         order.exchange_type = request.POST.get('exchange')
-
-        # УДАЛЕНО: order.bank_detail = bank_instance 
-        # (Эта строка вызывала ошибку, так как bank_instance может не существовать)
-        
-        order.commission = request.POST.get('commission_value') or 0
         order.commission_type = request.POST.get('commission_type')
         
+        # 3. ИСПРАВЛЕНИЕ ОШИБОК ДАТЫ (AttributeError и RuntimeWarning)
         raw_date = request.POST.get('created_at')
         if raw_date:
-            order.created_at = datetime.datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+            # Убрано лишнее .datetime
+            naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+            # Добавлена привязка к таймзоне
+            order.created_at = timezone.make_aware(naive_date)
 
         order.save()
         return redirect('my_orders')
+
+    # Если есть логика для GET запроса (рендер страницы редактирования), она остается тут
     
 
 @login_required
@@ -403,13 +409,30 @@ def delete_unprocessed_order(request, pk):
         messages.error(request, "Ордер не найден.")
     return redirect('unprocessed_orders_list')
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # --- АДМИН ПАНЕЛЬ ---
+
+
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_users_list(request):
     """Список пользователей и управление ими"""
-    # 1. Проверка на админа (дублирует декоратор, но для надежности можно оставить)
+    # 1. Проверка на админа
     if not request.user.is_superuser:
         return redirect('admin_login')
     
@@ -418,18 +441,35 @@ def admin_users_list(request):
         user_id = request.POST.get('user_id')
         try:
             user_to_edit = User.objects.get(id=user_id)
+            
+            # --- НОВОЕ: Обновление логина и пароля ---
+            new_username = request.POST.get('username')
+            if new_username:
+                user_to_edit.username = new_username
+
+            new_password = request.POST.get('password')
+            if new_password:  # Если пароль ввели, хэшируем и меняем
+                user_to_edit.set_password(new_password)
+            # -----------------------------------------
+
+            # Обновление API ключей
             user_to_edit.bybit_api_key = request.POST.get('bybit_key')
             user_to_edit.bybit_api_secret = request.POST.get('bybit_secret')
+            
             user_to_edit.htx_access_key = request.POST.get('htx_key')
             user_to_edit.htx_private_key = request.POST.get('htx_secret')
-            user_to_edit.mexc_api_key= request.POST.get('mexc_key')
+            
+            user_to_edit.mexc_api_key = request.POST.get('mexc_key')
             user_to_edit.mexc_api_secret = request.POST.get('mexc_secret')
+            
             user_to_edit.evotor_login = request.POST.get('evotor_login')
             user_to_edit.evotor_password = request.POST.get('evotor_password')
+            
             user_to_edit.save()
-            messages.success(request, f"Пользователь {user_to_edit.username} обновлен.")
+            messages.success(request, f"Пользователь {user_to_edit.username} успешно обновлен.")
         except User.DoesNotExist:
             messages.error(request, "Пользователь не найден.")
+            
         return redirect('admin_users')
 
     # 3. Обработка создания пользователя

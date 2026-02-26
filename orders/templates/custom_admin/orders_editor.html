@@ -77,17 +77,7 @@
                     <label>Владелец (нельзя менять)</label>
                     <div class="info-field">{{ order.user.username }}</div>
                 </div>
-                <div class="form-group">
-                    <label>Биржа заказа</label>
-                    <select class="form-select" name="exchange_type">
-                        <option value="Bybit" {% if order.exchange_type == 'Bybit' or order.exchange_type == '1' or order.exchange_type == 1 %}selected{% endif %}>Bybit</option>
-                        <option value="HTX" {% if order.exchange_type == 'HTX' or order.exchange_type == '2' or order.exchange_type == 2 %}selected{% endif %}>HTX</option>
-                        <option value="MEXC" {% if order.exchange_type == 'MEXC' or order.exchange_type == '3' or order.exchange_type == 3 %}selected{% endif %}>MEXC</option>
-                        
-                        <option value="Bitget" {% if order.exchange_type == 'Bitget' %}selected{% endif %}>Bitget</option>
-                        <option value="Telegram" {% if order.exchange_type == 'Telegram' %}selected{% endif %}>Telegram</option>
-                    </select>
-                </div>
+
             </div>
 
             <div class="form-row">
@@ -168,21 +158,6 @@
     </div>
     {% endif %}
 
-    <div class="form-section">
-        <h3>📊 Экспорт отчёта</h3>
-        <div class="form-row">
-            <div class="form-group">
-                <label>Пользователь</label>
-                <select class="form-select"><option>Все</option></select>
-            </div>
-            <div class="form-group">
-                <label>Дата с</label>
-                <input class="form-control" type="date">
-            </div>
-            <div class="form-group d-flex align-items-end">
-                <button class="btn btn-outline-success w-100" style="height: 38px;">📥 Скачать Excel</button>
-            </div>
-        </div>
-    </div>
+    
 </div>
 {% endblock %}
