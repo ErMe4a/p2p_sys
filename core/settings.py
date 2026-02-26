@@ -169,12 +169,7 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE  # <-- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ ВРЕМЕНИ
-CELERY_BEAT_SCHEDULE = {
-    'sync-bybit-orders': {
-        'task': 'orders.tasks.sync_bybit_orders_task',
-        'schedule': 120.0,  # каждые 2 минуты
-    },
-}
+
 # ------------------------------------------------------------------------------
 # Other settings
 # ------------------------------------------------------------------------------
