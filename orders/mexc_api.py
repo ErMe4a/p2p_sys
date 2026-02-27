@@ -3,10 +3,14 @@ import hashlib
 import time
 import logging
 import requests
+import urllib3
 from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
 from .models import UnprocessedOrder, Order
+
+# Отключаем предупреждения о SSL
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
 
@@ -162,10 +166,11 @@ def _fetch_page(user, page: int, start_time: int, end_time: int):
     headers = {
         "X-MEXC-APIKEY": user.mexc_api_key,
         "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(url, headers=headers, timeout=30, verify=False)
         data = response.json()
 
         if data.get("code") != 0:
