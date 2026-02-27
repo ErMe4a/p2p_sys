@@ -111,12 +111,12 @@
                     <input class="form-control" type="number" name="price" step="0.01" value="{{ order.price|stringformat:'.2f' }}">
                 </div>
                 <div class="form-group">
-                    <label>Сумма</label>
-                    <input class="form-control" type="number" name="amount" step="0.01" value="{{ order.amount|stringformat:'.2f' }}">
+                    <label>Кол-во (USDT)</label>
+                    <input class="form-control" type="number" name="amount" step="0.00000001" value="{{ order.amount|stringformat:'.8f' }}">
                 </div>
                 <div class="form-group">
-                    <label>Объем (USDT)</label>
-                    <input class="form-control" type="number" name="cost" step="0.00000001" value="{{ order.cost|stringformat:'.8f' }}">
+                    <label>Стоимость (RUB)</label>
+                    <input class="form-control" type="number" name="cost" step="0.01" value="{{ order.cost|stringformat:'.2f' }}">
                 </div>
             </div>
             
