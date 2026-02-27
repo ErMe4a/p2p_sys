@@ -369,7 +369,7 @@ def delete_unprocessed_order(request, pk):
         messages.success(request, "Ордер удалён из списка.")
     except UnprocessedOrder.DoesNotExist:
         messages.error(request, "Ордер не найден.")
-    return redirect("unprocessed_orders_list")
+    return redirect("unprocessed_orders")
 
 
 
