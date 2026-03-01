@@ -2,50 +2,53 @@
 
 import hmac
 import hashlib
-import time
+import base64
 import requests
+import json
+from datetime import datetime, timezone
+from urllib.parse import urlencode
+import urllib3
+urllib3.disable_warnings()
 
-API_KEY = "mx0vglq5X5SQjMfWOn"
-API_SECRET = "9071e4d0e1ef4f78b85ce1b725246d90"
+API_KEY = "qz5c4v5b6n-addaf0b0-b00aa4bc-8309e"
+API_SECRET = "9db0e581-34931100-b36a09fd-24e71"
 
-BASE_URL = "https://api.mexc.com"
+HOST = "api.htx.com"
+BASE_URL = f"https://{HOST}"
 
-def sign(query_string: str, secret: str) -> str:
-    return hmac.new(
-        secret.encode("utf-8"),
-        query_string.encode("utf-8"),
-        hashlib.sha256
-    ).hexdigest()
+def sign(method, path, params):
+    sorted_params = urlencode(sorted(params.items()))
+    payload = f"{method}\n{HOST}\n{path}\n{sorted_params}"
+    digest = hmac.new(API_SECRET.encode(), payload.encode(), hashlib.sha256).digest()
+    return base64.b64encode(digest).decode()
 
-def get_orders():
-    timestamp = int(time.time() * 1000)
-    start_time = timestamp - 30 * 24 * 60 * 60 * 1000
-
-    # Строим строку параметров БЕЗ сортировки, signature и timestamp — в конце
-    params = {
-        "orderDealState": "DONE",
-        "page": 1,
-        "limit": 10,
-        "startTime": start_time,
-        "endTime": timestamp,
-        "timestamp": timestamp,
+def make_params(extra={}):
+    p = {
+        "AccessKeyId": API_KEY,
+        "SignatureMethod": "HmacSHA256",
+        "SignatureVersion": "2",
+        "Timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
     }
+    p.update(extra)
+    return p
 
-    # Формируем строку вручную в нужном порядке
-    query_string = "&".join(f"{k}={v}" for k, v in params.items())
-    signature = sign(query_string, API_SECRET)
+endpoints = [
+    ("/v2/c2c/order", {}),
+    ("/v2/c2c/order/list", {}),
+    ("/v2/c2c/orders", {}),
+    ("/v2/c2c/offer/list", {}),
+    ("/v2/c2c/offer/orders", {}),
+    ("/v2/c2c/trade/list", {}),
+    ("/v2/c2c/order/history", {}),
+    ("/v2/c2c/order", {"offerId": "0"}),
+]
 
-    url = f"{BASE_URL}/api/v3/fiat/market/order/pagination?{query_string}&signature={signature}"
-
-    headers = {
-        "X-MEXC-APIKEY": API_KEY,
-        "Content-Type": "application/json",
-    }
-
-    response = requests.get(url, headers=headers)
-    print("Status:", response.status_code)
-    import json
-    print("Response:", json.dumps(response.json(), indent=2, ensure_ascii=False))
-
-if __name__ == "__main__":
-    get_orders()
+for path, extra in endpoints:
+    params = make_params(extra)
+    params["Signature"] = sign("GET", path, params)
+    r = requests.get(f"{BASE_URL}{path}", params=params, verify=False)
+    print(f"\n{path} → {r.status_code}")
+    try:
+        print(json.dumps(r.json(), indent=2, ensure_ascii=False)[:400])
+    except:
+        print(r.text[:400])
