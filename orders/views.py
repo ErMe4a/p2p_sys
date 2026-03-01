@@ -79,6 +79,134 @@ def safe_decimal(value):
     except ValueError:
         return 0
 
+@login_required
+def my_orders_list(request):
+    # Грузим список банков
+    default_banks = BankDetail.objects.filter(is_deleted=False).order_by('id')
+    
+    # ЛОГИКА СОЗДАНИЯ
+    if request.method == 'POST' and 'create_order' in request.POST:
+        raw_date = request.POST.get('created_at')
+        if raw_date:
+            # 1. Парсим строку в дату (пока без зоны)
+            naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+            # 2. Добавляем текущую временную зону проекта (делаем дату "aware")
+            order_date = timezone.make_aware(naive_date)
+        else:
+            # Если дату не выбрали, берем текущую
+            order_date = timezone.now()
+
+        # 1. Сохраняем настройки формы В ТОМ ВИДЕ, КАК ВВЕЛ ЮЗЕР
+        request.session['saved_order_form'] = {
+            'operation_type': request.POST.get('operation_type'),
+            'exchange': request.POST.get('exchange'),
+            'details': request.POST.get('details'),
+            'commission_value': request.POST.get('commission_value'),
+            'commission_type': request.POST.get('commission_type'),
+            'created_at': raw_date
+        }
+
+        bank_id = request.POST.get('details') 
+        bank_instance = None
+        if bank_id:
+            bank_instance = BankDetail.objects.filter(id=bank_id, is_deleted=False).first()
+
+        # 2. Очищаем числа перед сохранением в БД (safe_decimal)
+        price_val = safe_decimal(request.POST.get('price'))
+        amount_val = safe_decimal(request.POST.get('amount'))
+        cost_val = safe_decimal(request.POST.get('cost'))
+        commission_val = safe_decimal(request.POST.get('commission_value'))
+
+        # === НОВАЯ ЛОГИКА: ОПРЕДЕЛЯЕМ ПРОЦЕНТ БИРЖИ ===
+        exchange_name = request.POST.get('exchange', '').lower()
+        user_comm_rate = 0.0
+        
+        if 'bybit' in exchange_name:
+            user_comm_rate = request.user.bybit_commission
+        elif 'htx' in exchange_name or 'huobi' in exchange_name:
+            user_comm_rate = request.user.htx_commission
+        elif 'mexc' in exchange_name:
+            user_comm_rate = request.user.mexc_commission
+        elif 'bitget' in exchange_name:
+            user_comm_rate = request.user.bitget_commission
+        elif 'telegram' in exchange_name:
+            user_comm_rate = request.user.telegram_commission
+        # ===============================================
+
+        external_id = request.POST.get('external_id')
+
+        # Создаем ордер
+        order = Order.objects.create(
+            user=request.user,
+            external_id=external_id,
+            
+            price=price_val,
+            amount=amount_val,
+            cost=cost_val,
+            commission=commission_val,
+            
+            operation_type=request.POST.get('operation_type'),
+            exchange_type=request.POST.get('exchange'),
+            bank_detail=bank_instance,
+            commission_type=request.POST.get('commission_type'),
+            
+            # ЗАПИСЫВАЕМ ИСТОРИЧЕСКИЙ ПРОЦЕНТ
+            exchange_commission_rate=user_comm_rate,
+            
+            screenshot=request.FILES.get('screenshot'),
+            created_at=order_date
+        )
+
+        # !!! ВАЖНОЕ ИЗМЕНЕНИЕ: УДАЛЯЕМ ИЗ НЕОБРАБОТАННЫХ !!!
+        if external_id:
+            UnprocessedOrder.objects.filter(
+                user=request.user, 
+                order_id=external_id
+            ).delete()
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+        # 4. ЛОГИКА ЧЕКА (Эвотор)
+        need_receipt = request.POST.get('need_receipt') == 'on'
+        
+        if need_receipt:
+            contact_email = request.POST.get('receipt_contact')
+            if not contact_email:
+                contact_email = request.user.email
+
+            receipt_data = {
+                "contact": contact_email, 
+                "sum": order.cost,
+                "price": order.price,
+                "amount": order.amount,
+            }
+            
+            create_or_update_and_send_receipt(order, receipt_data)
+
+        return redirect('my_orders')
+
+    orders = Order.objects.filter(user=request.user).order_by('-created_at')
+    
+    # Достаем сохраненные настройки
+    saved_data = request.session.get('saved_order_form', {})
+    
+    if not saved_data:
+        saved_data = {
+            'operation_type': 'BUY',
+            'exchange': 'Bybit',
+            'commission_type': 'PERCENT'
+        }
+    
+    if saved_data.get('created_at'):
+        current_time = saved_data['created_at']
+    else:
+        current_time = timezone.now().strftime('%Y-%m-%dT%H:%M')
+
+    return render(request, 'orders/my_orders.html', {
+        'orders': orders,
+        'default_banks': default_banks,
+        'current_time': current_time,
+        'saved_data': saved_data
+    })
 
 @login_required
 def edit_order(request, order_id):
