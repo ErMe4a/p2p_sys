@@ -115,6 +115,9 @@
             <a class="nav-link {% if request.resolver_match.url_name == 'unprocessed_orders' %}active{% endif %}" 
                href="{% url 'unprocessed_orders' %}">Необработанные ордеры</a>
             
+            <a class="nav-link {% if request.resolver_match.url_name == 'user_profit' %}active{% endif %}" 
+               href="{% url 'user_profit' %}">Прибыль</a>
+
             <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" 
                href="{% url 'settings' %}">Настройки</a>
             

@@ -16,6 +16,8 @@ urlpatterns = [
     path('delete/<int:order_id>/', views.delete_order, name='delete_order'),
     path('upload_screen/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
     path('upload-screenshot/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
+    
+    path('profit/', views.user_profit_view, name='user_profit'),
 
     path('p2p-admin/login/', views.admin_login, name='admin_login'),
     path('p2p-admin/logout/', views.admin_logout, name='admin_logout'),

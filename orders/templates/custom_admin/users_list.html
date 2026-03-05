@@ -87,7 +87,12 @@
                     </td>
 
                     <td class="text-end">
-                        <button class="btn btn-sm btn-outline-secondary" 
+                        <button class="btn btn-sm btn-outline-warning" 
+                                onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.initial_crypto_balance|default:0 }}')">
+                            Ост.
+                        </button>
+                        
+                        <button class="btn btn-sm btn-outline-secondary ms-1" 
                                 onclick="openEditUserModal(
                                     '{{ u.id }}', 
                                     '{{ u.username }}', 
@@ -274,6 +279,30 @@
         </div>
     </div>
 </div>
+
+<div class="modal-overlay" id="balanceModal">
+    <div class="modal-content-custom" style="max-width: 400px;">
+        <div class="modal-header-custom">
+            <span>Остаток: <strong id="balanceUserLoginLabel" class="text-primary"></strong></span>
+            <button class="btn-close btn-close-white" onclick="closeBalanceModal()"></button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_balance">
+            <input type="hidden" name="user_id" id="balanceUserId">
+            
+            <div class="form-group mb-3 mt-2">
+                <label>Начальный остаток (USDT)</label>
+                <input class="form-control" type="number" step="0.00000001" name="initial_balance" id="balanceValue" required>
+            </div>
+            
+            <div style="display:flex; gap:12px; justify-content:flex-end;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeBalanceModal()">Отмена</button>
+                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -316,6 +345,22 @@
 
     function closeEditUserModal() { document.getElementById('editUserModal').classList.remove('active'); }
 
+    // НОВОЕ: Функции модалки ОСТАТКОВ
+    function openBalanceModal(id, login, currentBalance) {
+        document.getElementById('balanceUserId').value = id;
+        document.getElementById('balanceUserLoginLabel').innerText = login;
+        
+        // Предотвращаем ошибку с запятыми в инпуте типа number
+        let val = String(currentBalance).replace(',', '.');
+        document.getElementById('balanceValue').value = val;
+        
+        document.getElementById('balanceModal').classList.add('active');
+    }
+
+    function closeBalanceModal() { 
+        document.getElementById('balanceModal').classList.remove('active'); 
+    }
+
     // Логика модалки ОТЧЕТОВ
     const availableBanks = [
         { id: 'sber', name: 'Сбербанк' },
@@ -325,8 +370,7 @@
         { id: 'raiff', name: 'Райффайзен' }
     ];
 
-    
-async function openReportsModal(userId, username) {
+    async function openReportsModal(userId, username) {
         document.getElementById('reportsUserId').value = userId;
         document.getElementById('reportsUserLogin').innerText = username;
         
@@ -403,7 +447,7 @@ async function openReportsModal(userId, username) {
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
 
-        const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
+        const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
         window.location.href = url;
     }
 
@@ -417,28 +461,25 @@ async function openReportsModal(userId, username) {
         const userId = document.getElementById('reportsUserId').value;
         const start = document.getElementById('reportsStartDate').value;
         const end = document.getElementById('reportsEndDate').value;
-        // Берем value из select (там id банка, например 'sber')
         const bank = document.getElementById('reportsUserDetails').value; 
         const type = document.getElementById('reportsOperationType').value;
 
-        // Проверка: выбран ли пользователь
         if (!userId) {
             alert("Ошибка: Не выбран пользователь");
             return;
         }
 
-        // Формируем URL для скачивания (путь должен совпадать с urls.py)
-        const url = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank=${bank}&type=${type}`;
-        
-        // Переходим по ссылке, чтобы браузер начал скачивание
+        const url = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
         window.location.href = url;
     }
-
+    
+    // Закрытие всех модалок при клике вне окна
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
             closeAddUserModal();
             closeEditUserModal();
             closeReportsModal();
+            closeBalanceModal(); // Добавлено закрытие модалки остатков
         }
     }
 </script>

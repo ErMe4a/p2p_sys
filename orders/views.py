@@ -372,9 +372,81 @@ def delete_unprocessed_order(request, pk):
     return redirect("unprocessed_orders")
 
 
+@login_required
+def user_profit_view(request):
+    """
+    Страница аналитики прибыли для обычного пользователя.
+    """
+    action = request.GET.get('action')
 
+    # === ЛОГИКА 1: РАСЧЕТ ОБОРОТА И ПРИБЫЛИ ===
+    if action == 'get_turnover':
+        user = request.user
+        start_date_str = request.GET.get('start')
+        end_date_str = request.GET.get('end')
 
+        orders = Order.objects.filter(user=user)
 
+        if start_date_str and end_date_str:
+            try:
+                naive_start = datetime.strptime(start_date_str, '%Y-%m-%d')
+                naive_end = datetime.strptime(end_date_str, '%Y-%m-%d')
+                
+                naive_end = naive_end.replace(hour=23, minute=59, second=59)
+
+                start_date = timezone.make_aware(naive_start)
+                end_date = timezone.make_aware(naive_end)
+
+                orders = orders.filter(created_at__range=(start_date, end_date))
+            except ValueError:
+                return JsonResponse({'error': 'Неверный формат даты'}, status=400)
+
+        buy_orders = orders.filter(operation_type='BUY').order_by('-created_at')
+        sell_orders = orders.filter(operation_type='SELL').order_by('-created_at')
+
+        # Считаем суммы фиата (РУБЛИ)
+        buy_sum = buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0
+        sell_sum = sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0
+
+        # --- НОВОЕ: Считаем суммы крипты (USDT) с учетом начального остатка ---
+        buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
+        sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
+        
+        # Получаем заданный админом остаток (если пусто, то 0)
+        initial_balance = float(user.initial_crypto_balance or 0)
+        
+        # Считаем итоговый остаток: начальный + куплено - продано
+        crypto_balance = initial_balance + buy_crypto - sell_crypto
+
+        # Сериализация для таблицы
+        def serialize(qs):
+            res = []
+            for o in qs:
+                display_id = o.external_id if o.external_id else str(o.id)
+                res.append({
+                    'id': o.id,
+                    'external_id': display_id,
+                    'price': float(o.price or 0),   
+                    'amount': float(o.amount or 0), 
+                    'cost': float(o.cost or 0),     
+                    'date': o.created_at.strftime('%d.%m.%Y %H:%M')
+                })
+            return res
+
+        return JsonResponse({
+            'buy_sum': buy_sum,
+            'buy_count': buy_orders.count(),
+            'sell_sum': sell_sum,
+            'sell_count': sell_orders.count(),
+            'total_sum': buy_sum + sell_sum,
+            'profit': float(sell_sum - buy_sum),
+            'crypto_balance': float(crypto_balance), # <--- Итоговый остаток уходит на фронтенд
+            'buy_orders': serialize(buy_orders),
+            'sell_orders': serialize(sell_orders),
+        })
+
+    # === ЛОГИКА 2: ОТДАТЬ СТРАНИЦУ ===
+    return render(request, 'orders/profit.html')
 
 
 
@@ -449,7 +521,24 @@ def admin_users_list(request):
             messages.success(request, f"Пользователь {username} создан.")
         return redirect('admin_users')
 
-    # 4. Вывод списка
+    # === 4. НОВОЕ: Обработка изменения остатка ===
+    if request.method == 'POST' and request.POST.get('action') == 'edit_balance':
+        user_id = request.POST.get('user_id')
+        balance = request.POST.get('initial_balance', '0')
+        try:
+            user_to_edit = User.objects.get(id=user_id)
+            # Заменяем запятую на точку для корректного конвертирования во float
+            user_to_edit.initial_crypto_balance = float(str(balance).replace(',', '.'))
+            user_to_edit.save()
+            messages.success(request, f"Начальный остаток пользователя {user_to_edit.username} успешно обновлен.")
+        except User.DoesNotExist:
+            messages.error(request, "Пользователь не найден.")
+        except ValueError:
+            messages.error(request, "Некорректное значение остатка.")
+            
+        return redirect('admin_users')
+
+    # 5. Вывод списка
     users = User.objects.all().order_by('id')
     return render(request, 'custom_admin/users_list.html', {'users': users})
 

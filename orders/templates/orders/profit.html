@@ -1,0 +1,400 @@
+{% extends 'base.html' %} 
+
+{% block title %}Моя Прибыль{% endblock %}
+
+{% block content %}
+<style>
+    /* Основные переменные вашей темной темы */
+    :root { 
+        --bg: #0f1115; 
+        --card: #151923; 
+        --text: #e6e8ee; 
+        --muted: #99a1b3; 
+        --accent: #6c8cff; 
+        --danger: #ff6c6c; 
+        --ok: #58d68d; 
+        --border: #242a36; 
+        --warn: #ffc107; 
+    }
+    
+    .profit-container { margin-top: 20px; font-family: 'Inter', sans-serif; }
+    
+    .btn-profit { appearance:none; border:1px solid var(--border); background:#1a2030; color:var(--text); padding:8px 12px; border-radius:10px; cursor:pointer; transition:all .15s ease; font-size:14px; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; height:36px; }
+    .btn-profit:hover { border-color:#2e3650; transform:translateY(-1px); color: #fff;}
+    .btn-profit.primary { background:linear-gradient(180deg, #2a365f, #1f2a4a); border-color:#33406b; width:100%; margin-top:16px; height:42px; font-weight: 600; }
+    .btn-profit.primary:hover { box-shadow: 0 0 14px rgba(108,140,255,.25); }
+
+    .input-profit { width:100%; padding:9px 12px; background:#111520; border:1px solid var(--border); color:var(--text); border-radius:10px; font-size:13px; transition:all .15s ease; color-scheme: dark;}
+    .input-profit:focus { outline:none; box-shadow: 0 0 0 2px rgba(108,140,255,.25); border-color:#3c4b7a; }
+
+    .form-section { background:#111520; border-radius:10px; padding:20px; margin-bottom:20px; border:1px solid var(--border); }
+    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .form-group label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:500; }
+
+    .quick-dates { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+    .quick-date-btn { background:#111520; border:1px solid var(--border); color:var(--muted); padding:8px 14px; font-size:13px; border-radius:8px; cursor:pointer; transition:all .15s ease; }
+    .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
+    .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); font-weight: 500;}
+
+    .summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+    .summary-card { background:#111520; border-radius:10px; padding:20px; border:1px solid var(--border); position:relative; overflow:hidden; }
+    .summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
+    .summary-card.buy::before { background:linear-gradient(90deg, var(--ok), #3cb371); }
+    .summary-card.sell::before { background:linear-gradient(90deg, var(--danger), #ff8c66); }
+    .summary-card.total::before { background:linear-gradient(90deg, var(--accent), #4a5fd6); }
+    .summary-card.profit::before { background:linear-gradient(90deg, var(--warn), #ffb347); }
+    .summary-card.balance::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
+    .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
+    .summary-value { font-size:1.5rem; font-weight:600; margin-bottom:4px; color: var(--text);}
+    .summary-count { font-size:12px; color:var(--muted); }
+
+    .tables-container { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .table-section { background:#111520; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
+    .table-header { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--border); background: rgba(255,255,255,0.02); }
+    .table-title { font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+    .table-header.buy .table-title { color:var(--ok); }
+    .table-header.sell .table-title { color:var(--danger); }
+    
+    .table-profit { width:100%; border-collapse:separate; border-spacing:0; }
+    .table-profit th, .table-profit td { padding:12px; text-align:left; border-bottom:1px solid var(--border); font-size:13px; color:var(--text); }
+    .table-profit th { color:var(--muted); font-weight:600; background:#121622; font-size: 11px; text-transform: uppercase; border-bottom: 2px solid var(--border);}
+    
+    .amount-cell { font-weight:600; font-family:'Inter', monospace; }
+    .buy-amount { color:var(--ok); }
+    .sell-amount { color:var(--danger); }
+    
+    .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
+    .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; font-weight: 500;}
+    .timezone-info { font-size:12px; color:var(--muted); }
+    .hidden { display:none !important; }
+
+    @media (max-width: 1200px) { .tables-container { grid-template-columns:1fr; } }
+</style>
+
+<div class="profit-container">
+    <div class="form-section">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h4 style="margin: 0; color: var(--text); font-size: 16px; font-weight: 600;">📊 Аналитика прибыли</h4>
+            <div class="timezone-info" id="timezoneInfo">🕐 МСК: Загрузка...</div>
+        </div>
+
+        <div class="quick-dates">
+            <button type="button" class="quick-date-btn active" onclick="setToday()">Сегодня</button>
+            <button type="button" class="quick-date-btn" onclick="setLastMonth()">За месяц</button>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="startDate">Дата начала</label>
+                <input class="input-profit" type="date" id="startDate">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="endDate">Дата окончания</label>
+                <input class="input-profit" type="date" id="endDate">
+            </div>
+        </div>
+
+        <button id="loadBtn" class="btn-profit primary" onclick="loadTurnover()">
+            📈 Рассчитать прибыль
+        </button>
+        
+        <div id="loadError" class="error hidden" style="margin-top:12px; color: var(--danger); font-size: 13px;"></div>
+    </div>
+
+    <div id="resultsSection" class="hidden">
+        <div class="period-info" id="periodInfo">📅 Период: выберите даты</div>
+        
+        <div class="summary-cards">
+            <div class="summary-card buy">
+                <div class="summary-title">Покупки (BUY)</div>
+                <div class="summary-value" id="buyTotal">0.00 ₽</div>
+                <div class="summary-count"><span id="buyCount">0</span> операций</div>
+            </div>
+            <div class="summary-card sell">
+                <div class="summary-title">Продажи (SELL)</div>
+                <div class="summary-value" id="sellTotal">0.00 ₽</div>
+                <div class="summary-count"><span id="sellCount">0</span> операций</div>
+            </div>
+            <div class="summary-card total">
+                <div class="summary-title">Общий оборот</div>
+                <div class="summary-value" id="totalTurnover">0.00 ₽</div>
+                <div class="summary-count"><span id="totalCount">0</span> всего операций</div>
+            </div>
+            <div class="summary-card profit">
+                <div class="summary-title">Чистая прибыль</div>
+                <div class="summary-value" id="profitValue">0.00 ₽</div>
+                <div class="summary-count" id="profitLabel">SELL - BUY</div>
+            </div>
+            <div class="summary-card balance">
+                <div class="summary-title">Остаток (USDT)</div>
+                <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">0.00</div>
+                <div class="summary-count">С учетом начального баланса</div>
+            </div>
+        </div>
+
+        <div id="todayView" class="tables-container hidden">
+            <div class="table-section">
+                <div class="table-header buy">
+                    <div class="table-title">↗️ Покупки (BUY)</div>
+                    <span class="badge ok" style="background:rgba(88,214,141,.15); color:var(--ok); padding:4px 8px; border-radius:20px; font-size:11px;" id="buyTableCount">0 записей</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="table-profit">
+                        <thead><tr><th>ID / Дата</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
+                        <tbody id="buyOrdersTable"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="table-section">
+                <div class="table-header sell">
+                    <div class="table-title">↘️ Продажи (SELL)</div>
+                    <span class="badge danger" style="background:rgba(255,108,108,.15); color:var(--danger); padding:4px 8px; border-radius:20px; font-size:11px;" id="sellTableCount">0 записей</span>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="table-profit">
+                        <thead><tr><th>ID / Дата</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
+                        <tbody id="sellOrdersTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="monthView" class="hidden">
+            <div class="table-section">
+                <div class="table-header">
+                    <div class="table-title" style="color:var(--text);">📅 Результаты по итогам месяца</div>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="table-profit">
+                        <thead>
+                            <tr>
+                                <th>Месяц</th>
+                                <th>Доход</th>
+                                <th>Расход</th>
+                                <th>НДФЛ (13%)</th>
+                                <th>После НДФЛ</th>
+                                <th>Доля</th>
+                                <th>Чистая прибыль</th>
+                            </tr>
+                        </thead>
+                        <tbody id="monthlySummaryTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    function safeFloat(val) {
+        if (!val) return 0;
+        let str = String(val).replace(/\s/g, '').replace(',', '.');
+        return parseFloat(str) || 0;
+    }
+
+    function formatMoney(amount) {
+        return safeFloat(amount).toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        });
+    }
+
+    function updateMskTime() {
+        const now = new Date();
+        const options = { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit', second: '2-digit' };
+        document.getElementById('timezoneInfo').textContent = `🕐 МСК: ${new Intl.DateTimeFormat('ru-RU', options).format(now)}`;
+    }
+    setInterval(updateMskTime, 1000);
+
+    function setDate(daysBack) {
+        const end = new Date();
+        const start = new Date();
+        start.setDate(start.getDate() - daysBack);
+        document.getElementById('endDate').value = end.toISOString().split('T')[0];
+        document.getElementById('startDate').value = start.toISOString().split('T')[0];
+    }
+
+    // Кнопки "Сегодня" и "За месяц"
+    function setToday() { setDate(0); setActiveBtn(0); loadTurnover(); }
+    function setLastMonth() { setDate(30); setActiveBtn(1); loadTurnover(); }
+
+    function setActiveBtn(index) {
+        document.querySelectorAll('.quick-date-btn').forEach((btn, i) => {
+            btn.classList.toggle('active', i === index);
+        });
+    }
+
+    async function loadTurnover() {
+        const start = document.getElementById('startDate').value;
+        const end = document.getElementById('endDate').value;
+        const btn = document.getElementById('loadBtn');
+        const errorDiv = document.getElementById('loadError');
+        
+        btn.innerHTML = '⏳ Рассчитываем...';
+        btn.disabled = true;
+        errorDiv.classList.add('hidden');
+
+        try {
+            const currentUrl = window.location.pathname;
+            const url = `${currentUrl}?action=get_turnover&start=${start}&end=${end}`;
+            
+            const response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
+            if (!response.ok) throw new Error('Ошибка связи с сервером');
+            
+            const data = await response.json();
+            renderData(data, start, end);
+            
+        } catch (e) {
+            errorDiv.textContent = 'Ошибка загрузки данных.';
+            errorDiv.classList.remove('hidden');
+        } finally {
+            btn.innerHTML = '📈 Рассчитать прибыль';
+            btn.disabled = false;
+        }
+    }
+
+    function renderData(data, start, end) {
+        document.getElementById('resultsSection').classList.remove('hidden');
+        
+        const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
+        document.getElementById('periodInfo').textContent = `📅 Отчетный период: ${start} — ${end} | Всего сделок: ${totalCount}`;
+
+        // Обновляем карточки
+        document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
+        document.getElementById('buyCount').textContent = data.buy_count;
+        document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
+        document.getElementById('sellCount').textContent = data.sell_count;
+        document.getElementById('totalTurnover').textContent = formatMoney(data.total_sum) + ' ₽';
+        document.getElementById('totalCount').textContent = totalCount;
+        
+        const profit = safeFloat(data.profit);
+        const profitEl = document.getElementById('profitValue');
+        profitEl.textContent = (profit > 0 ? '+' : '') + formatMoney(profit) + ' ₽';
+        profitEl.style.color = profit >= 0 ? 'var(--ok)' : 'var(--danger)';
+
+        const cryptoBalance = safeFloat(data.crypto_balance);
+        document.getElementById('cryptoBalance').textContent = cryptoBalance.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        }) + ' USDT';
+
+        // ЛОГИКА ОТОБРАЖЕНИЯ: СЕГОДНЯ ИЛИ МЕСЯЦ
+        if (start === end) {
+            // Один день = показываем две таблицы (Детализация)
+            document.getElementById('monthView').classList.add('hidden');
+            document.getElementById('todayView').classList.remove('hidden');
+            
+            renderDetailedTable('buyOrdersTable', data.buy_orders, 'buy');
+            renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
+            document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
+            document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
+        } else {
+            // Больше одного дня = показываем таблицу итогов по месяцам с налогами
+            document.getElementById('todayView').classList.add('hidden');
+            document.getElementById('monthView').classList.remove('hidden');
+            
+            renderMonthlySummaryView(data.buy_orders, data.sell_orders);
+        }
+    }
+
+    // Рендер детальных таблиц ("Сегодня")
+    function renderDetailedTable(elementId, orders, type) {
+        const tbody = document.getElementById(elementId);
+        if (!orders || orders.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="4" class="no-data">Сделок не найдено</td></tr>`;
+            return;
+        }
+        const amountClass = type === 'buy' ? 'buy-amount' : 'sell-amount';
+        tbody.innerHTML = orders.map(o => {
+            let rate = safeFloat(o.price);
+            if (rate === 0 && safeFloat(o.amount) > 0) rate = safeFloat(o.cost) / safeFloat(o.amount);
+            return `
+            <tr>
+                <td>
+                    <div style="font-family:monospace; font-size:12px; color:var(--text);">${o.external_id}</div>
+                    <div style="font-size:10px; color:var(--muted);">${o.date}</div>
+                </td>
+                <td style="font-weight:500;">${rate.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                <td style="font-weight:500;">${safeFloat(o.amount).toLocaleString('ru-RU', {maximumFractionDigits: 2})}</td>
+                <td class="amount-cell ${amountClass}">${safeFloat(o.cost).toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // Рендер итоговой таблицы по месяцам с расчетом НДФЛ
+    function renderMonthlySummaryView(buyOrders, sellOrders) {
+        const monthlyData = {};
+        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+        // Группировка по месяцам (MM.YYYY)
+        const processOrders = (orders, isBuy) => {
+            orders.forEach(o => {
+                // дата приходит в формате "DD.MM.YYYY HH:MM"
+                const parts = o.date.split(' ')[0].split('.');
+                if (parts.length === 3) {
+                    const monthIdx = parseInt(parts[1], 10) - 1;
+                    const year = parts[2];
+                    
+                    const sortKey = `${year}-${parts[1]}`; // Для сортировки
+                    const label = `${monthNames[monthIdx]} ${year}`; // Для красивого вывода
+
+                    if (!monthlyData[sortKey]) {
+                        monthlyData[sortKey] = { label: label, buy: 0, sell: 0 };
+                    }
+                    
+                    const cost = safeFloat(o.cost);
+                    if (isBuy) monthlyData[sortKey].buy += cost;
+                    else monthlyData[sortKey].sell += cost;
+                }
+            });
+        };
+
+        processOrders(buyOrders, true);
+        processOrders(sellOrders, false);
+
+        // Сортировка от новых месяцев к старым
+        const sortedKeys = Object.keys(monthlyData).sort((a, b) => b.localeCompare(a));
+        const tableRows = [];
+
+        if (sortedKeys.length === 0) {
+            document.getElementById('monthlySummaryTable').innerHTML = `<tr><td colspan="7" class="no-data">За выбранный период нет сделок</td></tr>`;
+            return;
+        }
+
+        sortedKeys.forEach(key => {
+            const d = monthlyData[key];
+            const income = d.sell;   // Доход = Продажи
+            const expense = d.buy;   // Расход = Покупки
+            
+            const profitBeforeTax = income - expense;
+            
+            // Расчет налогов и прибыли
+            const ndfl = profitBeforeTax > 0 ? profitBeforeTax * 0.13 : 0; // 13% от прибыли
+            const afterNdfl = profitBeforeTax - ndfl;
+            const netProfit = afterNdfl; // Пока Доля не считается, чистая прибыль равна "После НДФЛ"
+            
+            const profitColor = netProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
+            const sign = netProfit > 0 ? '+' : '';
+
+            tableRows.push(`
+                <tr>
+                    <td style="font-weight:600; color:var(--text);">${d.label}</td>
+                    <td class="buy-amount" style="color:var(--ok); font-weight:500;">${formatMoney(income)} ₽</td>
+                    <td class="sell-amount" style="color:var(--danger); font-weight:500;">${formatMoney(expense)} ₽</td>
+                    <td style="color:var(--warn); font-weight:500;">${formatMoney(ndfl)} ₽</td>
+                    <td style="color:var(--text); font-weight:500;">${formatMoney(afterNdfl)} ₽</td>
+                    <td style="color:var(--muted); font-weight:500;">-</td>
+                    <td class="amount-cell" style="color:${profitColor}">${sign}${formatMoney(netProfit)} ₽</td>
+                </tr>
+            `);
+        });
+
+        document.getElementById('monthlySummaryTable').innerHTML = tableRows.join('');
+    }
+
+    window.onload = () => {
+        updateMskTime();
+        setToday();
+    };
+</script>
+{% endblock %}

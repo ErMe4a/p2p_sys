@@ -23,6 +23,7 @@ class User(AbstractUser):
     bitget_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия Bitget (%)")
     telegram_commission = models.DecimalField(max_digits=6, decimal_places=4, default=0.0000, verbose_name="Комиссия Telegram (%)")
 
+    initial_crypto_balance = models.DecimalField(max_digits=20, decimal_places=8, default=0, verbose_name="Начальный остаток USDT")
 
     def __str__(self):
         return self.username
