@@ -387,6 +387,15 @@ def user_profit_view(request):
 
         orders = Order.objects.filter(user=user)
 
+        # --- 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (без фильтра по датам) ---
+        all_time_buy = float(orders.filter(operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
+        all_time_sell = float(orders.filter(operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
+        initial_balance = float(user.initial_crypto_balance or 0)
+        
+        # Настоящий текущий остаток на счету
+        real_current_balance = initial_balance + all_time_buy - all_time_sell
+
+        # --- 2. Фильтруем заказы по выбранным датам ---
         if start_date_str and end_date_str:
             try:
                 naive_start = datetime.strptime(start_date_str, '%Y-%m-%d')
@@ -408,15 +417,10 @@ def user_profit_view(request):
         buy_sum = buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0
         sell_sum = sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0
 
-        # --- НОВОЕ: Считаем суммы крипты (USDT) с учетом начального остатка ---
-        buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
-        sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
-        
-        # Получаем заданный админом остаток (если пусто, то 0)
-        initial_balance = float(user.initial_crypto_balance or 0)
-        
-        # Считаем итоговый остаток: начальный + куплено - продано
-        crypto_balance = initial_balance + buy_crypto - sell_crypto
+        # --- 3. Считаем крипту только ЗА ВЫБРАННЫЙ ПЕРИОД (Дельта) ---
+        period_buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
+        period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
+        period_crypto_delta = period_buy_crypto - period_sell_crypto
 
         # Сериализация для таблицы
         def serialize(qs):
@@ -440,7 +444,11 @@ def user_profit_view(request):
             'sell_count': sell_orders.count(),
             'total_sum': buy_sum + sell_sum,
             'profit': float(sell_sum - buy_sum),
-            'crypto_balance': float(crypto_balance), # <--- Итоговый остаток уходит на фронтенд
+            
+            # Отдаем две цифры: глобальный баланс и изменение за период
+            'crypto_balance': float(real_current_balance), 
+            'crypto_delta': float(period_crypto_delta),
+            
             'buy_orders': serialize(buy_orders),
             'sell_orders': serialize(sell_orders),
         })
@@ -456,10 +464,7 @@ def user_profit_view(request):
 
 
 
-
-
 # --- АДМИН ПАНЕЛЬ ---
-
 
 
 @login_required(login_url='admin_login')
@@ -476,7 +481,7 @@ def admin_users_list(request):
         try:
             user_to_edit = User.objects.get(id=user_id)
             
-            # --- НОВОЕ: Обновление логина и пароля ---
+            # --- Обновление логина и пароля ---
             new_username = request.POST.get('username')
             if new_username:
                 user_to_edit.username = new_username
@@ -539,7 +544,7 @@ def admin_users_list(request):
             user_to_edit.initial_crypto_balance = current_balance + adjustment
             user_to_edit.save()
             
-            messages.success(request, f"Баланс пользователя {user_to_edit.username} изменен. Новый начальный остаток: {user_to_edit.initial_crypto_balance} USDT")
+            messages.success(request, f"Баланс пользователя {user_to_edit.username} изменен. Новая корректировочная база: {user_to_edit.initial_crypto_balance} USDT")
         except User.DoesNotExist:
             messages.error(request, "Пользователь не найден.")
         except ValueError:
@@ -547,10 +552,18 @@ def admin_users_list(request):
             
         return redirect('admin_users')
 
-    # 5. Вывод списка
+    # 5. Вывод списка с расчетом реального баланса "на лету"
     users = User.objects.all().order_by('id')
-    return render(request, 'custom_admin/users_list.html', {'users': users})
+    
+    for u in users:
+        # Считаем все покупки и продажи пользователя для вывода реального остатка в модалке
+        bought = Order.objects.filter(user=u, operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0
+        sold = Order.objects.filter(user=u, operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0
+        
+        # Записываем реальный баланс во временное свойство объекта пользователя
+        u.real_balance = float(u.initial_crypto_balance or 0) + float(bought) - float(sold)
 
+    return render(request, 'custom_admin/users_list.html', {'users': users})
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

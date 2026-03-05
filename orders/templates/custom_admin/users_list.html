@@ -5,25 +5,16 @@
 {% block extra_css %}
 <style>
     .form-control { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
-    
-    /* Стили для лампочек в таблице */
     .api-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin: 0 auto; transition: 0.3s; }
     .api-dot.active { background: #58d68d; box-shadow: 0 0 6px #58d68d; }
-    
-    /* Стили для индикаторов в модалке */
     .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin-right: 5px; }
     .indicator.ok { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
-
     .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
     .form-section-inner h4 { font-size: 0.85rem; margin-bottom: 12px; color: var(--accent-blue); display: flex; align-items: center; }
-
     .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
     .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
-
     .btn-report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
     .btn-full-width { grid-column: span 2; }
-    
-    /* Центрирование колонок с лампочками */
     .col-center { text-align: center; }
 </style>
 {% endblock %}
@@ -55,57 +46,33 @@
                     <td class="fw-bold">{{ u.username }}</td>
                     
                     <td class="col-center">
-                        {% if u.bybit_api_key and u.bybit_api_secret %}
-                            <span class="api-dot active" title="Подключено"></span>
-                        {% else %}
-                            <span class="api-dot" title="Не настроено"></span>
-                        {% endif %}
+                        {% if u.bybit_api_key and u.bybit_api_secret %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
                     </td>
-
                     <td class="col-center">
-                        {% if u.htx_access_key and u.htx_private_key %}
-                            <span class="api-dot active" title="Подключено"></span>
-                        {% else %}
-                            <span class="api-dot" title="Не настроено"></span>
-                        {% endif %}
+                        {% if u.htx_access_key and u.htx_private_key %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
                     </td>
-
                     <td class="col-center">
-                        {% if u.mexc_api_key and u.mexc_api_secret %}
-                            <span class="api-dot active" title="Подключено"></span>
-                        {% else %}
-                            <span class="api-dot" title="Не настроено"></span>
-                        {% endif %}
+                        {% if u.mexc_api_key and u.mexc_api_secret %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
                     </td>
-
                     <td class="col-center">
-                        {% if u.evotor_login and u.evotor_password %}
-                            <span class="api-dot active" title="Подключено"></span>
-                        {% else %}
-                            <span class="api-dot" title="Не настроено"></span>
-                        {% endif %}
+                        {% if u.evotor_login and u.evotor_password %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
                     </td>
 
                     <td class="text-end">
                         <button class="btn btn-sm btn-outline-warning" 
-                                onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.initial_crypto_balance|default:0 }}')">
+                                onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.real_balance|default:0|floatformat:2 }}')">
                             Ост.
                         </button>
                         
                         <button class="btn btn-sm btn-outline-secondary ms-1" 
                                 onclick="openEditUserModal(
-                                    '{{ u.id }}', 
-                                    '{{ u.username }}', 
+                                    '{{ u.id }}', '{{ u.username }}', 
                                     '{{ u.bybit_api_key|default:'' }}', '{{ u.bybit_api_secret|default:'' }}', 
                                     '{{ u.htx_access_key|default:'' }}', '{{ u.htx_private_key|default:'' }}', 
                                     '{{ u.mexc_api_key|default:'' }}', '{{ u.mexc_api_secret|default:'' }}', 
                                     '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}'
-                                )">
-                            ✏️
-                        </button>
-                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}')">
-                            📊
-                        </button>
+                                )">✏️</button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}')">📊</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -124,14 +91,8 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="create_user">
             <div class="form-row mb-3">
-                <div class="form-group">
-                    <label>Логин *</label>
-                    <input class="form-control" type="text" name="username" required>
-                </div>
-                <div class="form-group">
-                    <label>Пароль *</label>
-                    <input class="form-control" type="text" name="password" required>
-                </div>
+                <div class="form-group"><label>Логин *</label><input class="form-control" type="text" name="username" required></div>
+                <div class="form-group"><label>Пароль *</label><input class="form-control" type="text" name="password" required></div>
             </div>
             <div style="display:flex; gap:12px; justify-content:flex-end;">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeAddUserModal()">Отмена</button>
@@ -155,70 +116,40 @@
             <div class="form-section-inner">
                 <h4><span class="indicator ok"></span> Основные данные</h4>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Логин</label>
-                        <input class="form-control" type="text" name="username" id="editUsername" required>
-                    </div>
-                    <div class="form-group">
-                        <label>Новый пароль </label>
-                        <input class="form-control" type="text" name="password" id="editPassword" placeholder="****">
-                    </div>
+                    <div class="form-group"><label>Логин</label><input class="form-control" type="text" name="username" id="editUsername" required></div>
+                    <div class="form-group"><label>Новый пароль </label><input class="form-control" type="text" name="password" id="editPassword" placeholder="****"></div>
                 </div>
             </div>
 
             <div class="form-section-inner">
                 <h4><span id="bybitInd" class="indicator"></span> Bybit API</h4>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>API Key</label>
-                        <input class="form-control" type="text" name="bybit_key" id="editBybitKey">
-                    </div>
-                    <div class="form-group">
-                        <label>API Secret</label>
-                        <input class="form-control" type="text" name="bybit_secret" id="editBybitSecret">
-                    </div>
+                    <div class="form-group"><label>API Key</label><input class="form-control" type="text" name="bybit_key" id="editBybitKey"></div>
+                    <div class="form-group"><label>API Secret</label><input class="form-control" type="text" name="bybit_secret" id="editBybitSecret"></div>
                 </div>
             </div>
 
             <div class="form-section-inner">
                 <h4><span id="htxInd" class="indicator"></span> HTX API</h4>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Access Key</label>
-                        <input class="form-control" type="text" name="htx_key" id="editHtxKey">
-                    </div>
-                    <div class="form-group">
-                        <label>Private Key</label>
-                        <input class="form-control" type="text" name="htx_secret" id="editHtxSecret">
-                    </div>
+                    <div class="form-group"><label>Access Key</label><input class="form-control" type="text" name="htx_key" id="editHtxKey"></div>
+                    <div class="form-group"><label>Private Key</label><input class="form-control" type="text" name="htx_secret" id="editHtxSecret"></div>
                 </div>
             </div>
 
             <div class="form-section-inner">
                 <h4><span id="mexcInd" class="indicator"></span> MEXC API</h4>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Access Key</label>
-                        <input class="form-control" type="text" name="mexc_key" id="editMexcKey">
-                    </div>
-                    <div class="form-group">
-                        <label>Secret Key</label>
-                        <input class="form-control" type="text" name="mexc_secret" id="editMexcSecret">
-                    </div>
+                    <div class="form-group"><label>Access Key</label><input class="form-control" type="text" name="mexc_key" id="editMexcKey"></div>
+                    <div class="form-group"><label>Secret Key</label><input class="form-control" type="text" name="mexc_secret" id="editMexcSecret"></div>
                 </div>
             </div>
 
             <div class="form-section-inner">
                 <h4><span id="evoInd" class="indicator"></span> Evotor</h4>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Логин</label>
-                        <input class="form-control" type="text" name="evotor_login" id="editEvoLogin">
-                    </div>
-                    <div class="form-group">
-                        <label>Пароль</label>
-                        <input class="form-control" type="text" name="evotor_password" id="editEvoPass">
-                    </div>
+                    <div class="form-group"><label>Логин</label><input class="form-control" type="text" name="evotor_login" id="editEvoLogin"></div>
+                    <div class="form-group"><label>Пароль</label><input class="form-control" type="text" name="evotor_password" id="editEvoPass"></div>
                 </div>
             </div>
 
@@ -241,20 +172,12 @@
         
         <div class="form-group mb-3">
             <label>Реквизиты</label>
-            <select class="form-control" id="reportsUserDetails">
-                <option value="">Выберите реквизиты</option>
-            </select>
+            <select class="form-control" id="reportsUserDetails"><option value="">Выберите реквизиты</option></select>
         </div>
 
         <div class="form-row mb-3">
-            <div class="form-group">
-                <label>Дата начала</label>
-                <input class="form-control" type="date" id="reportsStartDate">
-            </div>
-            <div class="form-group">
-                <label>Дата окончания</label>
-                <input class="form-control" type="date" id="reportsEndDate">
-            </div>
+            <div class="form-group"><label>Дата начала</label><input class="form-control" type="date" id="reportsStartDate"></div>
+            <div class="form-group"><label>Дата окончания</label><input class="form-control" type="date" id="reportsEndDate"></div>
         </div>
 
         <div class="form-row mb-3">
@@ -266,10 +189,7 @@
                     <option value="SELL">Продажа (SELL)</option>
                 </select>
             </div>
-            <div class="form-group">
-                <label>Год (для УСН)</label>
-                <input class="form-control" type="number" id="reportsYear" value="2026" min="2020" max="2030">
-            </div>
+            <div class="form-group"><label>Год (для УСН)</label><input class="form-control" type="number" id="reportsYear" value="2026" min="2020" max="2030"></div>
         </div>
 
         <div class="btn-report-grid">
@@ -292,7 +212,7 @@
             <input type="hidden" name="user_id" id="balanceUserId">
             
             <div class="form-group mb-2 mt-2">
-                <label style="color: var(--muted); font-size: 13px;">Текущий начальный остаток: <span id="currentBalanceDisplay" style="color: var(--text); font-weight: bold; font-size: 14px;">0</span> USDT</label>
+                <label style="color: var(--muted); font-size: 13px;">Общий реальный остаток: <span id="currentBalanceDisplay" style="color: var(--text); font-weight: bold; font-size: 14px;">0</span> USDT</label>
             </div>
 
             <div class="form-group mb-3">
@@ -311,152 +231,95 @@
 
 {% block extra_js %}
 <script>
-    // Базовые функции управления модалками
     function openAddUserModal() { document.getElementById('addUserModal').classList.add('active'); }
     function closeAddUserModal() { document.getElementById('addUserModal').classList.remove('active'); }
 
-    // Обновил функцию: добавлены подстановка логина и очистка пароля
     function openEditUserModal(id, login, bKey, bSec, hKey, hSec, mKey, mSec, eLog, ePass) {
         document.getElementById('editUserId').value = id;
         document.getElementById('editUserLoginLabel').innerText = login;
-        
-        // НОВОЕ: подставляем текущий логин и сбрасываем поле ввода пароля
         document.getElementById('editUsername').value = login;
         document.getElementById('editPassword').value = ''; 
         
-        // Bybit
         document.getElementById('editBybitKey').value = bKey;
         document.getElementById('editBybitSecret').value = bSec;
         document.getElementById('bybitInd').className = (bKey && bSec) ? 'indicator ok' : 'indicator';
 
-        // HTX
         document.getElementById('editHtxKey').value = hKey;
         document.getElementById('editHtxSecret').value = hSec;
         document.getElementById('htxInd').className = (hKey && hSec) ? 'indicator ok' : 'indicator';
         
-        // MEXC
         document.getElementById('editMexcKey').value = mKey;
         document.getElementById('editMexcSecret').value = mSec;
         document.getElementById('mexcInd').className = (mKey && mSec) ? 'indicator ok' : 'indicator';
 
-        // Evotor
         document.getElementById('editEvoLogin').value = eLog;
         document.getElementById('editEvoPass').value = ePass;
         document.getElementById('evoInd').className = (eLog && ePass) ? 'indicator ok' : 'indicator';
 
         document.getElementById('editUserModal').classList.add('active');
     }
-
     function closeEditUserModal() { document.getElementById('editUserModal').classList.remove('active'); }
 
-    // НОВОЕ: Функции модалки ОСТАТКОВ
-    // Функции модалки ОСТАТКОВ (Корректировка)
+    // Логика модалки ОСТАТКОВ
     function openBalanceModal(id, login, currentBalance) {
         document.getElementById('balanceUserId').value = id;
         document.getElementById('balanceUserLoginLabel').innerText = login;
         
-        // Показываем текущий баланс текстом
         let val = String(currentBalance).replace(',', '.');
         document.getElementById('currentBalanceDisplay').innerText = val;
-        
-        // ОЧИЩАЕМ поле ввода, чтобы админ вписал только сумму изменения
-        document.getElementById('balanceValue').value = '';
+        document.getElementById('balanceValue').value = ''; // Очищаем поле для ввода дельты
         
         document.getElementById('balanceModal').classList.add('active');
     }
-    
-    function closeBalanceModal() { 
-        document.getElementById('balanceModal').classList.remove('active'); 
-    }
-
-    // Логика модалки ОТЧЕТОВ
-    const availableBanks = [
-        { id: 'sber', name: 'Сбербанк' },
-        { id: 'tinkoff', name: 'Тинькофф' },
-        { id: 'alfa', name: 'Альфа-Банк' },
-        { id: 'vtb', name: 'ВТБ' },
-        { id: 'raiff', name: 'Райффайзен' }
-    ];
+    function closeBalanceModal() { document.getElementById('balanceModal').classList.remove('active'); }
 
     async function openReportsModal(userId, username) {
         document.getElementById('reportsUserId').value = userId;
         document.getElementById('reportsUserLogin').innerText = username;
-        
         const detailsSelect = document.getElementById('reportsUserDetails');
         detailsSelect.innerHTML = '<option value="">Загрузка...</option>';
 
-        // Список банков точно как в вашей базе данных
         const dbBanks = [
-            { id: '1', name: 'Сбербанк' },
-            { id: '2', name: 'Тинькофф' },
-            { id: '3', name: 'Райффайзен' },
-            { id: '4', name: 'ВТБ' },
-            { id: '5', name: 'Альфа-Банк' },
-            { id: '6', name: 'Газпромбанк' },
-            { id: '7', name: 'Росбанк' },
-            { id: '8', name: 'СБП' },
-            { id: '9', name: 'Озон Банк' },
-            { id: '10', name: 'Уралсиб' },
-            { id: '11', name: 'Хайс' }
+            { id: '1', name: 'Сбербанк' }, { id: '2', name: 'Тинькофф' }, { id: '3', name: 'Райффайзен' },
+            { id: '4', name: 'ВТБ' }, { id: '5', name: 'Альфа-Банк' }, { id: '6', name: 'Газпромбанк' },
+            { id: '7', name: 'Росбанк' }, { id: '8', name: 'СБП' }, { id: '9', name: 'Озон Банк' },
+            { id: '10', name: 'Уралсиб' }, { id: '11', name: 'Хайс' }
         ];
 
         try {
-            // 1. Сначала пробуем загрузить актуальный список через API
             const response = await fetch('/api/details'); 
-            
             if (response.ok) {
                 const apiBanks = await response.json();
-                
-                // Очищаем и добавляем "Все банки"
                 detailsSelect.innerHTML = '<option value="">Все банки</option>';
-                
-                // Заполняем из API
                 apiBanks.forEach(bank => {
                     let opt = document.createElement('option');
-                    opt.value = bank.id; 
-                    opt.innerHTML = bank.name;
+                    opt.value = bank.id; opt.innerHTML = bank.name;
                     detailsSelect.appendChild(opt);
                 });
-            } else {
-                throw new Error('API недоступен');
-            }
+            } else throw new Error('API недоступен');
         } catch (e) {
-            console.log("API недоступен, используем встроенный список банков.");
-            
-            // 2. ЕСЛИ API НЕ СРАБОТАЛ — используем ваш жесткий список
             detailsSelect.innerHTML = '<option value="">Все банки</option>';
-            
             dbBanks.forEach(bank => {
                 let opt = document.createElement('option');
-                opt.value = bank.id; // Передаем ID (1, 2, 3...), а не название
-                opt.innerHTML = bank.name;
+                opt.value = bank.id; opt.innerHTML = bank.name;
                 detailsSelect.appendChild(opt);
             });
         }
 
-        // Сбрасываем остальные поля фильтров
         document.getElementById('reportsStartDate').value = '';
         document.getElementById('reportsEndDate').value = '';
         document.getElementById('reportsOperationType').value = '';
-
-        // Показываем модалку
         document.getElementById('reportsModal').classList.add('active');
     }
+    function closeReportsModal() { document.getElementById('reportsModal').classList.remove('active'); }
 
-    function closeReportsModal() { 
-        document.getElementById('reportsModal').classList.remove('active'); 
-    }
-
-    // Функции скачивания
     function downloadExcel() {
         const userId = document.getElementById('reportsUserId').value;
         const start = document.getElementById('reportsStartDate').value;
         const end = document.getElementById('reportsEndDate').value;
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-
-        const url = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
-        window.location.href = url;
+        window.location.href = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
     }
 
     function downloadUsn() {
@@ -472,22 +335,13 @@
         const bank = document.getElementById('reportsUserDetails').value; 
         const type = document.getElementById('reportsOperationType').value;
 
-        if (!userId) {
-            alert("Ошибка: Не выбран пользователь");
-            return;
-        }
-
-        const url = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
-        window.location.href = url;
+        if (!userId) { alert("Ошибка: Не выбран пользователь"); return; }
+        window.location.href = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
     }
     
-    // Закрытие всех модалок при клике вне окна
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
-            closeAddUserModal();
-            closeEditUserModal();
-            closeReportsModal();
-            closeBalanceModal(); // Добавлено закрытие модалки остатков
+            closeAddUserModal(); closeEditUserModal(); closeReportsModal(); closeBalanceModal();
         }
     }
 </script>

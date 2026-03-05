@@ -4,17 +4,9 @@
 
 {% block content %}
 <style>
-    /* Основные переменные вашей темной темы */
     :root { 
-        --bg: #0f1115; 
-        --card: #151923; 
-        --text: #e6e8ee; 
-        --muted: #99a1b3; 
-        --accent: #6c8cff; 
-        --danger: #ff6c6c; 
-        --ok: #58d68d; 
-        --border: #242a36; 
-        --warn: #ffc107; 
+        --bg: #0f1115; --card: #151923; --text: #e6e8ee; --muted: #99a1b3; 
+        --accent: #6c8cff; --danger: #ff6c6c; --ok: #58d68d; --border: #242a36; --warn: #ffc107; 
     }
     
     .profit-container { margin-top: 20px; font-family: 'Inter', sans-serif; }
@@ -126,9 +118,9 @@
                 <div class="summary-count" id="profitLabel">SELL - BUY</div>
             </div>
             <div class="summary-card balance">
-                <div class="summary-title">Остаток (USDT)</div>
+                <div class="summary-title">Текущий остаток (USDT)</div>
                 <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">0.00</div>
-                <div class="summary-count">С учетом начального баланса</div>
+                <div class="summary-count" id="cryptoDelta" style="font-weight: 500;">0.00 за период</div>
             </div>
         </div>
 
@@ -215,7 +207,6 @@
         document.getElementById('startDate').value = start.toISOString().split('T')[0];
     }
 
-    // Кнопки "Сегодня" и "За месяц"
     function setToday() { setDate(0); setActiveBtn(0); loadTurnover(); }
     function setLastMonth() { setDate(30); setActiveBtn(1); loadTurnover(); }
 
@@ -260,7 +251,6 @@
         const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
         document.getElementById('periodInfo').textContent = `📅 Отчетный период: ${start} — ${end} | Всего сделок: ${totalCount}`;
 
-        // Обновляем карточки
         document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
         document.getElementById('buyCount').textContent = data.buy_count;
         document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
@@ -273,14 +263,24 @@
         profitEl.textContent = (profit > 0 ? '+' : '') + formatMoney(profit) + ' ₽';
         profitEl.style.color = profit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
+        // НОВОЕ: Глобальный баланс и изменение (дельта) за выбранные даты
         const cryptoBalance = safeFloat(data.crypto_balance);
         document.getElementById('cryptoBalance').textContent = cryptoBalance.toLocaleString('ru-RU', {
             minimumFractionDigits: 2, maximumFractionDigits: 2
         }) + ' USDT';
 
-        // ЛОГИКА ОТОБРАЖЕНИЯ: СЕГОДНЯ ИЛИ МЕСЯЦ
+        const cryptoDelta = safeFloat(data.crypto_delta);
+        const deltaEl = document.getElementById('cryptoDelta');
+        const deltaSign = cryptoDelta > 0 ? '+' : '';
+        deltaEl.textContent = `${deltaSign}${cryptoDelta.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        })} USDT за выбранные даты`;
+        
+        if (cryptoDelta > 0) deltaEl.style.color = 'var(--ok)';
+        else if (cryptoDelta < 0) deltaEl.style.color = 'var(--danger)';
+        else deltaEl.style.color = 'var(--muted)';
+
         if (start === end) {
-            // Один день = показываем две таблицы (Детализация)
             document.getElementById('monthView').classList.add('hidden');
             document.getElementById('todayView').classList.remove('hidden');
             
@@ -289,7 +289,6 @@
             document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
             document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
         } else {
-            // Больше одного дня = показываем таблицу итогов по месяцам с налогами
             document.getElementById('todayView').classList.add('hidden');
             document.getElementById('monthView').classList.remove('hidden');
             
@@ -297,7 +296,6 @@
         }
     }
 
-    // Рендер детальных таблиц ("Сегодня")
     function renderDetailedTable(elementId, orders, type) {
         const tbody = document.getElementById(elementId);
         if (!orders || orders.length === 0) {
@@ -321,26 +319,20 @@
         }).join('');
     }
 
-    // Рендер итоговой таблицы по месяцам с расчетом НДФЛ
     function renderMonthlySummaryView(buyOrders, sellOrders) {
         const monthlyData = {};
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
-        // Группировка по месяцам (MM.YYYY)
         const processOrders = (orders, isBuy) => {
             orders.forEach(o => {
-                // дата приходит в формате "DD.MM.YYYY HH:MM"
                 const parts = o.date.split(' ')[0].split('.');
                 if (parts.length === 3) {
                     const monthIdx = parseInt(parts[1], 10) - 1;
                     const year = parts[2];
-                    
-                    const sortKey = `${year}-${parts[1]}`; // Для сортировки
-                    const label = `${monthNames[monthIdx]} ${year}`; // Для красивого вывода
+                    const sortKey = `${year}-${parts[1]}`;
+                    const label = `${monthNames[monthIdx]} ${year}`;
 
-                    if (!monthlyData[sortKey]) {
-                        monthlyData[sortKey] = { label: label, buy: 0, sell: 0 };
-                    }
+                    if (!monthlyData[sortKey]) monthlyData[sortKey] = { label: label, buy: 0, sell: 0 };
                     
                     const cost = safeFloat(o.cost);
                     if (isBuy) monthlyData[sortKey].buy += cost;
@@ -352,7 +344,6 @@
         processOrders(buyOrders, true);
         processOrders(sellOrders, false);
 
-        // Сортировка от новых месяцев к старым
         const sortedKeys = Object.keys(monthlyData).sort((a, b) => b.localeCompare(a));
         const tableRows = [];
 
@@ -363,15 +354,12 @@
 
         sortedKeys.forEach(key => {
             const d = monthlyData[key];
-            const income = d.sell;   // Доход = Продажи
-            const expense = d.buy;   // Расход = Покупки
-            
+            const income = d.sell;   
+            const expense = d.buy;   
             const profitBeforeTax = income - expense;
-            
-            // Расчет налогов и прибыли
-            const ndfl = profitBeforeTax > 0 ? profitBeforeTax * 0.13 : 0; // 13% от прибыли
+            const ndfl = profitBeforeTax > 0 ? profitBeforeTax * 0.13 : 0; 
             const afterNdfl = profitBeforeTax - ndfl;
-            const netProfit = afterNdfl; // Пока Доля не считается, чистая прибыль равна "После НДФЛ"
+            const netProfit = afterNdfl; 
             
             const profitColor = netProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
             const sign = netProfit > 0 ? '+' : '';
