@@ -20,7 +20,7 @@
     .input-profit:focus { outline:none; box-shadow: 0 0 0 2px rgba(108,140,255,.25); border-color:#3c4b7a; }
 
     .form-section { background:#111520; border-radius:10px; padding:20px; margin-bottom:20px; border:1px solid var(--border); }
-    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:16px; }
     .form-group label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:500; }
 
     .quick-dates { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
@@ -83,6 +83,16 @@
             <div class="form-group" style="margin-bottom:0;">
                 <label for="endDate">Дата окончания</label>
                 <input class="input-profit" type="date" id="endDate">
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="exchangeSelect">Биржа</label>
+                <select class="input-profit" id="exchangeSelect">
+                    <option value="">Все биржи</option>
+                    <option value="Bybit">Bybit</option>
+                    <option value="HTX">HTX</option>
+                    <option value="MEXC">MEXC</option>
+                    <option value="Bitget">Bitget</option>
+                </select>
             </div>
         </div>
 
@@ -219,6 +229,7 @@
     async function loadTurnover() {
         const start = document.getElementById('startDate').value;
         const end = document.getElementById('endDate').value;
+        const exchange = document.getElementById('exchangeSelect').value;
         const btn = document.getElementById('loadBtn');
         const errorDiv = document.getElementById('loadError');
         
@@ -228,7 +239,7 @@
 
         try {
             const currentUrl = window.location.pathname;
-            const url = `${currentUrl}?action=get_turnover&start=${start}&end=${end}`;
+            const url = `${currentUrl}?action=get_turnover&start=${start}&end=${end}&exchange=${exchange}`;
             
             const response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
             if (!response.ok) throw new Error('Ошибка связи с сервером');

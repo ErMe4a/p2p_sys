@@ -371,7 +371,6 @@ def delete_unprocessed_order(request, pk):
         messages.error(request, "Ордер не найден.")
     return redirect("unprocessed_orders")
 
-
 @login_required
 def user_profit_view(request):
     """
@@ -379,33 +378,36 @@ def user_profit_view(request):
     """
     action = request.GET.get('action')
 
-    # === ЛОГИКА 1: РАСЧЕТ ОБОРОТА И ПРИБЫЛИ ===
     if action == 'get_turnover':
         user = request.user
         start_date_str = request.GET.get('start')
         end_date_str = request.GET.get('end')
+        exchange = request.GET.get('exchange')
 
         orders = Order.objects.filter(user=user)
 
-        # --- 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (без фильтра по датам) ---
+        # --- НОВОЕ: Фильтр по бирже ---
+        if exchange:
+            # Ищем без учета регистра (BYBIT, Bybit и т.д.)
+            orders = orders.filter(exchange_type__icontains=exchange)
+
+        # 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (с учетом фильтра биржи)
         all_time_buy = float(orders.filter(operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
         all_time_sell = float(orders.filter(operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
-        initial_balance = float(user.initial_crypto_balance or 0)
         
-        # Настоящий текущий остаток на счету
+        # Ручной остаток прибавляем ТОЛЬКО если смотрим "Все биржи"
+        initial_balance = 0.0 if exchange else float(user.initial_crypto_balance or 0)
+        
         real_current_balance = initial_balance + all_time_buy - all_time_sell
 
-        # --- 2. Фильтруем заказы по выбранным датам ---
+        # 2. Фильтруем заказы по выбранным датам
         if start_date_str and end_date_str:
             try:
                 naive_start = datetime.strptime(start_date_str, '%Y-%m-%d')
                 naive_end = datetime.strptime(end_date_str, '%Y-%m-%d')
-                
                 naive_end = naive_end.replace(hour=23, minute=59, second=59)
-
                 start_date = timezone.make_aware(naive_start)
                 end_date = timezone.make_aware(naive_end)
-
                 orders = orders.filter(created_at__range=(start_date, end_date))
             except ValueError:
                 return JsonResponse({'error': 'Неверный формат даты'}, status=400)
@@ -413,16 +415,15 @@ def user_profit_view(request):
         buy_orders = orders.filter(operation_type='BUY').order_by('-created_at')
         sell_orders = orders.filter(operation_type='SELL').order_by('-created_at')
 
-        # Считаем суммы фиата (РУБЛИ)
+        # 3. Считаем рубли
         buy_sum = buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0
         sell_sum = sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0
 
-        # --- 3. Считаем крипту только ЗА ВЫБРАННЫЙ ПЕРИОД (Дельта) ---
+        # 4. Считаем крипту ЗА ВЫБРАННЫЙ ПЕРИОД (Дельта)
         period_buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_crypto_delta = period_buy_crypto - period_sell_crypto
 
-        # Сериализация для таблицы
         def serialize(qs):
             res = []
             for o in qs:
@@ -433,7 +434,8 @@ def user_profit_view(request):
                     'price': float(o.price or 0),   
                     'amount': float(o.amount or 0), 
                     'cost': float(o.cost or 0),     
-                    'date': o.created_at.strftime('%d.%m.%Y %H:%M')
+                    'date': o.created_at.strftime('%d.%m.%Y %H:%M'),
+                    'exchange': o.exchange_type # На всякий случай передаем биржу
                 })
             return res
 
@@ -444,21 +446,13 @@ def user_profit_view(request):
             'sell_count': sell_orders.count(),
             'total_sum': buy_sum + sell_sum,
             'profit': float(sell_sum - buy_sum),
-            
-            # Отдаем две цифры: глобальный баланс и изменение за период
             'crypto_balance': float(real_current_balance), 
             'crypto_delta': float(period_crypto_delta),
-            
             'buy_orders': serialize(buy_orders),
             'sell_orders': serialize(sell_orders),
         })
 
-    # === ЛОГИКА 2: ОТДАТЬ СТРАНИЦУ ===
     return render(request, 'orders/profit.html')
-
-
-
-
 
 
 
