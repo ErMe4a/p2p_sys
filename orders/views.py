@@ -521,20 +521,29 @@ def admin_users_list(request):
             messages.success(request, f"Пользователь {username} создан.")
         return redirect('admin_users')
 
-    # === 4. НОВОЕ: Обработка изменения остатка ===
+    # === 4. Обработка изменения остатка (КОРРЕКТИРОВКА) ===
     if request.method == 'POST' and request.POST.get('action') == 'edit_balance':
         user_id = request.POST.get('user_id')
-        balance = request.POST.get('initial_balance', '0')
+        # Берем сумму корректировки (назовем ее balance_adjustment)
+        adjustment_str = request.POST.get('balance_adjustment', '0') 
         try:
             user_to_edit = User.objects.get(id=user_id)
-            # Заменяем запятую на точку для корректного конвертирования во float
-            user_to_edit.initial_crypto_balance = float(str(balance).replace(',', '.'))
+            
+            # Текущий баланс пользователя
+            current_balance = float(user_to_edit.initial_crypto_balance or 0)
+            
+            # Значение корректировки (заменяем запятую на точку на всякий случай)
+            adjustment = float(str(adjustment_str).replace(',', '.'))
+            
+            # ПРИБАВЛЯЕМ (если adjustment с минусом, то оно логично вычтется)
+            user_to_edit.initial_crypto_balance = current_balance + adjustment
             user_to_edit.save()
-            messages.success(request, f"Начальный остаток пользователя {user_to_edit.username} успешно обновлен.")
+            
+            messages.success(request, f"Баланс пользователя {user_to_edit.username} изменен. Новый начальный остаток: {user_to_edit.initial_crypto_balance} USDT")
         except User.DoesNotExist:
             messages.error(request, "Пользователь не найден.")
         except ValueError:
-            messages.error(request, "Некорректное значение остатка.")
+            messages.error(request, "Некорректное значение корректировки.")
             
         return redirect('admin_users')
 
