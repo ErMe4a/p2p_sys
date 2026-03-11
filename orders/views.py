@@ -799,7 +799,7 @@ def admin_orders_editor(request):
             # ИСПРАВЛЕНИЕ: сохраняем в external_id
             current_order.external_id = request.POST.get('external_id') 
             
-            current_order.exchange_type = request.POST.get('exchange_type')
+            
             current_order.operation_type = request.POST.get('operation_type')
             
             # Банк
