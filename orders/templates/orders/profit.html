@@ -20,7 +20,10 @@
     .input-profit:focus { outline:none; box-shadow: 0 0 0 2px rgba(108,140,255,.25); border-color:#3c4b7a; }
 
     .form-section { background:#111520; border-radius:10px; padding:20px; margin-bottom:20px; border:1px solid var(--border); }
-    .form-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:16px; }
+    
+    /* 4 колонки: Даты, Биржа, Банк */
+    .form-row { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:12px; margin-top:16px; }
+    
     .form-group label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:500; }
 
     .quick-dates { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
@@ -28,17 +31,19 @@
     .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
     .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); font-weight: 500;}
 
-    .summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px; margin-bottom:24px; }
+    /* Сетка карточек стала шире, чтобы влезла новая карточка чистой прибыли */
+    .summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:24px; }
     .summary-card { background:#111520; border-radius:10px; padding:20px; border:1px solid var(--border); position:relative; overflow:hidden; }
     .summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
     .summary-card.buy::before { background:linear-gradient(90deg, var(--ok), #3cb371); }
-    .summary-card.sell::before { background:linear-gradient(90deg, var(--danger), #ff8c66); }
-    .summary-card.total::before { background:linear-gradient(90deg, var(--accent), #4a5fd6); }
-    .summary-card.profit::before { background:linear-gradient(90deg, var(--warn), #ffb347); }
+    .summary-card.sell::before { background:linear-gradient(90deg, #ff8c66, var(--danger)); }
+    .summary-card.gross::before { background:linear-gradient(90deg, var(--warn), #ffb347); }
+    .summary-card.net::before { background:linear-gradient(90deg, #a855f7, #ec4899); } /* Красивый цвет для чистой прибыли */
     .summary-card.balance::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
+    
     .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
-    .summary-value { font-size:1.5rem; font-weight:600; margin-bottom:4px; color: var(--text);}
-    .summary-count { font-size:12px; color:var(--muted); }
+    .summary-value { font-size:1.4rem; font-weight:600; margin-bottom:4px; color: var(--text);}
+    .summary-count { font-size:11px; color:var(--muted); }
 
     .tables-container { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
     .table-section { background:#111520; border-radius:10px; overflow:hidden; border:1px solid var(--border); }
@@ -60,7 +65,13 @@
     .timezone-info { font-size:12px; color:var(--muted); }
     .hidden { display:none !important; }
 
-    @media (max-width: 1200px) { .tables-container { grid-template-columns:1fr; } }
+    @media (max-width: 1200px) { 
+        .tables-container { grid-template-columns:1fr; }
+        .form-row { grid-template-columns:1fr 1fr; } 
+    }
+    @media (max-width: 768px) {
+        .form-row { grid-template-columns:1fr; }
+    }
 </style>
 
 <div class="profit-container">
@@ -84,6 +95,7 @@
                 <label for="endDate">Дата окончания</label>
                 <input class="input-profit" type="date" id="endDate">
             </div>
+            
             <div class="form-group" style="margin-bottom:0;">
                 <label for="exchangeSelect">Биржа</label>
                 <select class="input-profit" id="exchangeSelect">
@@ -92,6 +104,19 @@
                     <option value="HTX">HTX</option>
                     <option value="MEXC">MEXC</option>
                     <option value="Bitget">Bitget</option>
+                </select>
+            </div>
+            
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="bankSelect">Банк</label>
+                <select class="input-profit" id="bankSelect">
+                    <option value="">Все банки</option>
+                    <option value="Сбербанк">Сбербанк</option>
+                    <option value="Тинькофф">Тинькофф</option>
+                    <option value="Райффайзен">Райффайзен</option>
+                    <option value="ВТБ">ВТБ</option>
+                    <option value="Альфа-Банк">Альфа-Банк</option>
+                    <option value="СБП">СБП</option>
                 </select>
             </div>
         </div>
@@ -117,20 +142,23 @@
                 <div class="summary-value" id="sellTotal">0.00 ₽</div>
                 <div class="summary-count"><span id="sellCount">0</span> операций</div>
             </div>
-            <div class="summary-card total">
-                <div class="summary-title">Общий оборот</div>
-                <div class="summary-value" id="totalTurnover">0.00 ₽</div>
-                <div class="summary-count"><span id="totalCount">0</span> всего операций</div>
+            <div class="summary-card gross">
+                <div class="summary-title">Прибыль (до вычета)</div>
+                <div class="summary-value" id="grossProfitValue">0.00 ₽</div>
+                <div class="summary-count">До вычета налогов и доли</div>
             </div>
-            <div class="summary-card profit">
-                <div class="summary-title">Чистая прибыль</div>
-                <div class="summary-value" id="profitValue">0.00 ₽</div>
-                <div class="summary-count" id="profitLabel">SELL - BUY</div>
+            
+            <div class="summary-card net">
+                <div class="summary-title" style="color: #e879f9;">Прибыль (после вычета)</div>
+                <div class="summary-value" id="netProfitValue">0.00 ₽</div>
+                <div class="summary-count" id="netProfitDeductions">НДФЛ: 0₽ | Доля: 0₽</div>
             </div>
+            
             <div class="summary-card balance">
                 <div class="summary-title">Текущий остаток (USDT)</div>
                 <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">0.00</div>
                 <div class="summary-count" id="cryptoDelta" style="font-weight: 500;">0.00 за период</div>
+                <div style="font-size: 10px; color: var(--muted); margin-top: 4px;">*Учтена комиссия биржи</div>
             </div>
         </div>
 
@@ -142,7 +170,7 @@
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
-                        <thead><tr><th>ID / Дата</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
+                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
                         <tbody id="buyOrdersTable"></tbody>
                     </table>
                 </div>
@@ -155,7 +183,7 @@
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
-                        <thead><tr><th>ID / Дата</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
+                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th></tr></thead>
                         <tbody id="sellOrdersTable"></tbody>
                     </table>
                 </div>
@@ -165,19 +193,19 @@
         <div id="monthView" class="hidden">
             <div class="table-section">
                 <div class="table-header">
-                    <div class="table-title" style="color:var(--text);">📅 Результаты по итогам месяца</div>
+                    <div class="table-title" style="color:var(--text);">📅 Финансовые результаты по итогам месяца</div>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
                         <thead>
                             <tr>
                                 <th>Месяц</th>
-                                <th>Доход</th>
-                                <th>Расход</th>
+                                <th>Sell</th>
+                                <th>Buy</th>
+                                <th>Прибыль (до вычета)</th>
                                 <th>НДФЛ (13%)</th>
-                                <th>После НДФЛ</th>
-                                <th>Доля</th>
-                                <th>Чистая прибыль</th>
+                                <th>Доля Системы</th>
+                                <th>Прибыль (после вычета)</th>
                             </tr>
                         </thead>
                         <tbody id="monthlySummaryTable"></tbody>
@@ -230,6 +258,8 @@
         const start = document.getElementById('startDate').value;
         const end = document.getElementById('endDate').value;
         const exchange = document.getElementById('exchangeSelect').value;
+        const bank = document.getElementById('bankSelect').value; // Берем банк
+        
         const btn = document.getElementById('loadBtn');
         const errorDiv = document.getElementById('loadError');
         
@@ -239,7 +269,7 @@
 
         try {
             const currentUrl = window.location.pathname;
-            const url = `${currentUrl}?action=get_turnover&start=${start}&end=${end}&exchange=${exchange}`;
+            const url = `${currentUrl}?action=get_turnover&start=${start}&end=${end}&exchange=${exchange}&bank=${bank}`;
             
             const response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
             if (!response.ok) throw new Error('Ошибка связи с сервером');
@@ -266,15 +296,29 @@
         document.getElementById('buyCount').textContent = data.buy_count;
         document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
-        document.getElementById('totalTurnover').textContent = formatMoney(data.total_sum) + ' ₽';
-        document.getElementById('totalCount').textContent = totalCount;
         
-        const profit = safeFloat(data.profit);
-        const profitEl = document.getElementById('profitValue');
-        profitEl.textContent = (profit > 0 ? '+' : '') + formatMoney(profit) + ' ₽';
-        profitEl.style.color = profit >= 0 ? 'var(--ok)' : 'var(--danger)';
+        // 1. Валовая прибыль (Грязными)
+        const grossProfit = safeFloat(data.profit);
+        const grossEl = document.getElementById('grossProfitValue');
+        grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
+        grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-        // НОВОЕ: Глобальный баланс и изменение (дельта) за выбранные даты
+        // 2. Считаем ЧИСТУЮ ПРИБЫЛЬ для верхних карточек на основе первого месяца в периоде
+        let ndfl = grossProfit > 0 ? grossProfit * 0.13 : 0;
+        let startMonthKey = start.substring(0, 7); // Вытаскиваем "2026-03"
+        let userShares = data.user_shares || {};
+        let sharePercent = userShares[startMonthKey] !== undefined ? parseFloat(userShares[startMonthKey]) : 20.0;
+        
+        let afterNdfl = grossProfit - ndfl;
+        let shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
+        let netProfit = afterNdfl - shareAmount;
+
+        const netEl = document.getElementById('netProfitValue');
+        netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
+        netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
+        document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">-${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">-${formatMoney(shareAmount)}₽</b>`;
+
+        // 3. Баланс USDT
         const cryptoBalance = safeFloat(data.crypto_balance);
         document.getElementById('cryptoBalance').textContent = cryptoBalance.toLocaleString('ru-RU', {
             minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -303,7 +347,8 @@
             document.getElementById('todayView').classList.add('hidden');
             document.getElementById('monthView').classList.remove('hidden');
             
-            renderMonthlySummaryView(data.buy_orders, data.sell_orders);
+            // Передаем доли пользователя в таблицу месяца
+            renderMonthlySummaryView(data.buy_orders, data.sell_orders, userShares);
         }
     }
 
@@ -317,10 +362,16 @@
         tbody.innerHTML = orders.map(o => {
             let rate = safeFloat(o.price);
             if (rate === 0 && safeFloat(o.amount) > 0) rate = safeFloat(o.cost) / safeFloat(o.amount);
+            
+            // Отображаем Биржу и Банк
+            const ex = o.exchange ? o.exchange.toUpperCase() : 'БИРЖА';
+            const bk = o.bank ? o.bank.toUpperCase() : 'БАНК';
+            
             return `
             <tr>
                 <td>
                     <div style="font-family:monospace; font-size:12px; color:var(--text);">${o.external_id}</div>
+                    <div style="font-size:10px; color:var(--accent); font-weight:600; margin-top:2px;">${ex} • ${bk}</div>
                     <div style="font-size:10px; color:var(--muted);">${o.date}</div>
                 </td>
                 <td style="font-weight:500;">${rate.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
@@ -330,17 +381,17 @@
         }).join('');
     }
 
-    function renderMonthlySummaryView(buyOrders, sellOrders) {
+    function renderMonthlySummaryView(buyOrders, sellOrders, userShares) {
         const monthlyData = {};
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
         const processOrders = (orders, isBuy) => {
             orders.forEach(o => {
-                const parts = o.date.split(' ')[0].split('.');
+                const parts = o.date.split(' ')[0].split('.'); 
                 if (parts.length === 3) {
                     const monthIdx = parseInt(parts[1], 10) - 1;
                     const year = parts[2];
-                    const sortKey = `${year}-${parts[1]}`;
+                    const sortKey = `${year}-${parts[1]}`; // '2026-03'
                     const label = `${monthNames[monthIdx]} ${year}`;
 
                     if (!monthlyData[sortKey]) monthlyData[sortKey] = { label: label, buy: 0, sell: 0 };
@@ -355,7 +406,7 @@
         processOrders(buyOrders, true);
         processOrders(sellOrders, false);
 
-        const sortedKeys = Object.keys(monthlyData).sort((a, b) => b.localeCompare(a));
+        const sortedKeys = Object.keys(monthlyData).sort((a, b) => b.localeCompare(a)); 
         const tableRows = [];
 
         if (sortedKeys.length === 0) {
@@ -367,23 +418,40 @@
             const d = monthlyData[key];
             const income = d.sell;   
             const expense = d.buy;   
-            const profitBeforeTax = income - expense;
-            const ndfl = profitBeforeTax > 0 ? profitBeforeTax * 0.13 : 0; 
-            const afterNdfl = profitBeforeTax - ndfl;
-            const netProfit = afterNdfl; 
+            const grossProfit = income - expense; // Валовая прибыль (грязными)
             
-            const profitColor = netProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
-            const sign = netProfit > 0 ? '+' : '';
+            // 1. Считаем НДФЛ
+            const ndfl = grossProfit > 0 ? grossProfit * 0.13 : 0; 
+            const afterNdfl = grossProfit - ndfl;
+            
+            // 2. Считаем Долю Системы
+            const sharePercent = userShares[key] !== undefined ? parseFloat(userShares[key]) : 20.0;
+            const shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
+            
+            // 3. Итоговая чистая прибыль юзера
+            const finalNetProfit = afterNdfl - shareAmount; 
+            
+            const grossColor = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
+            const netColor = finalNetProfit >= 0 ? '#e879f9' : 'var(--danger)';
+            
+            const grossSign = grossProfit > 0 ? '+' : '';
+            const netSign = finalNetProfit > 0 ? '+' : '';
 
             tableRows.push(`
                 <tr>
                     <td style="font-weight:600; color:var(--text);">${d.label}</td>
                     <td class="buy-amount" style="color:var(--ok); font-weight:500;">${formatMoney(income)} ₽</td>
                     <td class="sell-amount" style="color:var(--danger); font-weight:500;">${formatMoney(expense)} ₽</td>
-                    <td style="color:var(--warn); font-weight:500;">${formatMoney(ndfl)} ₽</td>
-                    <td style="color:var(--text); font-weight:500;">${formatMoney(afterNdfl)} ₽</td>
-                    <td style="color:var(--muted); font-weight:500;">-</td>
-                    <td class="amount-cell" style="color:${profitColor}">${sign}${formatMoney(netProfit)} ₽</td>
+                    
+                    <td style="color:${grossColor}; font-weight:600;">${grossSign}${formatMoney(grossProfit)} ₽</td>
+                    
+                    <td style="color:var(--warn); font-weight:500;">-${formatMoney(ndfl)} ₽</td>
+                    
+                    <td style="color:var(--accent); font-weight:500;">
+                        ${sharePercent}% <span style="color:var(--muted); font-size:11px;">(-${formatMoney(shareAmount)} ₽)</span>
+                    </td>
+                    
+                    <td class="amount-cell" style="color:${netColor}; font-size: 14px;">${netSign}${formatMoney(finalNetProfit)} ₽</td>
                 </tr>
             `);
         });

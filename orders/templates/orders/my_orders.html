@@ -99,6 +99,9 @@
                     <option value="MEXC" {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
                     <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
                     <option value="Bitget" {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                    <option value="Gate" {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                    <option value="EMCD" {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                    <option value="BingX" {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
                 </select>
             </div>
         </div>
@@ -214,7 +217,7 @@
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Тип операции</label><select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select></div>
-                        <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option></select></div>
+                        <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option><option value="Gate">Gate</option><option value="EMCD">EMCD</option><option value="BingX">BingX</option></select></div>
                         <div class="col-12"><label class="form-label">Реквизиты</label><select class="form-select" name="details" id="modal_details">{% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}</select></div>
                         <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control"></div>
                         <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control"></div>

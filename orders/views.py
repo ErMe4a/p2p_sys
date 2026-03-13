@@ -33,7 +33,7 @@ from .mexc_service import get_mexc_orders_parallel
 from django.contrib import messages
 from django.utils.dateparse import parse_datetime
 from decimal import Decimal
-
+import json
 
 from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
 
@@ -371,6 +371,8 @@ def delete_unprocessed_order(request, pk):
         messages.error(request, "Ордер не найден.")
     return redirect("unprocessed_orders")
 
+
+
 @login_required
 def user_profit_view(request):
     """
@@ -383,22 +385,34 @@ def user_profit_view(request):
         start_date_str = request.GET.get('start')
         end_date_str = request.GET.get('end')
         exchange = request.GET.get('exchange')
+        bank = request.GET.get('bank') # НОВОЕ: Получаем банк из фильтра
 
         orders = Order.objects.filter(user=user)
 
-        # --- НОВОЕ: Фильтр по бирже ---
+        # --- НОВОЕ: Фильтры по бирже и банку ---
         if exchange:
-            # Ищем без учета регистра (BYBIT, Bybit и т.д.)
             orders = orders.filter(exchange_type__icontains=exchange)
+        if bank:
+            # ВАЖНО: Если у вас поле банка называется иначе (например, payment_method), измените слово bank__icontains
+            orders = orders.filter(bank__icontains=bank)
 
-        # 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (с учетом фильтра биржи)
+        # === ЛОГИКА КОМИССИИ БИРЖИ ===
+        # Стандартная комиссия Maker на продажу USDT (например, 0.1% = 0.001)
+        # Если у вас комиссия разная для разных бирж, тут можно добавить if exchange == 'Bybit': sell_fee_rate = 0.0 ...
+        sell_fee_rate = 0.001 
+
+        # 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (с учетом фильтров)
         all_time_buy = float(orders.filter(operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
         all_time_sell = float(orders.filter(operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
         
-        # Ручной остаток прибавляем ТОЛЬКО если смотрим "Все биржи"
-        initial_balance = 0.0 if exchange else float(user.initial_crypto_balance or 0)
+        # Считаем, сколько USDT забрала биржа за все продажи
+        all_time_sell_fee = all_time_sell * sell_fee_rate
         
-        real_current_balance = initial_balance + all_time_buy - all_time_sell
+        # Ручной остаток прибавляем ТОЛЬКО если смотрим "Все биржи" и "Все банки"
+        initial_balance = 0.0 if (exchange or bank) else float(user.initial_crypto_balance or 0)
+        
+        # Настоящий баланс = Было + Купил - Продал - Комиссия биржи
+        real_current_balance = initial_balance + all_time_buy - all_time_sell - all_time_sell_fee
 
         # 2. Фильтруем заказы по выбранным датам
         if start_date_str and end_date_str:
@@ -422,7 +436,10 @@ def user_profit_view(request):
         # 4. Считаем крипту ЗА ВЫБРАННЫЙ ПЕРИОД (Дельта)
         period_buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
-        period_crypto_delta = period_buy_crypto - period_sell_crypto
+        period_sell_fee = period_sell_crypto * sell_fee_rate
+        
+        # Дельта за период тоже должна учитывать потерю на комиссиях
+        period_crypto_delta = period_buy_crypto - period_sell_crypto - period_sell_fee
 
         def serialize(qs):
             res = []
@@ -435,7 +452,9 @@ def user_profit_view(request):
                     'amount': float(o.amount or 0), 
                     'cost': float(o.cost or 0),     
                     'date': o.created_at.strftime('%d.%m.%Y %H:%M'),
-                    'exchange': o.exchange_type # На всякий случай передаем биржу
+                    'exchange': getattr(o, 'exchange_type', ''),
+                    # Захватываем банк для вывода в таблице
+                    'bank': getattr(o, 'bank', '') 
                 })
             return res
 
@@ -450,16 +469,20 @@ def user_profit_view(request):
             'crypto_delta': float(period_crypto_delta),
             'buy_orders': serialize(buy_orders),
             'sell_orders': serialize(sell_orders),
+            
+            # --- НОВОЕ: Передаем словарь долей на фронтенд ---
+            'user_shares': user.profit_shares if isinstance(user.profit_shares, dict) else {}
         })
 
     return render(request, 'orders/profit.html')
 
 
 
-
-
 # --- АДМИН ПАНЕЛЬ ---
 
+
+
+# Убедитесь, что импортирована ваша модель User и Order
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -483,18 +506,14 @@ def admin_users_list(request):
             new_password = request.POST.get('password')
             if new_password:  # Если пароль ввели, хэшируем и меняем
                 user_to_edit.set_password(new_password)
-            # -----------------------------------------
 
             # Обновление API ключей
             user_to_edit.bybit_api_key = request.POST.get('bybit_key')
             user_to_edit.bybit_api_secret = request.POST.get('bybit_secret')
-            
             user_to_edit.htx_access_key = request.POST.get('htx_key')
             user_to_edit.htx_private_key = request.POST.get('htx_secret')
-            
             user_to_edit.mexc_api_key = request.POST.get('mexc_key')
             user_to_edit.mexc_api_secret = request.POST.get('mexc_secret')
-            
             user_to_edit.evotor_login = request.POST.get('evotor_login')
             user_to_edit.evotor_password = request.POST.get('evotor_password')
             
@@ -520,42 +539,114 @@ def admin_users_list(request):
             messages.success(request, f"Пользователь {username} создан.")
         return redirect('admin_users')
 
-    # === 4. Обработка изменения остатка (КОРРЕКТИРОВКА) ===
+    # === 4. Обработка Внесения/Изменения начального остатка как ОРДЕРА ===
     if request.method == 'POST' and request.POST.get('action') == 'edit_balance':
         user_id = request.POST.get('user_id')
-        # Берем сумму корректировки (назовем ее balance_adjustment)
+        
+        # Получаем количество и курс
         adjustment_str = request.POST.get('balance_adjustment', '0') 
+        rate_str = request.POST.get('balance_rate', '0') 
+        
         try:
             user_to_edit = User.objects.get(id=user_id)
             
-            # Текущий баланс пользователя
-            current_balance = float(user_to_edit.initial_crypto_balance or 0)
+            amount_val = float(str(adjustment_str).replace(',', '.'))
+            rate_val = float(str(rate_str).replace(',', '.'))
             
-            # Значение корректировки (заменяем запятую на точку на всякий случай)
-            adjustment = float(str(adjustment_str).replace(',', '.'))
+            # Ищем, есть ли уже начальный ордер у этого пользователя
+            init_order = Order.objects.filter(user=user_to_edit, exchange_type="Остаток (до 1 фев)").first()
             
-            # ПРИБАВЛЯЕМ (если adjustment с минусом, то оно логично вычтется)
-            user_to_edit.initial_crypto_balance = current_balance + adjustment
-            user_to_edit.save()
-            
-            messages.success(request, f"Баланс пользователя {user_to_edit.username} изменен. Новая корректировочная база: {user_to_edit.initial_crypto_balance} USDT")
+            if amount_val == 0:
+                # Если админ ввел 0, удаляем начальный ордер
+                if init_order:
+                    init_order.delete()
+                messages.success(request, f"Начальный остаток пользователя {user_to_edit.username} удален (сброшен в 0).")
+            else:
+                op_type = 'BUY' if amount_val > 0 else 'SELL'
+                abs_amount = abs(amount_val)
+                cost = abs_amount * rate_val
+                
+                if init_order:
+                    # ОРДЕР УЖЕ ЕСТЬ -> ОБНОВЛЯЕМ
+                    init_order.operation_type = op_type
+                    init_order.amount = abs_amount
+                    init_order.price = rate_val
+                    init_order.cost = cost
+                    init_order.save()
+                    messages.success(request, f"Начальный остаток пользователя {user_to_edit.username} изменен на {amount_val} USDT.")
+                else:
+                    # ОРДЕРА НЕТ -> СОЗДАЕМ НОВЫЙ от 1 февраля 2026
+                    feb_first = timezone.make_aware(datetime(2026, 2, 1, 0, 0, 0))
+                    Order.objects.create(
+                        user=user_to_edit,
+                        external_id=f"INIT-{user_to_edit.id}",
+                        operation_type=op_type,
+                        amount=abs_amount,
+                        price=rate_val,
+                        cost=cost,
+                        exchange_type="Остаток (до 1 фев)",
+                        created_at=feb_first
+                    )
+                    messages.success(request, f"Начальный остаток внесен для пользователя {user_to_edit.username}.")
         except User.DoesNotExist:
             messages.error(request, "Пользователь не найден.")
         except ValueError:
-            messages.error(request, "Некорректное значение корректировки.")
+            messages.error(request, "Некорректное значение количества или курса.")
             
         return redirect('admin_users')
 
-    # 5. Вывод списка с расчетом реального баланса "на лету"
+    # === 5. НОВОЕ: Обработка настройки ДОЛИ ===
+    if request.method == 'POST' and request.POST.get('action') == 'edit_share':
+        user_id = request.POST.get('user_id')
+        year = request.POST.get('share_year')
+        
+        try:
+            user_to_edit = User.objects.get(id=user_id)
+            
+            # Если поле пустое (null), делаем его пустым словарем
+            if not isinstance(user_to_edit.profit_shares, dict):
+                user_to_edit.profit_shares = {}
+            
+            # Собираем данные за все 12 месяцев из формы
+            for i in range(1, 13):
+                month_str = f"{i:02d}" # Превращает 1 в '01', 2 в '02'
+                key = f"{year}-{month_str}"
+                val = request.POST.get(f"share_{month_str}")
+                
+                if val is not None and val.strip() != "":
+                    user_to_edit.profit_shares[key] = float(str(val).replace(',', '.'))
+            
+            user_to_edit.save()
+            messages.success(request, f"Доля для пользователя {user_to_edit.username} успешно обновлена на {year} год.")
+        except User.DoesNotExist:
+            messages.error(request, "Пользователь не найден.")
+        except ValueError:
+            messages.error(request, "Ошибка в формате числа доли. Используйте цифры.")
+            
+        return redirect('admin_users')
+
+    # === 6. Вывод списка с проверкой начального ордера, реальным балансом и долей ===
     users = User.objects.all().order_by('id')
     
     for u in users:
-        # Считаем все покупки и продажи пользователя для вывода реального остатка в модалке
         bought = Order.objects.filter(user=u, operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0
         sold = Order.objects.filter(user=u, operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0
         
-        # Записываем реальный баланс во временное свойство объекта пользователя
         u.real_balance = float(u.initial_crypto_balance or 0) + float(bought) - float(sold)
+
+        # Проверяем наличие стартового ордера
+        init_order = Order.objects.filter(user=u, exchange_type="Остаток (до 1 фев)").first()
+        if init_order:
+            u.has_initial_balance = True
+            u.init_amount = init_order.amount if init_order.operation_type == 'BUY' else -init_order.amount
+            u.init_rate = init_order.price
+        else:
+            u.has_initial_balance = False
+            u.init_amount = 0
+            u.init_rate = 0
+
+        # Упаковываем словарь долей в строку JSON для передачи в HTML-кнопку
+        u.shares_json = json.dumps(u.profit_shares) if u.profit_shares else "{}"
 
     return render(request, 'custom_admin/users_list.html', {'users': users})
 
@@ -762,6 +853,99 @@ def admin_logout(request):
 
 
 
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_profit_view(request):
+    """Сводная таблица прибыли по всем пользователям"""
+    
+    # 1. Получаем параметры фильтров
+    now = timezone.now()
+    year_str = request.GET.get('year', str(now.year))
+    month_str = request.GET.get('month', str(now.month).zfill(2))
+    
+    exchange_filter = request.GET.get('exchange', '')
+    bank_filter = request.GET.get('bank', '')
+    
+    try:
+        year = int(year_str)
+        month = int(month_str)
+    except ValueError:
+        year = now.year
+        month = now.month
+        month_str = str(month).zfill(2)
+
+    start_date = timezone.make_aware(datetime(year, month, 1))
+    if month == 12:
+        end_date = timezone.make_aware(datetime(year + 1, 1, 1))
+    else:
+        end_date = timezone.make_aware(datetime(year, month + 1, 1))
+
+    # 2. Собираем статистику
+    users = User.objects.all().order_by('id')
+    user_stats = []
+    share_key = f"{year}-{month_str}"
+
+    for u in users:
+        # Базовая фильтрация по дате
+        orders = Order.objects.filter(user=u, created_at__range=(start_date, end_date))
+        
+        # Применяем фильтры биржи и банка
+        if exchange_filter:
+            orders = orders.filter(exchange_type__icontains=exchange_filter)
+        if bank_filter:
+            orders = orders.filter(bank__icontains=bank_filter)
+
+        buy_sum = float(orders.filter(operation_type='BUY').aggregate(Sum('cost'))['cost__sum'] or 0)
+        sell_sum = float(orders.filter(operation_type='SELL').aggregate(Sum('cost'))['cost__sum'] or 0)
+        
+        gross_profit = sell_sum - buy_sum
+        
+        ndfl = gross_profit * 0.13 if gross_profit > 0 else 0
+        after_ndfl = gross_profit - ndfl
+        
+        share_percent = 20.0
+        if u.profit_shares and isinstance(u.profit_shares, dict):
+            share_percent = float(u.profit_shares.get(share_key, 20.0))
+            
+        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+        net_profit = after_ndfl - share_amount
+
+        # ВРЕМЕННО ОТКЛЮЧЕНО (0.0). Когда дадут процент, замените 0.0 на, например, 0.001 (для 0.1%)
+        commission_rub = sell_sum * 0.0
+
+        user_stats.append({
+            'user': u,
+            'buy_sum': buy_sum,
+            'sell_sum': sell_sum,
+            'gross_profit': gross_profit,
+            'ndfl': ndfl,
+            'share_percent': share_percent,
+            'share_amount': share_amount,
+            'commission_rub': commission_rub,
+            'net_profit': net_profit,
+            'has_activity': (buy_sum > 0 or sell_sum > 0)
+        })
+
+    months_list = [
+        {'num': '01', 'name': 'Янв'}, {'num': '02', 'name': 'Февр'},
+        {'num': '03', 'name': 'Март'}, {'num': '04', 'name': 'Апр'},
+        {'num': '05', 'name': 'Май'}, {'num': '06', 'name': 'Июнь'},
+        {'num': '07', 'name': 'Июль'}, {'num': '08', 'name': 'Авг'},
+        {'num': '09', 'name': 'Сент'}, {'num': '10', 'name': 'Окт'},
+        {'num': '11', 'name': 'Нояб'}, {'num': '12', 'name': 'Дек'},
+    ]
+
+    context = {
+        'user_stats': user_stats,
+        'current_year': year,
+        'current_month': month_str,
+        'months_list': months_list,
+        'selected_exchange': exchange_filter,
+        'selected_bank': bank_filter,
+    }
+    return render(request, 'custom_admin/profit_list.html', context)
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

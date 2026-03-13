@@ -59,9 +59,14 @@
                     </td>
 
                     <td class="text-end">
-                        <button class="btn btn-sm btn-outline-warning" 
-                                onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.real_balance|default:0|floatformat:2 }}')">
-                            Ост.
+                        <button class="btn btn-sm btn-outline-info" 
+                                onclick="openShareModal('{{ u.id }}', '{{ u.username }}', '{{ u.shares_json|escapejs }}')">
+                            % Доля
+                        </button>
+
+                        <button class="btn btn-sm {% if u.has_initial_balance %}btn-outline-success{% else %}btn-outline-warning{% endif %} ms-1" 
+                                onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.real_balance|default:0|floatformat:2 }}', '{{ u.init_amount|default:0 }}', '{{ u.init_rate|default:0 }}')">
+                            {% if u.has_initial_balance %}✅ Ост.{% else %}Ост.{% endif %}
                         </button>
                         
                         <button class="btn btn-sm btn-outline-secondary ms-1" 
@@ -203,7 +208,7 @@
 <div class="modal-overlay" id="balanceModal">
     <div class="modal-content-custom" style="max-width: 400px;">
         <div class="modal-header-custom">
-            <span>Корректировка остатка: <strong id="balanceUserLoginLabel" class="text-primary"></strong></span>
+            <span>Начальный остаток: <strong id="balanceUserLoginLabel" class="text-primary"></strong></span>
             <button class="btn-close btn-close-white" onclick="closeBalanceModal()"></button>
         </div>
         <form method="POST">
@@ -215,18 +220,55 @@
                 <label style="color: var(--muted); font-size: 13px;">Общий реальный остаток: <span id="currentBalanceDisplay" style="color: var(--text); font-weight: bold; font-size: 14px;">0</span> USDT</label>
             </div>
 
+            <div class="form-group mb-2">
+                <label>Кол-во USDT (+ зачисление, - списание)</label>
+                <input class="form-control" type="number" step="0.00000001" name="balance_adjustment" id="balanceValue" placeholder="Например: 100" required>
+                <small style="color: var(--text-muted); font-size: 11px;">Введите 0, чтобы полностью удалить этот остаток.</small>
+            </div>
+
             <div class="form-group mb-3">
-                <label>Сумма корректировки (+ для зачисления, - для списания)</label>
-                <input class="form-control" type="number" step="0.00000001" name="balance_adjustment" id="balanceValue" placeholder="Например: 50 или -20" required>
+                <label>Средний курс (Цена за 1 USDT в рублях)</label>
+                <input class="form-control" type="number" step="0.01" name="balance_rate" id="balanceRate" placeholder="Например: 95.50" required>
             </div>
             
             <div style="display:flex; gap:12px; justify-content:flex-end;">
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeBalanceModal()">Отмена</button>
-                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Скорректировать</button>
+                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Сохранить ордер</button>
             </div>
         </form>
     </div>
 </div>
+
+<div class="modal-overlay" id="shareModal">
+    <div class="modal-content-custom" style="max-width: 450px;">
+        <div class="modal-header-custom">
+            <span>Доля пользователя: <strong id="shareUserLoginLabel" class="text-primary"></strong></span>
+            <button class="btn-close btn-close-white" onclick="closeShareModal()"></button>
+        </div>
+        <form method="POST">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_share">
+            <input type="hidden" name="user_id" id="shareUserId">
+            
+            <div class="form-group mb-3 mt-2">
+                <label>Год</label>
+                <select class="form-control" name="share_year" id="shareYear" onchange="updateShareMonths()">
+                    <option value="2025">2025</option>
+                    <option value="2026" selected>2026</option>
+                    <option value="2027">2027</option>
+                </select>
+            </div>
+
+            <div id="monthsContainer" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;"></div>
+            
+            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:20px;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeShareModal()">Отмена</button>
+                <button type="submit" class="btn btn-sm btn-outline-blue px-4">Сохранить</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -260,18 +302,67 @@
     }
     function closeEditUserModal() { document.getElementById('editUserModal').classList.remove('active'); }
 
-    // Логика модалки ОСТАТКОВ
-    function openBalanceModal(id, login, currentBalance) {
+    function openBalanceModal(id, login, currentBalance, initAmount, initRate) {
         document.getElementById('balanceUserId').value = id;
         document.getElementById('balanceUserLoginLabel').innerText = login;
         
         let val = String(currentBalance).replace(',', '.');
         document.getElementById('currentBalanceDisplay').innerText = val;
-        document.getElementById('balanceValue').value = ''; // Очищаем поле для ввода дельты
+        
+        document.getElementById('balanceValue').value = initAmount != 0 ? String(initAmount).replace(',', '.') : ''; 
+        document.getElementById('balanceRate').value = initRate != 0 ? String(initRate).replace(',', '.') : ''; 
         
         document.getElementById('balanceModal').classList.add('active');
     }
     function closeBalanceModal() { document.getElementById('balanceModal').classList.remove('active'); }
+
+    // === НОВАЯ ЛОГИКА ДОЛИ ===
+    let currentShares = {};
+
+    function openShareModal(id, login, sharesJsonRaw) {
+        document.getElementById('shareUserId').value = id;
+        document.getElementById('shareUserLoginLabel').innerText = login;
+        
+        try {
+            // Распаковываем JSON-строку обратно в объект JavaScript
+            currentShares = JSON.parse(sharesJsonRaw);
+        } catch(e) {
+            currentShares = {};
+        }
+        
+        document.getElementById('shareYear').value = "2026";
+        updateShareMonths(); // Генерируем сетку месяцев
+        
+        document.getElementById('shareModal').classList.add('active');
+    }
+
+    function closeShareModal() { document.getElementById('shareModal').classList.remove('active'); }
+
+    function updateShareMonths() {
+        const year = document.getElementById('shareYear').value;
+        const container = document.getElementById('monthsContainer');
+        const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        
+        let html = '';
+        months.forEach((m, idx) => {
+            let monthNum = (idx + 1).toString().padStart(2, '0');
+            let key = `${year}-${monthNum}`; // Например, '2026-03'
+            
+            // Если для этого ключа в базе ничего нет, ставим 20 по умолчанию
+            let val = currentShares[key] !== undefined ? currentShares[key] : 20.0;
+            
+            html += `
+            <div class="form-group mb-0">
+                <label style="font-size:11px; margin-bottom: 3px;">${m}</label>
+                <div style="display:flex; align-items:center;">
+                    <input class="form-control form-control-sm" type="number" step="0.1" name="share_${monthNum}" value="${val}">
+                    <span style="color:var(--text-muted); margin-left:8px; font-size:13px;">%</span>
+                </div>
+            </div>`;
+        });
+        container.innerHTML = html;
+    }
+    // ========================
 
     async function openReportsModal(userId, username) {
         document.getElementById('reportsUserId').value = userId;
@@ -339,9 +430,10 @@
         window.location.href = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
     }
     
+    // ИЗМЕНЕНО: Добавил closeShareModal в закрытие по клику вне модалки
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
-            closeAddUserModal(); closeEditUserModal(); closeReportsModal(); closeBalanceModal();
+            closeAddUserModal(); closeEditUserModal(); closeReportsModal(); closeBalanceModal(); closeShareModal();
         }
     }
 </script>

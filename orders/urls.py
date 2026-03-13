@@ -29,5 +29,6 @@ urlpatterns = [
     path('p2p-admin/turnover/', views.admin_turnover_control, name='admin_turnover_control'),
     path('p2p-admin/api/search-users/', views.api_search_users, name='api_search_users'),
     path('p2p-admin/api/get-turnover/<int:user_id>/', views.api_get_turnover, name='api_get_turnover'),
-    path('admin-panel/export/screenshots/', views.export_screenshots_view, name='export_screenshots'),
+    path('admin-panel/export/screenshots/', views.export_screenshots_view, name='export_screenshots'),\
+    path('p2p-admin/profit/', views.admin_profit_view, name='admin_profit'),
 ]
