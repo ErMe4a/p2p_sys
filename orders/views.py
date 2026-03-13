@@ -373,6 +373,7 @@ def delete_unprocessed_order(request, pk):
 
 
 
+
 @login_required
 def user_profit_view(request):
     """
@@ -385,33 +386,32 @@ def user_profit_view(request):
         start_date_str = request.GET.get('start')
         end_date_str = request.GET.get('end')
         exchange = request.GET.get('exchange')
-        bank = request.GET.get('bank') # НОВОЕ: Получаем банк из фильтра
+        bank = request.GET.get('bank') 
 
         orders = Order.objects.filter(user=user)
 
-        # --- НОВОЕ: Фильтры по бирже и банку ---
+        # --- ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ---
         if exchange:
             orders = orders.filter(exchange_type__icontains=exchange)
         if bank:
-            # ВАЖНО: Если у вас поле банка называется иначе (например, payment_method), измените слово bank__icontains
-            orders = orders.filter(bank__icontains=bank)
+            # Ищем по названию внутри связанной таблицы bank_detail.
+            # Если вдруг поле с названием банка называется bank_name, измените на bank_detail__bank_name__icontains
+            try:
+                orders = orders.filter(bank_detail__name__icontains=bank)
+            except:
+                # Запасной вариант, если bank_detail - это просто текстовое поле, а не связь
+                orders = orders.filter(bank_detail__icontains=bank)
 
         # === ЛОГИКА КОМИССИИ БИРЖИ ===
-        # Стандартная комиссия Maker на продажу USDT (например, 0.1% = 0.001)
-        # Если у вас комиссия разная для разных бирж, тут можно добавить if exchange == 'Bybit': sell_fee_rate = 0.0 ...
         sell_fee_rate = 0.001 
 
-        # 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ (с учетом фильтров)
+        # 1. Считаем глобальный баланс за ВСЁ ВРЕМЯ
         all_time_buy = float(orders.filter(operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
         all_time_sell = float(orders.filter(operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
         
-        # Считаем, сколько USDT забрала биржа за все продажи
         all_time_sell_fee = all_time_sell * sell_fee_rate
         
-        # Ручной остаток прибавляем ТОЛЬКО если смотрим "Все биржи" и "Все банки"
         initial_balance = 0.0 if (exchange or bank) else float(user.initial_crypto_balance or 0)
-        
-        # Настоящий баланс = Было + Купил - Продал - Комиссия биржи
         real_current_balance = initial_balance + all_time_buy - all_time_sell - all_time_sell_fee
 
         # 2. Фильтруем заказы по выбранным датам
@@ -433,12 +433,10 @@ def user_profit_view(request):
         buy_sum = buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0
         sell_sum = sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0
 
-        # 4. Считаем крипту ЗА ВЫБРАННЫЙ ПЕРИОД (Дельта)
+        # 4. Считаем крипту ЗА ВЫБРАННЫЙ ПЕРИОД
         period_buy_crypto = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_sell_fee = period_sell_crypto * sell_fee_rate
-        
-        # Дельта за период тоже должна учитывать потерю на комиссиях
         period_crypto_delta = period_buy_crypto - period_sell_crypto - period_sell_fee
 
         def serialize(qs):
@@ -453,8 +451,8 @@ def user_profit_view(request):
                     'cost': float(o.cost or 0),     
                     'date': o.created_at.strftime('%d.%m.%Y %H:%M'),
                     'exchange': getattr(o, 'exchange_type', ''),
-                    # Захватываем банк для вывода в таблице
-                    'bank': getattr(o, 'bank', '') 
+                    # ИСПРАВЛЕННЫЙ ВЫВОД БАНКА
+                    'bank': str(getattr(o, 'bank_detail', '')) 
                 })
             return res
 
@@ -469,13 +467,10 @@ def user_profit_view(request):
             'crypto_delta': float(period_crypto_delta),
             'buy_orders': serialize(buy_orders),
             'sell_orders': serialize(sell_orders),
-            
-            # --- НОВОЕ: Передаем словарь долей на фронтенд ---
             'user_shares': user.profit_shares if isinstance(user.profit_shares, dict) else {}
         })
 
     return render(request, 'orders/profit.html')
-
 
 
 # --- АДМИН ПАНЕЛЬ ---
@@ -854,13 +849,13 @@ def admin_logout(request):
 
 
 
+# Убедитесь, что импортированы User и Order
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
-    """Сводная таблица прибыли по всем пользователям"""
+    """Сводная таблица прибыли по всем пользователям (Админка)"""
     
-    # 1. Получаем параметры фильтров
     now = timezone.now()
     year_str = request.GET.get('year', str(now.year))
     month_str = request.GET.get('month', str(now.month).zfill(2))
@@ -882,26 +877,26 @@ def admin_profit_view(request):
     else:
         end_date = timezone.make_aware(datetime(year, month + 1, 1))
 
-    # 2. Собираем статистику
     users = User.objects.all().order_by('id')
     user_stats = []
     share_key = f"{year}-{month_str}"
 
     for u in users:
-        # Базовая фильтрация по дате
         orders = Order.objects.filter(user=u, created_at__range=(start_date, end_date))
         
-        # Применяем фильтры биржи и банка
+        # --- ИСПРАВЛЕННЫЕ ФИЛЬТРЫ ---
         if exchange_filter:
             orders = orders.filter(exchange_type__icontains=exchange_filter)
         if bank_filter:
-            orders = orders.filter(bank__icontains=bank_filter)
+            try:
+                orders = orders.filter(bank_detail__name__icontains=bank_filter)
+            except:
+                orders = orders.filter(bank_detail__icontains=bank_filter)
 
         buy_sum = float(orders.filter(operation_type='BUY').aggregate(Sum('cost'))['cost__sum'] or 0)
         sell_sum = float(orders.filter(operation_type='SELL').aggregate(Sum('cost'))['cost__sum'] or 0)
         
         gross_profit = sell_sum - buy_sum
-        
         ndfl = gross_profit * 0.13 if gross_profit > 0 else 0
         after_ndfl = gross_profit - ndfl
         
@@ -912,7 +907,7 @@ def admin_profit_view(request):
         share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
         net_profit = after_ndfl - share_amount
 
-        # ВРЕМЕННО ОТКЛЮЧЕНО (0.0). Когда дадут процент, замените 0.0 на, например, 0.001 (для 0.1%)
+        # ВРЕМЕННО ОТКЛЮЧЕНО (0.0). Когда дадут процент, замените 0.0 на нужный процент.
         commission_rub = sell_sum * 0.0
 
         user_stats.append({
