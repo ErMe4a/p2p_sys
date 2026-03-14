@@ -386,7 +386,7 @@ def delete_unprocessed_order(request, pk):
 def user_profit_view(request):
     """
     Страница аналитики прибыли для обычного пользователя.
-    Прибыль считается по той же FIFO-логике что и в Excel-отчёте.
+    Прибыль считается по FIFO-логике (как в Excel-отчёте).
     """
     action = request.GET.get('action')
 
@@ -397,29 +397,25 @@ def user_profit_view(request):
         exchange       = request.GET.get('exchange')
         bank_id        = request.GET.get('bank')
 
-        # === 1. ВСЕ ордера пользователя без фильтра дат ===
-        # Нужны все ордера чтобы правильно считать FIFO-себестоимость.
-        # Исторический ордер "Остаток (до 1 фев)" входит сюда как обычный BUY.
-        all_orders = Order.objects.filter(user=user)
-
-        if exchange:
-            all_orders = all_orders.filter(exchange_type__icontains=exchange)
-        if bank_id:
-            all_orders = all_orders.filter(bank_detail_id=bank_id)
-
-        all_orders_chrono = all_orders.order_by('created_at')
-
-        # === 2. Глобальный баланс крипты за ВСЁ ВРЕМЯ ===
-        all_time_buy  = float(all_orders.filter(operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
-        all_time_sell = float(all_orders.filter(operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
+        # === 1. ГЛОБАЛЬНЫЙ БАЛАНС — считаем БЕЗ фильтров биржи/банка ===
+        # Важно: исторический ордер "Остаток (до 1 фев)" имеет exchange_type="Остаток (до 1 фев)"
+        # Если применить фильтр биржи — он выпадет из выборки и баланс будет 0.
+        # Поэтому баланс ВСЕГДА считается по всем ордерам пользователя.
+        all_orders_for_balance = Order.objects.filter(user=user)
+        all_time_buy  = float(
+            all_orders_for_balance.filter(operation_type='BUY')
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        all_time_sell = float(
+            all_orders_for_balance.filter(operation_type='SELL')
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
         real_current_balance = all_time_buy - all_time_sell
 
-        # === 3. FIFO расчёт прибыли за ВСЁ ВРЕМЯ ===
-        # Та же логика что в export_excel_report:
-        # - собираем все BUY в buys_list по хронологии
-        # - считаем остаток идя с конца (последние покупки = нереализованный остаток)
-        # - equalized_buy_cost = весь BUY минус стоимость остатка = себестоимость проданного
-        # - profit = выручка - себестоимость проданного - все комиссии
+        # === 2. FIFO — тоже считаем по ВСЕМ ордерам без фильтров ===
+        # Иначе при фильтре по бирже себестоимость будет неправильной
+        all_orders_chrono = all_orders_for_balance.order_by('created_at')
+
         t_buy_qty = 0;  t_buy_cost = 0;  t_buy_comm = 0
         t_sell_qty = 0; t_sell_cost = 0; t_sell_comm = 0; t_sell_exch_comm = 0
         buys_list = []
@@ -443,7 +439,7 @@ def user_profit_view(request):
                 t_sell_comm       += total_comm
                 t_sell_exch_comm  += exchange_comm_val
 
-        # Нереализованный остаток — идём с конца списка покупок (FIFO)
+        # Нереализованный остаток — идём с конца (FIFO)
         remainder_qty  = t_buy_qty - t_sell_qty - t_sell_exch_comm
         remainder_cost = 0.0
         temp_qty       = remainder_qty
@@ -459,12 +455,20 @@ def user_profit_view(request):
                 remainder_cost += buy['cost']
                 temp_qty       -= buy['qty']
 
-        equalized_buy_cost = t_buy_cost - remainder_cost          # себестоимость проданного
+        # Себестоимость проданного и итоговая прибыль
+        equalized_buy_cost = t_buy_cost - remainder_cost
         total_profit       = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
         remainder_price    = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
 
-        # === 4. Фильтр по датам — только для таблиц и карточек периода ===
-        period_orders = all_orders
+        # === 3. ФИЛЬТРОВАННАЯ ВЫБОРКА — для таблиц и карточек периода ===
+        # Фильтры биржи/банка применяются только к таблицам ордеров и суммам за период
+        period_orders = Order.objects.filter(user=user)
+
+        if exchange:
+            period_orders = period_orders.filter(exchange_type__icontains=exchange)
+        if bank_id:
+            period_orders = period_orders.filter(bank_detail_id=bank_id)
+
         if start_date_str and end_date_str:
             try:
                 naive_start   = datetime.strptime(start_date_str, '%Y-%m-%d')
@@ -472,22 +476,23 @@ def user_profit_view(request):
                 naive_end     = naive_end.replace(hour=23, minute=59, second=59)
                 start_date    = timezone.make_aware(naive_start)
                 end_date      = timezone.make_aware(naive_end)
-                period_orders = all_orders.filter(created_at__range=(start_date, end_date))
+                period_orders = period_orders.filter(created_at__range=(start_date, end_date))
             except ValueError:
                 return JsonResponse({'error': 'Неверный формат даты'}, status=400)
 
         buy_orders  = period_orders.filter(operation_type='BUY').order_by('-created_at')
         sell_orders = period_orders.filter(operation_type='SELL').order_by('-created_at')
 
-        # === 5. Суммы за период (для карточек) ===
+        # === 4. Суммы за период (для карточек BUY/SELL) ===
         buy_sum  = float(buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
         sell_sum = float(sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
 
+        # Дельта крипты за период
         period_buy_crypto   = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_sell_crypto  = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_crypto_delta = period_buy_crypto - period_sell_crypto
 
-        # === 6. Сериализация ордеров для таблиц ===
+        # === 5. Сериализация ордеров ===
         def serialize(qs):
             res = []
             for o in qs:
@@ -505,38 +510,36 @@ def user_profit_view(request):
             return res
 
         return JsonResponse({
-            # Данные за выбранный период (карточки и таблицы)
+            # Суммы за выбранный период (карточки BUY/SELL)
             'buy_sum':         buy_sum,
             'buy_count':       buy_orders.count(),
             'sell_sum':        sell_sum,
             'sell_count':      sell_orders.count(),
             'total_sum':       buy_sum + sell_sum,
 
-            # FIFO-прибыль за ВСЁ ВРЕМЯ — правильная, с учётом себестоимости
+            # FIFO-прибыль за ВСЁ ВРЕМЯ (по всем ордерам, без фильтров)
             'profit':          total_profit,
 
-            # Остаток крипты
-            'crypto_balance':  real_current_balance,  # кол-во USDT
-            'remainder_qty':   remainder_qty,          # то же самое
-            'remainder_cost':  remainder_cost,         # в рублях
-            'remainder_price': remainder_price,        # средний курс остатка
+            # Остаток крипты (по всем ордерам, без фильтров)
+            'crypto_balance':  real_current_balance,
+            'remainder_qty':   remainder_qty,
+            'remainder_cost':  remainder_cost,
+            'remainder_price': remainder_price,
 
-            # Дельта крипты за выбранный период
+            # Дельта крипты за период (с фильтрами)
             'crypto_delta':    period_crypto_delta,
 
-            # Таблицы ордеров за период
+            # Таблицы ордеров за период (с фильтрами)
             'buy_orders':      serialize(buy_orders),
             'sell_orders':     serialize(sell_orders),
 
-            # Словарь долей для фронта (колонка "Доля" в месячной таблице)
+            # Словарь долей для расчёта чистой прибыли на фронте
             'user_shares':     user.profit_shares if isinstance(user.profit_shares, dict) else {},
         })
 
-    # GET — отдаём страницу с динамическим списком банков
+    # GET — страница с динамическим списком банков
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
-
-
 
 # --- АДМИН ПАНЕЛЬ ---
 
@@ -954,108 +957,124 @@ def admin_logout(request):
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
     """Сводная таблица прибыли по всем пользователям"""
-    
-    # 1. Получаем параметры фильтров
-    now = timezone.now()
-    year_str = request.GET.get('year', str(now.year))
+
+    # 1. Параметры фильтров
+    now       = timezone.now()
+    year_str  = request.GET.get('year',  str(now.year))
     month_str = request.GET.get('month', str(now.month).zfill(2))
-    
+
     exchange_filter = request.GET.get('exchange', '')
-    bank_filter_id = request.GET.get('bank', '') # ID банка из селекта
-    
+    bank_filter_id  = request.GET.get('bank', '')
+
     try:
-        year = int(year_str)
+        year  = int(year_str)
         month = int(month_str)
     except ValueError:
-        year = now.year
+        year  = now.year
         month = now.month
-        month_str = str(month).zfill(2)
 
-    # Определяем границы месяца
+    # Всегда двузначный номер месяца — чтобы ключ '2026-03' совпадал с profit_shares
+    month_str = str(month).zfill(2)
+
+    # Границы выбранного месяца
     start_date = timezone.make_aware(datetime(year, month, 1))
-    if month == 12:
-        end_date = timezone.make_aware(datetime(year + 1, 1, 1))
-    else:
-        end_date = timezone.make_aware(datetime(year, month + 1, 1))
+    end_date   = timezone.make_aware(
+        datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+    )
 
-    # 2. Собираем статистику
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    
+    # 2. Статистика по каждому пользователю
+    User  = get_user_model()
     users = User.objects.all().order_by('id')
+
     user_stats = []
-    share_key = f"{year}-{month_str}"
+    share_key  = f"{year}-{month_str}"  # например '2026-03'
 
     for u in users:
-        # Базовая фильтрация по дате
+        # === Реальный баланс крипты — все BUY минус все SELL за ВСЁ ВРЕМЯ ===
+        # Считаем без фильтров биржи/банка чтобы исторический ордер
+        # "Остаток (до 1 фев)" всегда попадал в расчёт
+        all_bought = float(
+            Order.objects.filter(user=u, operation_type='BUY')
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        all_sold = float(
+            Order.objects.filter(user=u, operation_type='SELL')
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        crypto_balance = all_bought - all_sold
+
+        # === Ордера за выбранный месяц (с фильтрами) ===
         orders = Order.objects.filter(user=u, created_at__range=(start_date, end_date))
-        
-        # Применяем фильтры биржи и банка
+
         if exchange_filter:
             orders = orders.filter(exchange_type__icontains=exchange_filter)
         if bank_filter_id:
-            # Ищем строго по ID банка
             orders = orders.filter(bank_detail_id=bank_filter_id)
 
-        buy_sum = float(orders.filter(operation_type='BUY').aggregate(Sum('cost'))['cost__sum'] or 0)
+        buy_sum  = float(orders.filter(operation_type='BUY') .aggregate(Sum('cost'))['cost__sum'] or 0)
         sell_sum = float(orders.filter(operation_type='SELL').aggregate(Sum('cost'))['cost__sum'] or 0)
-        
-        # Валовая прибыль
+
+        # Валовая прибыль за месяц (оборотная: sell - buy)
+        # Примечание: это не FIFO — себестоимость покупок из прошлых месяцев не учитывается.
+        # Для точного FIFO смотрите Excel-отчёт или страницу прибыли пользователя.
         gross_profit = sell_sum - buy_sum
-        
-        # Налоги
-        ndfl = gross_profit * 0.13 if gross_profit > 0 else 0
+
+        # НДФЛ 13% только если прибыль положительная
+        ndfl       = gross_profit * 0.13 if gross_profit > 0 else 0
         after_ndfl = gross_profit - ndfl
-        
-        # Доля
+
+        # Доля системы — из словаря profit_shares по ключу месяца, дефолт 20%
         share_percent = 20.0
         if u.profit_shares and isinstance(u.profit_shares, dict):
             share_percent = float(u.profit_shares.get(share_key, 20.0))
-            
-        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-        
-        # Чистая прибыль
-        net_profit = after_ndfl - share_amount
 
-        # Комиссия (пока отключена - 0.0)
-        commission_rub = sell_sum * 0.0
+        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+
+        # Комиссия биржи за месяц — из exchange_commission_rate каждого SELL-ордера
+        sell_orders_month = orders.filter(operation_type='SELL')
+        commission_rub = 0.0
+        for o in sell_orders_month:
+            rate = float(o.exchange_commission_rate or 0)
+            if rate > 0:
+                commission_rub += float(o.amount or 0) * rate / 100
+
+        # Чистая прибыль пользователя
+        net_profit = after_ndfl - share_amount - commission_rub
 
         user_stats.append({
-            'user': u,
-            'buy_sum': buy_sum,
-            'sell_sum': sell_sum,
-            'gross_profit': gross_profit,
-            'ndfl': ndfl,
-            'share_percent': share_percent,
-            'share_amount': share_amount,
-            'commission_rub': commission_rub,
-            'net_profit': net_profit,
-            'has_activity': (buy_sum > 0 or sell_sum > 0)
+            'user':            u,
+            'crypto_balance':  crypto_balance,   # остаток USDT за всё время
+            'buy_sum':         buy_sum,
+            'sell_sum':        sell_sum,
+            'gross_profit':    gross_profit,
+            'ndfl':            ndfl,
+            'share_percent':   share_percent,
+            'share_amount':    share_amount,
+            'commission_rub':  commission_rub,
+            'net_profit':      net_profit,
+            'has_activity':    (buy_sum > 0 or sell_sum > 0),
         })
 
     months_list = [
-        {'num': '01', 'name': 'Янв'}, {'num': '02', 'name': 'Февр'},
+        {'num': '01', 'name': 'Янв'},  {'num': '02', 'name': 'Февр'},
         {'num': '03', 'name': 'Март'}, {'num': '04', 'name': 'Апр'},
-        {'num': '05', 'name': 'Май'}, {'num': '06', 'name': 'Июнь'},
+        {'num': '05', 'name': 'Май'},  {'num': '06', 'name': 'Июнь'},
         {'num': '07', 'name': 'Июль'}, {'num': '08', 'name': 'Авг'},
         {'num': '09', 'name': 'Сент'}, {'num': '10', 'name': 'Окт'},
         {'num': '11', 'name': 'Нояб'}, {'num': '12', 'name': 'Дек'},
     ]
 
-    # Получаем динамические банки для селекта в фильтрах
     default_banks = BankDetail.objects.all()
 
-    context = {
-        'user_stats': user_stats,
-        'current_year': year,
-        'current_month': month_str,
-        'months_list': months_list,
+    return render(request, 'custom_admin/profit_list.html', {
+        'user_stats':        user_stats,
+        'current_year':      year,
+        'current_month':     month_str,
+        'months_list':       months_list,
         'selected_exchange': exchange_filter,
-        'selected_bank': bank_filter_id,
-        'default_banks': default_banks,
-    }
-    return render(request, 'custom_admin/profit_list.html', context)
-
+        'selected_bank':     bank_filter_id,
+        'default_banks':     default_banks,
+    })
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

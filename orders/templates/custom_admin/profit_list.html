@@ -68,20 +68,27 @@
             <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02);">
                 <tr>
                     <th>Пользователь</th>
-                    <th>Движение (RUB)</th>
+                    <th>Остаток (USDT)</th> <th>Движение (RUB)</th>
                     <th>Налоги</th>
                     <th>Списания</th>
-                    <th class="text-end">Чистая Прибыль</th>
+                    <th class="text-end">Итог за месяц</th>
                 </tr>
             </thead>
             <tbody>
                 {% for stat in user_stats %}
-                <tr {% if not stat.has_activity %}style="opacity: 0.5;"{% endif %}>
+                <tr {% if not stat.has_activity %}style="opacity: 0.4;"{% endif %}>
                     <td>
                         <div class="fw-bold" style="font-size: 0.95rem;">{{ stat.user.username }}</div>
                         {% if not stat.has_activity %}
-                            <span class="badge bg-secondary" style="font-size: 0.65rem;">Нет сделок</span>
+                            <span class="badge bg-secondary" style="font-size: 0.65rem;">Нет активности</span>
                         {% endif %}
+                    </td>
+                    
+                    <td>
+                        <div class="fw-bold" style="color: #6c8cff; font-size: 1rem;">
+                            <span class="money">{{ stat.crypto_balance }}</span>
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">На балансе</div>
                     </td>
                     
                     <td>
@@ -93,7 +100,7 @@
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Прибыль:</span> <span class="val-money text-warning money">{{ stat.gross_profit }}</span></div>
+                            <div><span class="val-label">Оборот:</span> <span class="val-money text-warning money">{{ stat.gross_profit }}</span></div>
                             <div><span class="val-label">НДФЛ:</span> <span class="val-money text-muted money">{{ stat.ndfl }}</span></div>
                         </div>
                     </td>
@@ -101,7 +108,6 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Доля ({{ stat.share_percent }}%):</span> <span class="val-money" style="color: var(--accent-blue);"><span class="money">{{ stat.share_amount }}</span></span></div>
-                            <div><span class="val-label">Комиссия:</span> <span class="val-money text-muted money">{{ stat.commission_rub }}</span></div>
                         </div>
                     </td>
 
