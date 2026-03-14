@@ -33,17 +33,18 @@
                 <option value="Bybit" {% if selected_exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
                 <option value="HTX" {% if selected_exchange == 'HTX' %}selected{% endif %}>HTX</option>
                 <option value="MEXC" {% if selected_exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                <option value="Telegram" {% if selected_exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
                 <option value="Bitget" {% if selected_exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                <option value="Gate" {% if selected_exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                <option value="EMCD" {% if selected_exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                <option value="BingX" {% if selected_exchange == 'BingX' %}selected{% endif %}>BingX</option>
             </select>
 
             <select class="form-control form-control-sm filter-select" id="filterBank" onchange="applyFilters()">
                 <option value="">Все банки</option>
-                <option value="Сбербанк" {% if selected_bank == 'Сбербанк' %}selected{% endif %}>Сбербанк</option>
-                <option value="Тинькофф" {% if selected_bank == 'Тинькофф' %}selected{% endif %}>Тинькофф</option>
-                <option value="Райффайзен" {% if selected_bank == 'Райффайзен' %}selected{% endif %}>Райффайзен</option>
-                <option value="ВТБ" {% if selected_bank == 'ВТБ' %}selected{% endif %}>ВТБ</option>
-                <option value="Альфа-Банк" {% if selected_bank == 'Альфа-Банк' %}selected{% endif %}>Альфа-Банк</option>
-                <option value="СБП" {% if selected_bank == 'СБП' %}selected{% endif %}>СБП</option>
+                {% for bank in default_banks %}
+                    <option value="{{ bank.id }}" {% if selected_bank|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                {% endfor %}
             </select>
 
             <select class="form-control form-control-sm filter-select" id="filterYear" onchange="applyFilters()" style="width: 100px;">

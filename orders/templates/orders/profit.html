@@ -103,7 +103,11 @@
                     <option value="Bybit">Bybit</option>
                     <option value="HTX">HTX</option>
                     <option value="MEXC">MEXC</option>
+                    <option value="Telegram">Telegram</option>
                     <option value="Bitget">Bitget</option>
+                    <option value="Gate">Gate</option>
+                    <option value="EMCD">EMCD</option>
+                    <option value="BingX">BingX</option>
                 </select>
             </div>
             
@@ -111,12 +115,9 @@
                 <label for="bankSelect">Банк</label>
                 <select class="input-profit" id="bankSelect">
                     <option value="">Все банки</option>
-                    <option value="Сбербанк">Сбербанк</option>
-                    <option value="Тинькофф">Тинькофф</option>
-                    <option value="Райффайзен">Райффайзен</option>
-                    <option value="ВТБ">ВТБ</option>
-                    <option value="Альфа-Банк">Альфа-Банк</option>
-                    <option value="СБП">СБП</option>
+                    {% for bank in default_banks %}
+                        <option value="{{ bank.id }}">{{ bank.name }}</option>
+                    {% endfor %}
                 </select>
             </div>
         </div>
