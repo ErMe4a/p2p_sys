@@ -38,7 +38,7 @@
     .summary-card.buy::before { background:linear-gradient(90deg, var(--ok), #3cb371); }
     .summary-card.sell::before { background:linear-gradient(90deg, #ff8c66, var(--danger)); }
     .summary-card.gross::before { background:linear-gradient(90deg, var(--warn), #ffb347); }
-    .summary-card.net::before { background:linear-gradient(90deg, #a855f7, #ec4899); } /* Красивый цвет для чистой прибыли */
+    .summary-card.net::before { background:linear-gradient(90deg, #a855f7, #ec4899); } 
     .summary-card.balance::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
     
     .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
@@ -98,7 +98,7 @@
             
             <div class="form-group" style="margin-bottom:0;">
                 <label for="exchangeSelect">Биржа</label>
-                <select class="input-profit" id="exchangeSelect">
+                <select class="input-profit" id="exchangeSelect" onchange="document.getElementById('bankSelect').value='';">
                     <option value="">Все биржи</option>
                     <option value="Bybit">Bybit</option>
                     <option value="HTX">HTX</option>
@@ -136,17 +136,17 @@
             <div class="summary-card buy">
                 <div class="summary-title">Покупки (BUY)</div>
                 <div class="summary-value" id="buyTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="buyCount">0</span> операций</div>
+                <div class="summary-count"><span id="buyCount">0</span> операций (за период)</div>
             </div>
             <div class="summary-card sell">
                 <div class="summary-title">Продажи (SELL)</div>
                 <div class="summary-value" id="sellTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="sellCount">0</span> операций</div>
+                <div class="summary-count"><span id="sellCount">0</span> операций (за период)</div>
             </div>
             <div class="summary-card gross">
                 <div class="summary-title">Прибыль (до вычета)</div>
                 <div class="summary-value" id="grossProfitValue">0.00 ₽</div>
-                <div class="summary-count">До вычета налогов и доли</div>
+                <div class="summary-count">За всё время (FIFO)</div>
             </div>
             
             <div class="summary-card net">
@@ -203,10 +203,10 @@
                                 <th>Месяц</th>
                                 <th>Sell</th>
                                 <th>Buy</th>
-                                <th>Прибыль (до вычета)</th>
+                                <th>Оборот (Sell - Buy)</th>
                                 <th>НДФЛ (13%)</th>
                                 <th>Доля Системы</th>
-                                <th>Прибыль (после вычета)</th>
+                                <th>Итог (после вычета)</th>
                             </tr>
                         </thead>
                         <tbody id="monthlySummaryTable"></tbody>
@@ -259,7 +259,7 @@
         const start = document.getElementById('startDate').value;
         const end = document.getElementById('endDate').value;
         const exchange = document.getElementById('exchangeSelect').value;
-        const bank = document.getElementById('bankSelect').value; // Берем банк
+        const bank = document.getElementById('bankSelect').value; 
         
         const btn = document.getElementById('loadBtn');
         const errorDiv = document.getElementById('loadError');
@@ -298,13 +298,13 @@
         document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
         
-        // 1. Валовая прибыль (Грязными)
+        // 1. Валовая прибыль (FIFO - За всё время)
         const grossProfit = safeFloat(data.profit);
         const grossEl = document.getElementById('grossProfitValue');
         grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
         grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-        // 2. Считаем ЧИСТУЮ ПРИБЫЛЬ для верхних карточек на основе первого месяца в периоде
+        // 2. Считаем ЧИСТУЮ ПРИБЫЛЬ для верхних карточек на основе первого месяца в периоде (от FIFO)
         let ndfl = grossProfit > 0 ? grossProfit * 0.13 : 0;
         let startMonthKey = start.substring(0, 7); // Вытаскиваем "2026-03"
         let userShares = data.user_shares || {};
@@ -419,23 +419,24 @@
             const d = monthlyData[key];
             const income = d.sell;   
             const expense = d.buy;   
-            const grossProfit = income - expense; // Валовая прибыль (грязными)
+            // Оборот (Sell - Buy) внутри этого месяца
+            const grossTurnoverDelta = income - expense; 
             
             // 1. Считаем НДФЛ
-            const ndfl = grossProfit > 0 ? grossProfit * 0.13 : 0; 
-            const afterNdfl = grossProfit - ndfl;
+            const ndfl = grossTurnoverDelta > 0 ? grossTurnoverDelta * 0.13 : 0; 
+            const afterNdfl = grossTurnoverDelta - ndfl;
             
             // 2. Считаем Долю Системы
             const sharePercent = userShares[key] !== undefined ? parseFloat(userShares[key]) : 20.0;
             const shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
             
-            // 3. Итоговая чистая прибыль юзера
+            // 3. Итоговая цифра
             const finalNetProfit = afterNdfl - shareAmount; 
             
-            const grossColor = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
+            const grossColor = grossTurnoverDelta >= 0 ? 'var(--ok)' : 'var(--danger)';
             const netColor = finalNetProfit >= 0 ? '#e879f9' : 'var(--danger)';
             
-            const grossSign = grossProfit > 0 ? '+' : '';
+            const grossSign = grossTurnoverDelta > 0 ? '+' : '';
             const netSign = finalNetProfit > 0 ? '+' : '';
 
             tableRows.push(`
@@ -444,7 +445,7 @@
                     <td class="buy-amount" style="color:var(--ok); font-weight:500;">${formatMoney(income)} ₽</td>
                     <td class="sell-amount" style="color:var(--danger); font-weight:500;">${formatMoney(expense)} ₽</td>
                     
-                    <td style="color:${grossColor}; font-weight:600;">${grossSign}${formatMoney(grossProfit)} ₽</td>
+                    <td style="color:${grossColor}; font-weight:600;">${grossSign}${formatMoney(grossTurnoverDelta)} ₽</td>
                     
                     <td style="color:var(--warn); font-weight:500;">-${formatMoney(ndfl)} ₽</td>
                     
