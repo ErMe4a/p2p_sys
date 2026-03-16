@@ -14,11 +14,15 @@
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
     
     .finance-block { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
-    .val-label { display: inline-block; width: 65px; color: var(--text-muted); }
+    .val-label { display: inline-block; width: 70px; color: var(--text-muted); }
     .val-money { font-family: 'Inter', monospace; font-weight: 500; }
     
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
+    
+    /* Классы для замены inline-стилей (чтобы редактор не ругался) */
+    .text-net-profit { color: #e879f9 !important; }
+    .inactive-row { opacity: 0.4; }
 </style>
 {% endblock %}
 
@@ -68,15 +72,17 @@
             <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02);">
                 <tr>
                     <th>Пользователь</th>
-                    <th>Остаток (USDT)</th> <th>Движение (RUB)</th>
-                    <th>Налоги</th>
-                    <th>Списания</th>
+                    <th>Остаток (USDT)</th> 
+                    <th>Оборот (RUB)</th>
+                    <th>Комиссии</th>
+                    <th>Прибыль и НДФЛ</th>
+                    <th>Доля</th>
                     <th class="text-end">Итог за месяц</th>
                 </tr>
             </thead>
             <tbody>
                 {% for stat in user_stats %}
-                <tr {% if not stat.has_activity %}style="opacity: 0.4;"{% endif %}>
+                <tr class="{% if not stat.has_activity %}inactive-row{% endif %}">
                     <td>
                         <div class="fw-bold" style="font-size: 0.95rem;">{{ stat.user.username }}</div>
                         {% if not stat.has_activity %}
@@ -88,31 +94,40 @@
                         <div class="fw-bold" style="color: #6c8cff; font-size: 1rem;">
                             <span class="money">{{ stat.crypto_balance }}</span>
                         </div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">На балансе</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">За всё время</div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Приход:</span> <span class="val-money text-success money">{{ stat.sell_sum }}</span></div>
-                            <div><span class="val-label">Расход:</span> <span class="val-money text-danger money">{{ stat.buy_sum }}</span></div>
+                            <div><span class="val-label">Sell:</span> <span class="val-money text-success money">{{ stat.sell_sum }}</span></div>
+                            <div><span class="val-label">Buy:</span> <span class="val-money text-danger money">{{ stat.buy_sum }}</span></div>
+                            <div style="margin-top: 2px;"><span class="val-label" style="color:#fff;">Оборот:</span> <span class="val-money text-info money">{{ stat.turnover }}</span></div>
                         </div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Оборот:</span> <span class="val-money text-warning money">{{ stat.gross_profit }}</span></div>
-                            <div><span class="val-label">НДФЛ:</span> <span class="val-money text-muted money">{{ stat.ndfl }}</span></div>
+                            <div><span class="val-label">Банк:</span> <span class="val-money text-muted">-<span class="money">{{ stat.bank_comm_rub }}</span></span></div>
+                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted">-<span class="money">{{ stat.exchange_comm_rub }}</span></span></div>
+                            <div style="margin-top: 2px;"><span class="val-label">Итого:</span> <span class="val-money text-warning">-<span class="money">{{ stat.total_comm_rub }}</span></span></div>
                         </div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Доля ({{ stat.share_percent }}%):</span> <span class="val-money" style="color: var(--accent-blue);"><span class="money">{{ stat.share_amount }}</span></span></div>
+                            <div><span class="val-label">До вычета:</span> <span class="val-money {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %} money">{{ stat.gross_profit }}</span></div>
+                            <div><span class="val-label">НДФЛ:</span> <span class="val-money text-warning">-<span class="money">{{ stat.ndfl }}</span></span></div>
+                        </div>
+                    </td>
+
+                    <td>
+                        <div class="finance-block">
+                            <div><span class="val-label">{{ stat.share_percent }}%:</span> <span class="val-money" style="color: var(--accent-blue);">-<span class="money">{{ stat.share_amount }}</span></span></div>
                         </div>
                     </td>
 
                     <td class="text-end">
-                        <div class="fw-bold" style="color: #e879f9; font-size: 1.1rem;">
+                        <div class="fw-bold {% if stat.net_profit_positive %}text-net-profit{% else %}text-danger{% endif %}" style="font-size: 1.1rem;">
                             <span class="money">{{ stat.net_profit }}</span> ₽
                         </div>
                     </td>
@@ -129,9 +144,17 @@
     function applyFilters() {
         const year = document.getElementById('filterYear').value;
         const exchange = document.getElementById('filterExchange').value;
-        const bank = document.getElementById('filterBank').value;
+        let bank = document.getElementById('filterBank').value;
         
         const currentUrl = new URL(window.location.href);
+        const oldExchange = currentUrl.searchParams.get('exchange') || '';
+
+        // Автосброс банка при смене биржи
+        if (exchange !== oldExchange) {
+            bank = '';
+            document.getElementById('filterBank').value = '';
+        }
+
         currentUrl.searchParams.set('year', year);
         
         if (exchange) currentUrl.searchParams.set('exchange', exchange);
