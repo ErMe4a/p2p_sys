@@ -73,7 +73,7 @@
                 <tr>
                     <th>Пользователь</th>
                     <th>Остаток (USDT)</th> 
-                    <th>Оборот (RUB)</th>
+                    <th>Движение (RUB)</th>
                     <th>Комиссии</th>
                     <th>Прибыль и НДФЛ</th>
                     <th>Доля</th>
@@ -94,14 +94,13 @@
                         <div class="fw-bold" style="color: #6c8cff; font-size: 1rem;">
                             <span class="money">{{ stat.crypto_balance }}</span>
                         </div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">За всё время</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Sell:</span> <span class="val-money text-success money">{{ stat.sell_sum }}</span></div>
                             <div><span class="val-label">Buy:</span> <span class="val-money text-danger money">{{ stat.buy_sum }}</span></div>
-                            <div style="margin-top: 2px;"><span class="val-label" style="color:#fff;">Оборот:</span> <span class="val-money text-info money">{{ stat.turnover }}</span></div>
                         </div>
                     </td>
                     
