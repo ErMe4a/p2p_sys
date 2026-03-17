@@ -36,7 +36,7 @@ from decimal import Decimal
 import json
 
 from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
-
+from datetime import timezone as dt_timezone
 
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
@@ -674,7 +674,7 @@ def admin_users_list(request):
                     )
                 else:
                     # Ордера нет — создаём новый датой 01.02.2026 00:00
-                    feb_first = timezone.make_aware(datetime(2026, 2, 1, 0, 0, 0))
+                    feb_first = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
                     Order.objects.create(
                         user=user_to_edit,
                         external_id=f"INIT-{user_to_edit.id}",
