@@ -786,6 +786,7 @@ def export_excel_report(request):
     bank_id    = request.GET.get('bank_id')
     op_type    = request.GET.get('type')
 
+    # === Основные ордера за период ===
     orders = Order.objects.filter(user_id=user_id).order_by('created_at')
 
     if start_date: orders = orders.filter(created_at__date__gte=start_date)
@@ -793,10 +794,10 @@ def export_excel_report(request):
     if bank_id and bank_id.isdigit(): orders = orders.filter(bank_detail_id=bank_id)
     if op_type:    orders = orders.filter(operation_type=op_type)
 
-    # === ФИКС: Всегда добавляем исторический ордер "Остаток (до 1 фев)" ===
-    # Он датирован 01.02.2026 и может не попасть в период если дата начала позже.
-    # Без него FIFO считает неправильно — себестоимость проданного занижена,
-    # и прибыль получается завышенной (как доход без учёта закупочной стоимости остатка).
+    # === Всегда добавляем исторический ордер для FIFO ===
+    # Он может не попасть в период если дата начала позже 01.02.2026.
+    # Без него FIFO считает неправильно — себестоимость проданного занижена.
+    # НО: в таблицу Excel он НЕ выводится — только участвует в расчёте.
     orders_list = list(orders)
 
     init_order = Order.objects.filter(
@@ -807,8 +808,9 @@ def export_excel_report(request):
     if init_order:
         existing_ids = {o.id for o in orders_list}
         if init_order.id not in existing_ids:
-            # Ставим первым — он самый ранний по смыслу (до всех реальных сделок)
+            # Ставим первым — он самый ранний по смыслу
             orders_list = [init_order] + orders_list
+
     # ======================================================================
 
     wb = openpyxl.Workbook()
@@ -844,8 +846,10 @@ def export_excel_report(request):
 
     buys_list = []
 
-    # FIX: итерируем по orders_list (не по orders) — чтобы исторический ордер попал в цикл
-    for idx, o in enumerate(orders_list, 1):
+    # Счётчик строк таблицы (без исторического ордера)
+    table_row_count = 0
+
+    for o in orders_list:
         comm_val   = float(o.commission or 0)
         total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
 
@@ -854,30 +858,37 @@ def export_excel_report(request):
         price_float  = float(o.price  or 0)
 
         if o.operation_type == 'BUY':
-            b_data = [amount_float, price_float, cost_float, total_comm]
-            s_data = ["", "", "", "", ""]
-
             t_buy_qty  += amount_float
             t_buy_cost += cost_float
             t_buy_comm += total_comm
-
             buys_list.append({'qty': amount_float, 'cost': cost_float})
 
         else:  # SELL
-            b_data = ["", "", "", ""]
-
             hist_percent      = float(o.exchange_commission_rate or 0)
             exchange_comm_val = (amount_float * hist_percent) / 100
+            t_sell_qty        += amount_float
+            t_sell_cost       += cost_float
+            t_sell_comm       += total_comm
+            t_sell_exch_comm  += exchange_comm_val
 
+        # Исторический ордер участвует в FIFO но НЕ выводится в таблицу
+        if o.exchange_type == "Остаток (до 1 фев)":
+            continue
+
+        # Все остальные ордера — выводим в таблицу
+        table_row_count += 1
+
+        if o.operation_type == 'BUY':
+            b_data = [amount_float, price_float, cost_float, total_comm]
+            s_data = ["", "", "", "", ""]
+        else:
+            b_data = ["", "", "", ""]
+            hist_percent      = float(o.exchange_commission_rate or 0)
+            exchange_comm_val = (amount_float * hist_percent) / 100
             s_data = [amount_float, price_float, cost_float, total_comm, exchange_comm_val]
 
-            t_sell_qty       += amount_float
-            t_sell_cost      += cost_float
-            t_sell_comm      += total_comm
-            t_sell_exch_comm += exchange_comm_val
-
         ws.append([
-            idx,
+            table_row_count,
             o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
             o.external_id,
             "USDT",
@@ -901,9 +912,15 @@ def export_excel_report(request):
             remainder_cost += buy['cost']
             temp_qty       -= buy['qty']
 
-    equalized_buy_cost = t_buy_cost - remainder_cost
-    profit             = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
-    remainder_price    = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
+    # Если продаж не было — прибыль 0
+    if t_sell_qty == 0:
+        equalized_buy_cost = 0.0
+        profit             = 0.0
+    else:
+        equalized_buy_cost = t_buy_cost - remainder_cost
+        profit             = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
+
+    remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
 
     # === ЗАПИСЬ ИТОГОВ В EXCEL ===
     ws.append([])
@@ -929,12 +946,11 @@ def export_excel_report(request):
         "", "", "", "", ""
     ])
 
-    # Оформление
-    # FIX: используем len(orders_list) вместо len(orders) — orders теперь queryset, не list
+    # Оформление — используем table_row_count (без исторического ордера)
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=13):
         for cell in row:
             cell.border = thin_border
-            if cell.column == 1 and cell.row > len(orders_list) + 3:
+            if cell.column == 1 and cell.row > table_row_count + 3:
                 cell.alignment = Alignment(horizontal='left')
             else:
                 cell.alignment = center_align if cell.row <= 3 else Alignment(horizontal='center')
@@ -956,6 +972,7 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
+
 
 def admin_login(request):
     """Вход в админку"""
