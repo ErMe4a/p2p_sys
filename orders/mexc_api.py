@@ -7,7 +7,7 @@ import urllib3
 from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
-from .models import UnprocessedOrder, Order
+from .models import UnprocessedOrder, Order, IgnoredOrder  # <-- добавлен IgnoredOrder
 
 # Отключаем предупреждения о SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -50,7 +50,12 @@ def sync_mexc_orders(user):
         UnprocessedOrder.objects.filter(user=user, exchange_type="MEXC")
         .values_list("order_id", flat=True)
     )
-    ignore_ids = processed_ids | unprocessed_ids
+    # !! НОВОЕ: ордера, которые пользователь навсегда скрыл
+    ignored_ids = set(
+        IgnoredOrder.objects.filter(user=user)
+        .values_list("order_id", flat=True)
+    )
+    ignore_ids = processed_ids | unprocessed_ids | ignored_ids
 
     # ── 3. Постраничная выгрузка ──────────────────────────────────────────────
     raw_items = []
@@ -103,7 +108,6 @@ def sync_mexc_orders(user):
         seen_in_batch.add(order_id)
         ignore_ids.add(order_id)
 
-        # MEXC отдаёт side как строку "SELL" или "BUY"
         operation_type = str(item.get("side", "BUY")).upper()
 
         price         = _to_float(item.get("price"))

@@ -3,7 +3,7 @@ from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
 from bybit_p2p import P2P
-from .models import UnprocessedOrder, Order
+from .models import UnprocessedOrder, Order, IgnoredOrder  # <-- добавлен IgnoredOrder
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,12 @@ def sync_bybit_orders(user):
         UnprocessedOrder.objects.filter(user=user)
         .values_list("order_id", flat=True)
     )
-    ignore_ids = processed_ids | unprocessed_ids
+    # !! НОВОЕ: ордера, которые пользователь навсегда скрыл
+    ignored_ids = set(
+        IgnoredOrder.objects.filter(user=user)
+        .values_list("order_id", flat=True)
+    )
+    ignore_ids = processed_ids | unprocessed_ids | ignored_ids
 
     # ── 4. Постраничная выгрузка с Bybit ─────────────────────────────────────
     raw_items = []
@@ -74,7 +79,6 @@ def sync_bybit_orders(user):
             )
             break
 
-        # Bybit может отдавать ret_code или retCode — проверяем оба
         ret_code = response.get("ret_code")
         if ret_code is None:
             ret_code = response.get("retCode")
@@ -95,22 +99,19 @@ def sync_bybit_orders(user):
         )
 
         if not items:
-            break  # пустая страница — всё скачали
+            break
 
         raw_items.extend(items)
         logger.debug(
             "Bybit [%s] page %d: got %d items", user.username, page, len(items)
         )
 
-        # Bybit отдаёт ордера от новых к старым.
-        # Смотрим дату последнего (самого старого) ордера на странице.
-        # Если он старше 01.02.2026 — дальше идти не нужно.
         last_item_ms = int(
             items[-1].get("createDate") or items[-1].get("createTime") or 0
         )
 
         if len(items) < 30 or last_item_ms < DATE_FROM_MS:
-            break  # последняя страница или дошли до старых ордеров
+            break
 
         page += 1
 
@@ -123,7 +124,6 @@ def sync_bybit_orders(user):
     seen_in_batch = set()
 
     for item in raw_items:
-        # Пропускаем ордера старше 01.02.2026
         created_ms = int(
             item.get("createDate") or item.get("createTime") or 0
         )
@@ -144,7 +144,6 @@ def sync_bybit_orders(user):
         seen_in_batch.add(bybit_id)
         ignore_ids.add(bybit_id)
 
-        # Сторона: "1" = продаём крипту за фиат (SELL), "0" = покупаем (BUY)
         operation_type = "SELL" if str(item.get("side")) == "1" else "BUY"
 
         price         = _to_float(item.get("price"))
@@ -153,7 +152,6 @@ def sync_bybit_orders(user):
         )
         fiat_amount   = _to_float(item.get("amount"))
 
-        # Если крипты нет — восстанавливаем через цену
         if crypto_amount == 0 and price > 0 and fiat_amount > 0:
             crypto_amount = round(fiat_amount / price, 8)
 
@@ -185,7 +183,6 @@ def sync_bybit_orders(user):
 # ── Вспомогательные функции ───────────────────────────────────────────────────
 
 def _to_float(value) -> float:
-    """Безопасное приведение к float."""
     try:
         return float(value or 0)
     except (ValueError, TypeError):
@@ -193,10 +190,6 @@ def _to_float(value) -> float:
 
 
 def _parse_date(ms) -> datetime:
-    """
-    Конвертируем миллисекунды в aware datetime.
-    Timezone берётся из settings.py (Europe/Moscow).
-    """
     try:
         ms = int(ms or 0)
         if ms > 0:

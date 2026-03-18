@@ -107,4 +107,21 @@ class UnprocessedOrder(models.Model):
     def __str__(self):
         return f"Unprocessed {self.order_id}"
     
+class IgnoredOrder(models.Model):
+    """
+    Ордера, которые пользователь не хочет видеть в необработанных.
+    Синхронизация с биржи будет навсегда пропускать эти order_id.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    order_id = models.CharField(max_length=255, verbose_name="ID ордера на бирже")
+    exchange_type = models.CharField(max_length=20, default='BYBIT', verbose_name="Биржа")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата игнора")
+ 
+    class Meta:
+        unique_together = ('user', 'order_id')
+        verbose_name = "Игнорируемый ордер"
+        verbose_name_plural = "Игнорируемые ордера"
+ 
+    def __str__(self):
+        return f"Ignored {self.order_id} ({self.exchange_type})"    
     

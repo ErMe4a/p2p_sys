@@ -1,70 +1,45 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth.decorators import login_required
-# from .services import sync_bybit_orders
-
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.forms import AuthenticationForm
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from .models import Order, BankDetail, UnprocessedOrder, User
-from django.contrib import messages
-from django.contrib.auth.hashers import make_password
-from django.utils import timezone
-from .models import Order, BankDetail 
-import datetime
-from django.http import JsonResponse, HttpResponse
-from .models import Order, User 
-from django.contrib.auth import get_user_model
-from django.db.models import Sum, Q
-from django.contrib.auth.models import User  # Или твоя модель пользователя
-
-
-
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.db.models import Sum, Q # <--- ВАЖНОЕ ИЗМЕНЕНИЕ
-import openpyxl
-from openpyxl.styles import Alignment, Font, Border, Side
-from .bybit_api import sync_bybit_orders
-from .mexc_api import  sync_mexc_orders
-from django.core.paginator import Paginator
-from .receipt_service import create_or_update_and_send_receipt
-from .bybit_service import get_orders_parallel as get_bybit_orders
-from .mexc_service import get_mexc_orders_parallel
-from django.contrib import messages
-from django.utils.dateparse import parse_datetime
-from decimal import Decimal
+# --- Стандартная библиотека ---
+import io
 import json
+import os
+import zipfile
+from datetime import datetime, date, time, timezone as dt_timezone
 
-from django.contrib.auth import update_session_auth_hash # ЭТО ВАЖНО
-from datetime import timezone as dt_timezone
+# --- Django ---
+from django.contrib import messages
+from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.hashers import make_password
+from django.core.cache import cache
+from django.core.paginator import Paginator
+from django.db.models import Q, Sum
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
+from decimal import Decimal, ROUND_DOWN
+import openpyxl
+from openpyxl.styles import Alignment, Border, Font, Side
+from django.contrib.auth.forms import AuthenticationForm
+
+# --- Проект ---
+from .bybit_api import sync_bybit_orders
+from .bybit_service import get_orders_parallel as get_bybit_orders
+from .mexc_api import sync_mexc_orders
+from .mexc_service import get_mexc_orders_parallel
+from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder
+from .receipt_service import create_or_update_and_send_receipt
+
+# --- Инициализация ---
+User = get_user_model()
+SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+
 
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
-User = get_user_model()
-
-import zipfile
-import io
-import os
-from django.contrib.auth.decorators import user_passes_test
-from django.utils.dateparse import parse_date
-from datetime import datetime, time
 
 
-from django.utils import timezone
-# Импортируем функцию из твоего receipt_service.py
-
-
-from django.core.cache import cache # Импортируем кэш
-
-
-# Импорт твоих функций
-# from .services import sync_bybit_orders, sync_mexc_orders 
-
-# === ХЕЛПЕР ДЛЯ ОЧИСТКИ ЧИСЕЛ ===
-
-
-from decimal import Decimal, ROUND_DOWN
 
 
 def safe_decimal(value):
@@ -343,7 +318,6 @@ def profile_settings(request):
     return render(request, 'orders/settings.html', {'user': user})
 
 
-
 @login_required
 def unprocessed_orders_list(request):
     user = request.user
@@ -371,37 +345,33 @@ def unprocessed_orders_list(request):
 @login_required
 def delete_unprocessed_order(request, pk):
     """
-    Удаляет ордер из буфера необработанных.
-    Используется, когда ордер уже обработан вручную или не нужен.
+    Удаляет ордер из буфера необработанных И навсегда добавляет в игнор,
+    чтобы синхронизация с биржи больше никогда его не подтягивала.
     """
     try:
         order = UnprocessedOrder.objects.get(pk=pk, user=request.user)
+
+        # Добавляем в игнор (get_or_create — защита от дублей)
+        IgnoredOrder.objects.get_or_create(
+            user=request.user,
+            order_id=order.order_id,
+            defaults={"exchange_type": order.exchange_type},
+        )
+
         order.delete()
-        messages.success(request, "Ордер удалён из списка.")
+        messages.success(request, "Ордер удалён и добавлен в игнор-лист.")
+
     except UnprocessedOrder.DoesNotExist:
         messages.error(request, "Ордер не найден.")
-    return redirect("unprocessed_orders")
 
+    return redirect("unprocessed_orders")
 
 @login_required
 def user_profit_view(request):
     """
     Страница аналитики прибыли для обычного пользователя.
-    Прибыль считается по FIFO-логике (как в Excel-отчёте).
-
-    Каждый ордер в serialize() содержит:
-      - bank_comm     : комиссия банка по этому ордеру (в рублях)
-      - exchange_comm : комиссия биржи по этому ордеру (в рублях, только SELL)
-
-    JS считает чистую прибыль за день и за каждый месяц:
-      Оборот (sell - buy)
-      - Комиссия банка  (только SELL)
-      - Комиссия биржи  (только SELL)
-      = Прибыль до налогов
-      - НДФЛ 13%
-      = После НДФЛ
-      - Доля системы X%
-      = Чистая прибыль
+    Прибыль считается по FIFO начиная с 01.02.2026.
+    Ордера до 01.02.2026 игнорируются — начальный остаток задан вручную.
     """
     action = request.GET.get('action')
 
@@ -412,9 +382,11 @@ def user_profit_view(request):
         exchange       = request.GET.get('exchange')
         bank_id        = request.GET.get('bank')
 
-        # === 1. ГЛОБАЛЬНЫЙ БАЛАНС И FIFO — по ВСЕМ ордерам без фильтров ===
-        # Исторический ордер "Остаток (до 1 фев)" всегда попадает в расчёт
-        all_orders_for_balance = Order.objects.filter(user=user)
+        # === 1. ГЛОБАЛЬНЫЙ БАЛАНС И FIFO — с 01.02.2026, без фильтра биржи/банка ===
+        all_orders_for_balance = Order.objects.filter(
+            user=user,
+            created_at__gte=SYSTEM_START
+        )
 
         all_time_buy  = float(
             all_orders_for_balance.filter(operation_type='BUY')
@@ -424,9 +396,9 @@ def user_profit_view(request):
             all_orders_for_balance.filter(operation_type='SELL')
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
-        real_current_balance = all_time_buy - all_time_sell
+        real_current_balance = max(0.0, all_time_buy - all_time_sell)
 
-        # FIFO по всей хронологии
+        # FIFO по хронологии с 01.02.2026
         all_orders_chrono = all_orders_for_balance.order_by('created_at')
 
         t_buy_qty = 0;  t_buy_cost = 0;  t_buy_comm = 0
@@ -452,8 +424,8 @@ def user_profit_view(request):
                 t_sell_comm       += total_comm
                 t_sell_exch_comm  += exchange_comm_val
 
-        # Нереализованный остаток (FIFO с конца)
-        remainder_qty  = t_buy_qty - t_sell_qty - t_sell_exch_comm
+        # Защита от отрицательного остатка
+        remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
         remainder_cost = 0.0
         temp_qty       = remainder_qty
 
@@ -468,7 +440,7 @@ def user_profit_view(request):
                 remainder_cost += buy['cost']
                 temp_qty       -= buy['qty']
 
-        # FIX: если продаж не было — прибыль 0, не считаем
+        # Если продаж не было — прибыль 0
         if t_sell_qty == 0:
             total_profit = 0.0
         else:
@@ -478,7 +450,10 @@ def user_profit_view(request):
         remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
 
         # === 2. ФИЛЬТРОВАННАЯ ВЫБОРКА — для таблиц и карточек периода ===
-        period_orders = Order.objects.filter(user=user)
+        period_orders = Order.objects.filter(
+            user=user,
+            created_at__gte=SYSTEM_START
+        )
 
         if exchange:
             period_orders = period_orders.filter(exchange_type__icontains=exchange)
@@ -513,14 +488,12 @@ def user_profit_view(request):
             for o in qs:
                 display_id = o.external_id if o.external_id else str(o.id)
 
-                # Комиссия банка в рублях (% или фикс)
                 comm_val = float(o.commission or 0)
                 if o.commission_type == 'PERCENT':
                     bank_comm_rub = float(o.cost or 0) * comm_val / 100
                 else:
                     bank_comm_rub = comm_val
 
-                # Комиссия биржи в рублях (только для SELL)
                 if is_sell:
                     exch_rate     = float(o.exchange_commission_rate or 0)
                     exchange_comm = float(o.amount or 0) * exch_rate / 100
@@ -558,13 +531,13 @@ def user_profit_view(request):
             'user_shares':     user.profit_shares if isinstance(user.profit_shares, dict) else {},
         })
 
-    # GET — страница с динамическим списком банков
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
 
 
 
-# --- АДМИН ПАНЕЛЬ ---
+
+# --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 
@@ -775,243 +748,189 @@ def admin_users_list(request):
     return render(request, 'custom_admin/users_list.html', {'users': users})
 
 
-
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def export_excel_report(request):
-    """Экспорт отчета в Excel — с итоговой плашкой после каждого месяца"""
-    user_id = request.GET.get('user_id')
+    """
+    Экспорт отчета в Excel.
+
+    Логика:
+    - Ордера ДО 01.02.2026 не берём — начальный остаток вводится вручную
+    - Исторический ордер "Остаток (до 1 фев)" отображается как первая строка
+      с датой 01.02.2026, количеством и курсом
+    - FIFO считается начиная с 01.02.2026
+    - remainder_qty защищён от отрицательных значений
+    """
+    user_id    = request.GET.get('user_id')
     start_date = request.GET.get('start')
-    end_date = request.GET.get('end')
-    bank_id = request.GET.get('bank_id')
-    op_type = request.GET.get('type')
+    end_date   = request.GET.get('end')
+    bank_id    = request.GET.get('bank_id')
+    op_type    = request.GET.get('type')
 
-    orders = Order.objects.filter(user_id=user_id).order_by('created_at')
+    # Граница — начало системы учёта
+    SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
+    # === Ордера начиная с 01.02.2026 ===
+    orders = Order.objects.filter(
+        user_id=user_id,
+        created_at__gte=SYSTEM_START
+    ).order_by('created_at')
+
+    # Фильтры из формы
     if start_date: orders = orders.filter(created_at__date__gte=start_date)
-    if end_date: orders = orders.filter(created_at__date__lte=end_date)
+    if end_date:   orders = orders.filter(created_at__date__lte=end_date)
     if bank_id and bank_id.isdigit(): orders = orders.filter(bank_detail_id=bank_id)
-    if op_type: orders = orders.filter(operation_type=op_type)
+    if op_type:    orders = orders.filter(operation_type=op_type)
+
+    orders_list = list(orders)
+
+    # === Исторический ордер — показываем как первую строку ===
+    # Он отображается в таблице с датой 01.02.2026, кол-вом и курсом
+    init_order = Order.objects.filter(
+        user_id=user_id,
+        exchange_type="Остаток (до 1 фев)"
+    ).first()
+
+    if init_order:
+        existing_ids = {o.id for o in orders_list}
+        if init_order.id not in existing_ids:
+            orders_list = [init_order] + orders_list
+
+    # ======================================================================
 
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Отчет"
 
-    thin_border = Border(
-        left=Side(style='thin'), right=Side(style='thin'),
-        top=Side(style='thin'), bottom=Side(style='thin')
-    )
-    bold_font = Font(bold=True)
+    thin_border  = Border(left=Side(style='thin'), right=Side(style='thin'),
+                          top=Side(style='thin'),  bottom=Side(style='thin'))
+    bold_font    = Font(bold=True)
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-    # === ШАПКА ===
     ws.merge_cells('A1:M1')
     ws['A1'] = "Учет приобретенной и проданной цифровой валюты (ЦВ)"
-    ws['A1'].font = Font(size=14, bold=True)
+    ws['A1'].font      = Font(size=14, bold=True)
     ws['A1'].alignment = Alignment(horizontal='center')
 
     ws.merge_cells('A2:A3'); ws['A2'] = "№ п/п"
     ws.merge_cells('B2:B3'); ws['B2'] = "Дата операции"
     ws.merge_cells('C2:C3'); ws['C2'] = "Номер документа"
     ws.merge_cells('D2:D3'); ws['D2'] = "Наименование ЦВ"
-    ws.merge_cells('E2:H2'); ws['E2'] = "Приобретение"
-    ws.merge_cells('I2:M2'); ws['I2'] = "Реализация"
+    ws.merge_cells('E2:H2'); ws['E2'] = "Приобретение цифровой валюты"
+    ws.merge_cells('I2:M2'); ws['I2'] = "Продажа цифровой валюты"
 
-    ws['E3'] = "Кол-во (ЦВ)"
-    ws['F3'] = "Цена (руб.)"
-    ws['G3'] = "Сумма (руб.)"
-    ws['H3'] = "Комиссия (руб.)"
-    ws['I3'] = "Кол-во (ЦВ)"
-    ws['J3'] = "Цена (руб.)"
-    ws['K3'] = "Сумма (руб.)"
-    ws['L3'] = "Комиссия (руб.)"
-    ws['M3'] = "Комиссия биржи (ЦВ)"
+    ws.append([
+        "", "", "", "",
+        "Кол-во", "Курс", "Стоимость", "Комиссия",
+        "Кол-во", "Курс", "Стоимость", "Комиссия", "Комиссия биржи"
+    ])
 
-    for row in ws.iter_rows(min_row=2, max_row=3, min_col=1, max_col=13):
-        for cell in row:
-            cell.font = bold_font
-            cell.alignment = center_align
-            cell.border = thin_border
+    # Переменные для итогов
+    t_buy_qty  = 0; t_buy_cost  = 0; t_buy_comm  = 0
+    t_sell_qty = 0; t_sell_cost = 0; t_sell_comm = 0; t_sell_exch_comm = 0
 
-    # === ГРУППИРОВКА ПО МЕСЯЦАМ ===
-    from itertools import groupby
-    from calendar import month_name
+    buys_list = []
+    idx = 0
 
-    MONTHS_RU = {
-        1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель',
-        5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август',
-        9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
-    }
+    for o in orders_list:
+        comm_val   = float(o.commission or 0)
+        total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
 
-    def month_key(o):
-        return (o.created_at.year, o.created_at.month)
+        amount_float = float(o.amount or 0)
+        cost_float   = float(o.cost   or 0)
+        price_float  = float(o.price  or 0)
 
-    orders_list = list(orders)
-    row_num = 4  # Следующая строка после шапки (строки 1-3 — шапка)
+        if o.operation_type == 'BUY':
+            t_buy_qty  += amount_float
+            t_buy_cost += cost_float
+            t_buy_comm += total_comm
+            buys_list.append({'qty': amount_float, 'cost': cost_float})
 
-    # Глобальный счётчик строк для нумерации
-    global_idx = 1
-
-    # Накопители для итоговой (общей) плашки в конце
-    grand_buys = []
-    grand_t_buy_qty = grand_t_buy_cost = grand_t_buy_comm = 0
-    grand_t_sell_qty = grand_t_sell_cost = grand_t_sell_comm = grand_t_sell_exch_comm = 0
-
-    def append_summary_block(ws, label_prefix, buys_list,
-                              t_buy_qty, t_buy_cost, t_buy_comm,
-                              t_sell_qty, t_sell_cost, t_sell_comm, t_sell_exch_comm,
-                              thin_border, bold_font):
-        """Записывает итоговую плашку в лист и оформляет её."""
-        remainder_qty = t_buy_qty - t_sell_qty - t_sell_exch_comm
-        remainder_cost = 0
-        temp_qty = remainder_qty
-
-        for buy in reversed(buys_list):
-            if temp_qty <= 0:
-                break
-            if buy['qty'] >= temp_qty:
-                buy_price_unit = buy['cost'] / buy['qty'] if buy['qty'] else 0
-                remainder_cost += temp_qty * buy_price_unit
-                temp_qty = 0
-            else:
-                remainder_cost += buy['cost']
-                temp_qty -= buy['qty']
-
-        equalized_buy_cost = t_buy_cost - remainder_cost
-        profit = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
-        remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
-
-        ws.append([])  # Пустая строка-разделитель
-
-        summary_rows = [
-            [f"Торговый результат {label_prefix}:", "", "", "",
-             t_buy_qty, "", t_buy_cost, t_buy_comm,
-             t_sell_qty, "", t_sell_cost, t_sell_comm, t_sell_exch_comm],
-            [f"Уравненный результат {label_prefix}:", "", "", "",
-             t_sell_qty, "", equalized_buy_cost, t_sell_comm,
-             t_sell_qty, "", t_sell_cost, "", ""],
-            [f"Прибыль {label_prefix}:", "", "", "",
-             profit, "", "", "", "", "", "", "", ""],
-            [f"Остаток (не реализованная ЦВ) {label_prefix}:", "", "", "",
-             remainder_qty, remainder_price, remainder_cost, 0,
-             "", "", "", "", ""],
-        ]
-
-        for sr in summary_rows:
-            ws.append(sr)
-
-        # Оформляем последние 5 строк (пустая + 4 итога)
-        last_row = ws.max_row
-        for r in range(last_row - 4, last_row + 1):
-            for c in range(1, 14):
-                cell = ws.cell(row=r, column=c)
-                cell.border = thin_border
-                cell.font = bold_font
-                cell.alignment = Alignment(horizontal='left' if c == 1 else 'center')
-
-    for (year, month), month_orders in groupby(orders_list, key=month_key):
-        month_orders = list(month_orders)
-        month_label = f"за {MONTHS_RU[month]} {year}"
-
-        # --- Заголовок месяца ---
-        ws.append([f"— {MONTHS_RU[month]} {year} —"])
-        month_header_row = ws.max_row
-        ws.merge_cells(f'A{month_header_row}:M{month_header_row}')
-        cell = ws[f'A{month_header_row}']
-        cell.font = Font(bold=True, size=11, color="FFFFFF")
-        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="3D5AFE")
-        cell.alignment = Alignment(horizontal='center')
-
-        # --- Строки ордеров за месяц ---
-        m_buys_list = []
-        m_t_buy_qty = m_t_buy_cost = m_t_buy_comm = 0
-        m_t_sell_qty = m_t_sell_cost = m_t_sell_comm = m_t_sell_exch_comm = 0
-
-        for o in month_orders:
-            b_data = ["", "", "", ""]
+            b_data = [amount_float, price_float, cost_float, total_comm]
             s_data = ["", "", "", "", ""]
 
-            if o.operation_type == 'BUY':
-                price = float(o.price or 0)
-                qty = float(o.amount or 0)
-                cost = float(o.cost or 0)
-                comm = float(o.commission or 0)
-                if o.commission_type == 'PERCENT':
-                    comm = cost * comm / 100
-                b_data = [qty, price, cost, comm]
-                m_t_buy_qty += qty
-                m_t_buy_cost += cost
-                m_t_buy_comm += comm
-                m_buys_list.append({'qty': qty, 'cost': cost})
-                grand_buys.append({'qty': qty, 'cost': cost})
-                grand_t_buy_qty += qty
-                grand_t_buy_cost += cost
-                grand_t_buy_comm += comm
-            else:
-                price = float(o.price or 0)
-                qty = float(o.amount or 0)
-                cost = float(o.cost or 0)
-                comm = float(o.commission or 0)
-                exch_comm = 0
-                if o.commission_type == 'PERCENT':
-                    comm = cost * comm / 100
-                s_data = [qty, price, cost, comm, exch_comm]
-                m_t_sell_qty += qty
-                m_t_sell_cost += cost
-                m_t_sell_comm += comm
-                m_t_sell_exch_comm += exch_comm
-                grand_t_sell_qty += qty
-                grand_t_sell_cost += cost
-                grand_t_sell_comm += comm
-                grand_t_sell_exch_comm += exch_comm
+        else:  # SELL
+            hist_percent      = float(o.exchange_commission_rate or 0)
+            exchange_comm_val = (amount_float * hist_percent) / 100
+            t_sell_qty        += amount_float
+            t_sell_cost       += cost_float
+            t_sell_comm       += total_comm
+            t_sell_exch_comm  += exchange_comm_val
 
-            bank_name = o.bank_detail.name if getattr(o, 'bank_detail', None) else ""
-            row = [
-                global_idx,
-                o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
-                o.external_id,
-                "USDT",
-                *b_data,
-                *s_data
-            ]
-            ws.append(row)
-            global_idx += 1
+            b_data = ["", "", "", ""]
+            s_data = [amount_float, price_float, cost_float, total_comm, exchange_comm_val]
 
-        # --- Плашка итогов за месяц ---
-        append_summary_block(
-            ws, month_label, m_buys_list,
-            m_t_buy_qty, m_t_buy_cost, m_t_buy_comm,
-            m_t_sell_qty, m_t_sell_cost, m_t_sell_comm, m_t_sell_exch_comm,
-            thin_border, bold_font
-        )
+        idx += 1
+        ws.append([
+            idx,
+            o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
+            o.external_id,
+            "USDT",
+            *b_data,
+            *s_data
+        ])
 
-        ws.append([])  # Отступ между месяцами
+    # === РАСЧЕТ НИЖНЕЙ ПЛАШКИ (FIFO) ===
+    # Защита от отрицательного остатка
+    remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
+    remainder_cost = 0.0
+    temp_qty       = remainder_qty
 
-    # === ОБЩИЙ ИТОГ (если больше одного месяца) ===
-    unique_months = set(month_key(o) for o in orders_list)
-    if len(unique_months) > 1:
-        ws.append(["═══ ИТОГО ЗА ВЕСЬ ПЕРИОД ═══"])
-        total_header_row = ws.max_row
-        ws.merge_cells(f'A{total_header_row}:M{total_header_row}')
-        cell = ws[f'A{total_header_row}']
-        cell.font = Font(bold=True, size=12, color="FFFFFF")
-        cell.fill = openpyxl.styles.PatternFill("solid", fgColor="1B2A6B")
-        cell.alignment = Alignment(horizontal='center')
+    for buy in reversed(buys_list):
+        if temp_qty <= 0:
+            break
+        if buy['qty'] >= temp_qty:
+            buy_price_unit  = buy['cost'] / buy['qty'] if buy['qty'] else 0
+            remainder_cost += temp_qty * buy_price_unit
+            temp_qty        = 0
+        else:
+            remainder_cost += buy['cost']
+            temp_qty       -= buy['qty']
 
-        append_summary_block(
-            ws, "за весь период", grand_buys,
-            grand_t_buy_qty, grand_t_buy_cost, grand_t_buy_comm,
-            grand_t_sell_qty, grand_t_sell_cost, grand_t_sell_comm, grand_t_sell_exch_comm,
-            thin_border, bold_font
-        )
+    # Если продаж не было — прибыль 0
+    if t_sell_qty == 0:
+        equalized_buy_cost = 0.0
+        profit             = 0.0
+    else:
+        equalized_buy_cost = t_buy_cost - remainder_cost
+        profit             = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
 
-    # === ОФОРМЛЕНИЕ СТРОК ДАННЫХ ===
-    for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=13):
+    remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
+
+    # === ЗАПИСЬ ИТОГОВ В EXCEL ===
+    ws.append([])
+
+    ws.append([
+        "Торговый результат:", "", "", "",
+        t_buy_qty, "", t_buy_cost, t_buy_comm,
+        t_sell_qty, "", t_sell_cost, t_sell_comm, t_sell_exch_comm
+    ])
+    ws.append([
+        "Уравненный результат:", "", "", "",
+        t_sell_qty, "", equalized_buy_cost, t_sell_comm,
+        t_sell_qty, "", t_sell_cost, "", ""
+    ])
+    ws.append([
+        "Прибыль:", "", "", "",
+        profit, "", "", "",
+        "", "", "", "", ""
+    ])
+    ws.append([
+        "Остаток (не реализованная ЦВ):", "", "", "",
+        remainder_qty, remainder_price, remainder_cost, 0,
+        "", "", "", "", ""
+    ])
+
+    # Оформление
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=13):
         for cell in row:
-            if not cell.border or cell.border == Border():
-                cell.border = thin_border
-            if not cell.alignment or cell.alignment == Alignment():
-                cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+            if cell.column == 1 and cell.row > idx + 3:
+                cell.alignment = Alignment(horizontal='left')
+            else:
+                cell.alignment = center_align if cell.row <= 3 else Alignment(horizontal='center')
+            if cell.row <= 3:
+                cell.font = bold_font
 
     col_widths = {
         'A': 35, 'B': 15, 'C': 25, 'D': 15,
@@ -1060,22 +979,21 @@ def admin_logout(request):
     logout(request)
     return redirect('admin_login')
 
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
 
-    Прибыль считается по FIFO за ВСЁ ВРЕМЯ (как в Excel-отчёте):
-      - Если продаж не было — прибыль = 0
-      - equalized_buy_cost = весь BUY - стоимость остатка = себестоимость проданного
-      - gross_profit = SELL_рублей - equalized_buy_cost - комиссии
-
-    Остаток USDT — на конец выбранного месяца.
-    Оборот за месяц (sell - buy) показывается отдельно для информации.
+    - Ордера ДО 01.02.2026 игнорируются
+    - Начальный остаток на 01.02.2026 вводится вручную через модалку
+    - FIFO считается с 01.02.2026
+    - remainder_qty защищён от отрицательных значений
+    - Остаток USDT — на конец выбранного месяца
     """
 
-    # 1. Параметры фильтров
     now       = timezone.now()
     year_str  = request.GET.get('year',  str(now.year))
     month_str = request.GET.get('month', str(now.month).zfill(2))
@@ -1097,7 +1015,6 @@ def admin_profit_view(request):
         datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
     )
 
-    # 2. Статистика по каждому пользователю
     User  = get_user_model()
     users = User.objects.all().order_by('id')
 
@@ -1106,19 +1023,28 @@ def admin_profit_view(request):
 
     for u in users:
 
-        # === ОСТАТОК USDT НА КОНЕЦ ВЫБРАННОГО МЕСЯЦА ===
+        # === ОСТАТОК USDT НА КОНЕЦ ВЫБРАННОГО МЕСЯЦА (с 01.02.2026) ===
         bought_until_end = float(
-            Order.objects.filter(user=u, operation_type='BUY', created_at__lt=end_date)
-            .aggregate(Sum('amount'))['amount__sum'] or 0
+            Order.objects.filter(
+                user=u, operation_type='BUY',
+                created_at__gte=SYSTEM_START,
+                created_at__lt=end_date
+            ).aggregate(Sum('amount'))['amount__sum'] or 0
         )
         sold_until_end = float(
-            Order.objects.filter(user=u, operation_type='SELL', created_at__lt=end_date)
-            .aggregate(Sum('amount'))['amount__sum'] or 0
+            Order.objects.filter(
+                user=u, operation_type='SELL',
+                created_at__gte=SYSTEM_START,
+                created_at__lt=end_date
+            ).aggregate(Sum('amount'))['amount__sum'] or 0
         )
-        crypto_balance = bought_until_end - sold_until_end
+        crypto_balance = max(0.0, bought_until_end - sold_until_end)
 
-        # === FIFO — по ВСЕМ ордерам без фильтра дат и биржи ===
-        all_orders_chrono = Order.objects.filter(user=u).order_by('created_at')
+        # === FIFO — с 01.02.2026, без фильтра биржи/банка ===
+        all_orders_chrono = Order.objects.filter(
+            user=u,
+            created_at__gte=SYSTEM_START
+        ).order_by('created_at')
 
         t_buy_qty = 0;  t_buy_cost = 0;  t_buy_comm = 0
         t_sell_qty = 0; t_sell_cost = 0; t_sell_comm = 0; t_sell_exch_comm = 0
@@ -1143,8 +1069,8 @@ def admin_profit_view(request):
                 t_sell_comm       += total_comm
                 t_sell_exch_comm  += exchange_comm_val
 
-        # Нереализованный остаток (FIFO с конца)
-        remainder_qty  = t_buy_qty - t_sell_qty - t_sell_exch_comm
+        # Защита от отрицательного остатка
+        remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
         remainder_cost = 0.0
         temp_qty       = remainder_qty
 
@@ -1159,15 +1085,18 @@ def admin_profit_view(request):
                 remainder_cost += buy['cost']
                 temp_qty       -= buy['qty']
 
-        # FIX: если продаж не было — прибыль 0
+        # Если продаж не было — прибыль 0
         if t_sell_qty == 0:
             gross_profit = 0.0
         else:
             equalized_buy_cost = t_buy_cost - remainder_cost
             gross_profit       = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
 
-        # === ОБОРОТ ЗА МЕСЯЦ (для информации) — с фильтрами ===
-        orders = Order.objects.filter(user=u, created_at__range=(start_date, end_date))
+        # === ОБОРОТ ЗА МЕСЯЦ — с фильтрами ===
+        orders = Order.objects.filter(
+            user=u,
+            created_at__range=(start_date, end_date)
+        )
 
         if exchange_filter:
             orders = orders.filter(exchange_type__icontains=exchange_filter)
@@ -1409,10 +1338,6 @@ def admin_turnover_control(request):
     # === ЛОГИКА 3: ПРОСТО ОТДАТЬ СТРАНИЦУ ===
     return render(request, 'custom_admin/turnover_control.html')
 
-
-
-
-User = get_user_model()
 
 
 
