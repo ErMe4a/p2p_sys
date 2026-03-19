@@ -814,19 +814,15 @@ def export_excel_report(request):
     Экспорт отчёта в Excel по логике КУДиР.
 
     Торговый результат включает остаток с предыдущего месяца:
-      BUY кол-во    = SUM(BUY за месяц) + остаток USDT прошлого месяца
-      BUY стоимость = SUM(BUY за месяц) + стоимость остатка прошлого месяца
+      data_start фиксируется ДО строки переноса остатка —
+      чтобы SUM диапазон захватывал строку переноса.
 
-    Остаток = формулой: =E{tr} - I{tr} - M{tr}
-      (все BUY включая перенос) - (все SELL) - (комса биржи USDT)
+    Остаток = =E{tr}-I{tr}-M{tr}
+      (BUY включая перенос) - (SELL) - (комса биржи USDT)
 
     Себестоимость остатка = =E{ost}*F{ost}
-      где F = последний курс BUY
-
-    Реализованный = G{tr} - G{ost}  (BUY стоимость - стоимость остатка)
+    Реализованный = G{tr} - G{ost}
     Прибыль = K{rr} - G{rr} - H{tr} - L{tr}
-
-    Все итоговые строки — только формулами.
     """
     user_id    = request.GET.get('user_id')
     start_date = request.GET.get('start')
@@ -937,16 +933,13 @@ def export_excel_report(request):
             ])
 
     # =====================================================================
-    # Запись строки "перенос остатка" — добавляется первой строкой каждого
-    # нового месяца (кроме первого) как BUY с пометкой "Остаток с {месяц}"
+    # Перенос остатка предыдущего месяца
     # =====================================================================
     def write_carry_row(label, prev_ost_row):
         """
-        Переносит остаток предыдущего месяца в новый месяц.
-        Кол-во и стоимость — формулами ссылками на строку остатка.
-        prev_ost_row — номер строки "Остаток" предыдущего месяца.
+        Добавляет строку BUY с переносом остатка прошлого месяца.
+        Ссылается формулами на строку остатка.
         """
-        row_num = ws.max_row + 1
         ws.append([
             0, "-", label, "USDT",
             f"=E{prev_ost_row}",   # кол-во = остаток прошлого месяца
@@ -955,17 +948,14 @@ def export_excel_report(request):
             0,
             0, 0, 0, 0, 0
         ])
-        return row_num
 
     # =====================================================================
-    # Запись итоговых строк
+    # Итоговые строки после блока ордеров
     # =====================================================================
     def write_summary(label_suffix, data_start, data_end, last_buy_price):
         """
-        Итоги по строкам data_start..data_end.
-        Все строки — формулами.
-
-        Возвращает номер строки Остатка (нужен для следующего месяца).
+        Все итоги — формулами по диапазону data_start..data_end.
+        Возвращает номер строки Остатка (для переноса в следующий месяц).
         """
         ws.append([])  # разделитель
 
@@ -986,8 +976,8 @@ def export_excel_report(request):
         tr = ws.max_row
 
         # --- Остаток ---
-        # кол-во = E{tr} - I{tr} - M{tr}  (BUY - SELL - комса биржи)
-        # курс   = последний курс BUY (число)
+        # кол-во = E{tr} - I{tr} - M{tr}
+        # курс   = последний курс BUY
         # стоимость = =E{ost}*F{ost}
         ost = ws.max_row + 1
         ws.append([
@@ -1000,23 +990,21 @@ def export_excel_report(request):
         ost = ws.max_row
 
         # --- Реализованный результат ---
-        # себестоимость проданного = BUY стоимость - стоимость остатка
         rr = ws.max_row + 1
         ws.append([
             f"Реализованный результат{label_suffix}:", "", "", "",
-            f"=I{tr}",              # кол-во SELL
+            f"=I{tr}",           # кол-во SELL
             "",
-            f"=G{tr}-G{ost}",      # себестоимость = BUY стоимость - остаток стоимость
+            f"=G{tr}-G{ost}",   # себестоимость = BUY стоимость - стоимость остатка
             "",
-            f"=I{tr}",              # кол-во SELL
+            f"=I{tr}",           # кол-во SELL
             "",
-            f"=K{tr}",              # SELL стоимость
+            f"=K{tr}",           # SELL стоимость
             "", ""
         ])
         rr = ws.max_row
 
         # --- Прибыль ---
-        # = SELL стоимость - себестоимость - комса банка BUY - комса банка SELL
         ws.append([
             f"Прибыль{label_suffix}:", "", "", "",
             f"=K{rr}-G{rr}-H{tr}-L{tr}",
@@ -1025,14 +1013,14 @@ def export_excel_report(request):
 
         ws.append([])  # разделитель после итогов
 
-        return ost  # возвращаем строку остатка для переноса в следующий месяц
+        return ost  # строка остатка — нужна для переноса в следующий месяц
 
     # =====================================================================
     # Обход ордеров
     # =====================================================================
     idx            = 0
     last_buy_price = 0.0
-    prev_ost_row   = None  # строка остатка предыдущего месяца
+    prev_ost_row   = None
 
     def get_month_key(o):
         return (o.created_at.year, o.created_at.month)
@@ -1043,19 +1031,18 @@ def export_excel_report(request):
         for (yr, mo), month_orders in _groupby(orders_list, key=get_month_key):
             month_list = list(month_orders)
 
-            # Если не первый месяц — добавляем строку переноса остатка
+            # FIX: data_start фиксируем ДО добавления строки переноса
+            # чтобы SUM диапазон захватывал строку переноса остатка
+            data_start = ws.max_row + 1
+
+            # Если не первый месяц — добавляем перенос остатка
             if not is_first_month and prev_ost_row is not None:
                 carry_label = f"Остаток с {_month_name(mo - 1 if mo > 1 else 12)} {yr if mo > 1 else yr - 1}"
                 write_carry_row(carry_label, prev_ost_row)
 
-            data_start = ws.max_row + 1
-
             for o in month_list:
-                is_hist    = o.exchange_type == "Остаток (до 1 фев)"
-                comm_val   = float(o.commission or 0)
-                total_comm = float(o.cost) * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
-                amount_f   = float(o.amount or 0)
-                price_f    = float(o.price  or 0)
+                is_hist = o.exchange_type == "Остаток (до 1 фев)"
+                price_f = float(o.price or 0)
 
                 if not is_hist:
                     idx += 1
@@ -1065,7 +1052,7 @@ def export_excel_report(request):
                 if o.operation_type == 'BUY':
                     last_buy_price = price_f
 
-            data_end   = ws.max_row
+            data_end     = ws.max_row
             prev_ost_row = write_summary(
                 f" за {_month_name(mo)} {yr}",
                 data_start, data_end,
@@ -1074,12 +1061,12 @@ def export_excel_report(request):
             is_first_month = False
 
     else:
-        # Один месяц
+        # Один месяц — один блок итогов
         data_start = ws.max_row + 1
 
         for o in orders_list:
-            is_hist  = o.exchange_type == "Остаток (до 1 фев)"
-            price_f  = float(o.price or 0)
+            is_hist = o.exchange_type == "Остаток (до 1 фев)"
+            price_f = float(o.price or 0)
 
             if not is_hist:
                 idx += 1
