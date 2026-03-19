@@ -99,22 +99,22 @@
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Sell:</span> <span class="val-money text-success money">{{ stat.sell_sum }}</span></div>
-                            <div><span class="val-label">Buy:</span> <span class="val-money text-danger money">{{ stat.buy_sum }}</span></div>
+                            <div><span class="val-label">Sell:</span> <span class="val-money text-success money">{{ stat.month_sell_cost }}</span></div>
+                            <div><span class="val-label">Buy:</span> <span class="val-money text-danger money">{{ stat.month_buy_cost }}</span></div>
                         </div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Банк:</span> <span class="val-money text-muted"><span class="money">{{ stat.bank_comm_rub }}</span></span></div>
-                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted"><span class="money">{{ stat.exchange_comm_rub }}</span></span></div>
+                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted"><span class="money">{{ stat.exchange_comm_rub }}</span> <span style="font-size: 10px;">USDT</span></span></div>
                             <div style="margin-top: 2px;"><span class="val-label">Итого:</span> <span class="val-money text-warning"><span class="money">{{ stat.total_comm_rub }}</span></span></div>
                         </div>
                     </td>
                     
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">До вычета:</span> <span class="val-money {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %} money">{{ stat.gross_profit }}</span></div>
+                            <div><span class="val-label">До вычета:</span> <span class="val-money {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %} money">{{ stat.gross }}</span></div>
                             <div><span class="val-label">НДФЛ:</span> <span class="val-money text-warning"><span class="money">{{ stat.ndfl }}</span></span></div>
                         </div>
                     </td>

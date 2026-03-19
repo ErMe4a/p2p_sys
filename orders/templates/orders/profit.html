@@ -99,7 +99,7 @@
         <div class="form-row" id="filtersRow">
             <div class="form-group" style="margin-bottom:0;">
                 <label for="exchangeSelect">Биржа</label>
-                <select class="input-profit" id="exchangeSelect" onchange="document.getElementById('bankSelect').value=''; loadTurnover();">
+                <select class="input-profit" id="exchangeSelect" onchange="document.getElementById('bankSelect').value=''; handleFilterChange();">
                     <option value="">Все биржи</option>
                     <option value="Bybit">Bybit</option>
                     <option value="HTX">HTX</option>
@@ -114,7 +114,7 @@
             
             <div class="form-group" style="margin-bottom:0;">
                 <label for="bankSelect">Банк</label>
-                <select class="input-profit" id="bankSelect" onchange="loadTurnover()">
+                <select class="input-profit" id="bankSelect" onchange="handleFilterChange()">
                     <option value="">Все банки</option>
                     {% for bank in default_banks %}
                         <option value="{{ bank.id }}">{{ bank.name }}</option>
@@ -296,12 +296,21 @@
             currentStart = '';
             currentEnd = '';
             document.getElementById('btnMonth').classList.add('active');
-            loadTurnover();
+            loadMonths(); // Изменено с loadTurnover на loadMonths
         } else if (viewName === 'expenses') {
             document.getElementById('btnExpenses').classList.add('active');
             document.getElementById('filtersRow').classList.add('hidden');
             document.getElementById('expensesView').classList.remove('hidden');
             loadExpenses(); 
+        }
+    }
+
+    // Обработчик для фильтров
+    function handleFilterChange() {
+        if (currentView === 'today') {
+            loadTurnover();
+        } else if (currentView === 'month') {
+            loadMonths();
         }
     }
 
@@ -424,7 +433,79 @@
     }
 
 
-    // --- ОСНОВНАЯ ЛОГИКА ---
+    // --- НОВАЯ ЛОГИКА ЗАГРУЗКИ ПО МЕСЯЦАМ ---
+    async function loadMonths() {
+        const periodInfo = document.getElementById('periodInfo');
+        periodInfo.textContent = '⏳ Выполняется расчет...';
+        
+        document.getElementById('resultsSection').classList.remove('hidden');
+        document.getElementById('summaryCards').classList.add('hidden');
+        document.getElementById('todayView').classList.add('hidden');
+        document.getElementById('monthView').classList.remove('hidden');
+
+        try {
+            // Передаем также параметры фильтров биржи/банка, если они выбраны
+            const exchange = document.getElementById('exchangeSelect').value;
+            const bank = document.getElementById('bankSelect').value;
+            
+            const res = await fetch(`${window.location.pathname}?action=get_months&exchange=${exchange}&bank=${bank}`);
+            const data = await res.json();
+            
+            periodInfo.textContent = `📅 Сводка по месяцам | Месяцев: ${data.months.length}`;
+            renderMonthsFromServer(data.months);
+        } catch(e) {
+            periodInfo.textContent = '❌ Ошибка загрузки.';
+        }
+    }
+
+    function renderMonthsFromServer(months) {
+        const monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь",
+                            "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+        if (!months || months.length === 0) {
+            document.getElementById('monthlySummaryTable').innerHTML =
+                `<tr><td colspan="7" class="no-data">Нет данных</td></tr>`;
+            return;
+        }
+
+        // Сортируем по убыванию (новые сверху)
+        const sorted = [...months].sort((a, b) => b.key.localeCompare(a.key));
+
+        document.getElementById('monthlySummaryTable').innerHTML = sorted.map(m => {
+            const label      = `${monthNames[m.month - 1]} ${m.year}`;
+            const grossColor = m.gross >= 0 ? 'var(--ok)' : 'var(--danger)';
+            const netColor   = m.net_profit >= 0 ? '#e879f9' : 'var(--danger)';
+            const expHtml    = m.month_expenses > 0
+                ? `<div style="font-size:11px;color:var(--warn);margin-top:2px;">(-${formatMoney(m.month_expenses)} ₽ расх.)</div>`
+                : '';
+
+            return `<tr>
+                <td style="font-weight:600;color:var(--text);">${label}</td>
+                <td style="font-weight:500;">
+                    <div style="color:var(--ok);font-size:11px;">Sell: ${formatMoney(m.sell_cost)} ₽</div>
+                    <div style="color:var(--danger);font-size:11px;">Buy: ${formatMoney(m.buy_cost)} ₽</div>
+                    <div style="color:var(--muted);font-size:11px;">Перенос: ${formatMoney(m.prev_balance_cost)} ₽</div>
+                </td>
+                <td style="color:var(--muted);font-size:12px;">
+                    ${formatMoney(m.buy_comm + m.sell_comm)} ₽
+                </td>
+                <td style="color:${grossColor};font-weight:600;">
+                    ${m.gross >= 0 ? '+' : ''}${formatMoney(m.gross)} ₽
+                </td>
+                <td style="color:var(--warn);">${formatMoney(m.ndfl)} ₽</td>
+                <td style="color:var(--accent);">
+                    ${m.share_percent}%
+                    <span style="color:var(--muted);font-size:11px;">(${formatMoney(m.share_amount)} ₽)</span>
+                </td>
+                <td class="amount-cell" style="color:${netColor};font-size:14px;">
+                    ${m.net_profit >= 0 ? '+' : ''}${formatMoney(m.net_profit)} ₽
+                    ${expHtml}
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+
+    // --- ОСНОВНАЯ ЛОГИКА ДЛЯ "СЕГОДНЯ" ---
     async function loadTurnover() {
         const exchange = document.getElementById('exchangeSelect').value;
         const bank = document.getElementById('bankSelect').value; 
@@ -452,72 +533,58 @@
     }
 
     function renderData(data) {
+        // Эта функция теперь вызывается только для вкладки "Сегодня"
         const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
         const periodInfo = document.getElementById('periodInfo');
-        periodInfo.style.color = 'var(--warn)';
         
-        if (currentView === 'month') {
-            periodInfo.textContent = `📅 Отчетный период: За всё время | Всего сделок: ${totalCount}`;
-            document.getElementById('summaryCards').classList.add('hidden');
-            document.getElementById('todayView').classList.add('hidden');
-            document.getElementById('monthView').classList.remove('hidden');
-            
-            // ПЕРЕДАЕМ data.expenses_by_month
-            renderMonthlySummaryView(data.buy_orders, data.sell_orders, data.user_shares || {}, data.expenses_by_month || {});
-        } else if (currentView === 'today') {
-            periodInfo.textContent = `📅 Отчетный период: СЕГОДНЯ | Всего сделок: ${totalCount}`;
-            document.getElementById('summaryCards').classList.remove('hidden');
-            document.getElementById('monthView').classList.add('hidden');
-            document.getElementById('todayView').classList.remove('hidden');
-            
-            document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
-            document.getElementById('buyCount').textContent = data.buy_count;
-            document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
-            document.getElementById('sellCount').textContent = data.sell_count;
-            
-            const bankCommToday = (data.sell_orders || []).reduce((s, o) => s + safeFloat(o.bank_comm), 0);
-            const exchCommToday = (data.sell_orders || []).reduce((s, o) => s + safeFloat(o.exchange_comm), 0);
-            
-            const grossProfit = safeFloat(data.sell_sum) - safeFloat(data.buy_sum) - bankCommToday - exchCommToday;
-            
-            const grossEl = document.getElementById('grossProfitValue');
-            grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
-            grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
+        periodInfo.style.color = 'var(--warn)';
+        periodInfo.textContent = `📅 Отчетный период: СЕГОДНЯ | Всего сделок: ${totalCount}`;
+        
+        document.getElementById('summaryCards').classList.remove('hidden');
+        document.getElementById('monthView').classList.add('hidden');
+        document.getElementById('todayView').classList.remove('hidden');
+        
+        document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
+        document.getElementById('buyCount').textContent = data.buy_count;
+        document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
+        document.getElementById('sellCount').textContent = data.sell_count;
+        
+        // Значения берутся напрямую с бэкенда (без JS математики)
+        const grossProfit  = safeFloat(data.gross);
+        const ndfl         = safeFloat(data.ndfl);
+        const shareAmount  = safeFloat(data.share_amount);
+        const netProfit    = safeFloat(data.net_profit);
+        const sharePercent = safeFloat(data.share_percent);
+        
+        const grossEl = document.getElementById('grossProfitValue');
+        grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
+        grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-            let ndfl = grossProfit > 0 ? grossProfit * 0.13 : 0;
-            let startMonthKey = currentStart.substring(0, 7); 
-            let userShares = data.user_shares || {};
-            let sharePercent = userShares[startMonthKey] !== undefined ? parseFloat(userShares[startMonthKey]) : 20.0;
-            
-            let afterNdfl = grossProfit - ndfl;
-            let shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
-            let netProfit = afterNdfl - shareAmount;
+        const netEl = document.getElementById('netProfitValue');
+        netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
+        netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
+        
+        document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">${formatMoney(shareAmount)}₽</b>`;
 
-            const netEl = document.getElementById('netProfitValue');
-            netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
-            netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
-            document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">${formatMoney(shareAmount)}₽</b>`;
+        document.getElementById('cryptoBalance').textContent = safeFloat(data.crypto_balance).toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        }) + ' USDT';
 
-            document.getElementById('cryptoBalance').textContent = safeFloat(data.crypto_balance).toLocaleString('ru-RU', {
-                minimumFractionDigits: 2, maximumFractionDigits: 2
-            }) + ' USDT';
+        const cryptoDelta = safeFloat(data.crypto_delta);
+        const deltaEl = document.getElementById('cryptoDelta');
+        const deltaSign = cryptoDelta > 0 ? '+' : '';
+        deltaEl.textContent = `${deltaSign}${cryptoDelta.toLocaleString('ru-RU', {
+            minimumFractionDigits: 2, maximumFractionDigits: 2
+        })} USDT за сегодня`;
+        
+        if (cryptoDelta > 0) deltaEl.style.color = 'var(--ok)';
+        else if (cryptoDelta < 0) deltaEl.style.color = 'var(--danger)';
+        else deltaEl.style.color = 'var(--muted)';
 
-            const cryptoDelta = safeFloat(data.crypto_delta);
-            const deltaEl = document.getElementById('cryptoDelta');
-            const deltaSign = cryptoDelta > 0 ? '+' : '';
-            deltaEl.textContent = `${deltaSign}${cryptoDelta.toLocaleString('ru-RU', {
-                minimumFractionDigits: 2, maximumFractionDigits: 2
-            })} USDT за сегодня`;
-            
-            if (cryptoDelta > 0) deltaEl.style.color = 'var(--ok)';
-            else if (cryptoDelta < 0) deltaEl.style.color = 'var(--danger)';
-            else deltaEl.style.color = 'var(--muted)';
-
-            renderDetailedTable('buyOrdersTable', data.buy_orders, 'buy');
-            renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
-            document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
-            document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
-        }
+        renderDetailedTable('buyOrdersTable', data.buy_orders, 'buy');
+        renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
+        document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
+        document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
     }
 
     function renderDetailedTable(elementId, orders, type) {
@@ -550,111 +617,6 @@
                 <td style="color:var(--muted); font-size:12px;">${commText}</td>
             </tr>`;
         }).join('');
-    }
-
-    // ДОБАВЛЕН ПАРАМЕТР expensesByMonth
-    function renderMonthlySummaryView(buyOrders, sellOrders, userShares, expensesByMonth = {}) {
-        const monthlyData = {};
-        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
-
-        const processOrders = (orders, isBuy) => {
-            orders.forEach(o => {
-                if (o.exchange && o.exchange.includes('Остаток')) return;
-
-                const parts = o.date.split(' ')[0].split('.'); 
-                if (parts.length === 3) {
-                    const monthIdx = parseInt(parts[1], 10) - 1;
-                    const year = parts[2];
-                    const sortKey = `${year}-${parts[1]}`;
-                    const label = `${monthNames[monthIdx]} ${year}`;
-
-                    if (!monthlyData[sortKey]) {
-                        monthlyData[sortKey] = { label: label, buy: 0, sell: 0, bankComm: 0, exchComm: 0 };
-                    }
-                    
-                    const cost = safeFloat(o.cost);
-                    const bComm = safeFloat(o.bank_comm);
-                    const eComm = safeFloat(o.exchange_comm);
-
-                    if (isBuy) {
-                        monthlyData[sortKey].buy += cost;
-                    } else {
-                        monthlyData[sortKey].sell += cost;
-                        monthlyData[sortKey].bankComm += bComm;
-                        monthlyData[sortKey].exchComm += eComm;
-                    }
-                }
-            });
-        };
-
-        processOrders(buyOrders || [], true);
-        processOrders(sellOrders || [], false);
-
-        const sortedKeys = Object.keys(monthlyData).sort((a, b) => b.localeCompare(a)); 
-        const tableRows = [];
-
-        if (sortedKeys.length === 0) {
-            document.getElementById('monthlySummaryTable').innerHTML = `<tr><td colspan="7" class="no-data">За выбранный период нет сделок</td></tr>`;
-            return;
-        }
-
-        sortedKeys.forEach(key => {
-            const d = monthlyData[key];
-            
-            const turnover = d.sell - d.buy;
-            const totalComms = d.bankComm + d.exchComm;
-            
-            const profitBeforeTax = turnover - totalComms;
-            
-            const ndfl = profitBeforeTax > 0 ? profitBeforeTax * 0.13 : 0; 
-            const afterNdfl = profitBeforeTax - ndfl;
-            
-            const sharePercent = userShares[key] !== undefined ? parseFloat(userShares[key]) : 20.0;
-            const shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
-            
-            // ВЫЧИТАЕМ РАСХОДЫ
-            const monthExpenses = safeFloat(expensesByMonth[key]);
-            const finalNetProfit = afterNdfl - shareAmount - monthExpenses;
-            
-            const profitColor = profitBeforeTax >= 0 ? 'var(--ok)' : 'var(--danger)';
-            const netColor = finalNetProfit >= 0 ? '#e879f9' : 'var(--danger)';
-            
-            const profitSign = profitBeforeTax > 0 ? '+' : '';
-            const netSign = finalNetProfit > 0 ? '+' : '';
-
-            // Формируем текст расходов для вывода в колонке "Чистая прибыль"
-            const expensesHtml = monthExpenses > 0 ? `<div style="font-size:11px; color:var(--warn); margin-top:2px;">(-${formatMoney(monthExpenses)} ₽ расх.)</div>` : '';
-
-            tableRows.push(`
-                <tr>
-                    <td style="font-weight:600; color:var(--text);">${d.label}</td>
-                    
-                    <td style="font-weight:500;">
-                        <div style="color:var(--ok); font-size:11px;">Sell: ${formatMoney(d.sell)} ₽</div>
-                        <div style="color:var(--danger); font-size:11px;">Buy: ${formatMoney(d.buy)} ₽</div>
-                    </td>
-                    
-                    <td style="color:var(--muted); font-weight:500; font-size:12px;">
-                        ${formatMoney(totalComms)} ₽
-                    </td>
-                    
-                    <td style="color:${profitColor}; font-weight:600;">${profitSign}${formatMoney(profitBeforeTax)} ₽</td>
-                    
-                    <td style="color:var(--warn); font-weight:500;">${formatMoney(ndfl)} ₽</td>
-                    
-                    <td style="color:var(--accent); font-weight:500;">
-                        ${sharePercent}% <span style="color:var(--muted); font-size:11px;">(${formatMoney(shareAmount)} ₽)</span>
-                    </td>
-                    
-                    <td class="amount-cell" style="color:${netColor}; font-size: 14px;">
-                        ${netSign}${formatMoney(finalNetProfit)} ₽
-                        ${expensesHtml}
-                    </td>
-                </tr>
-            `);
-        });
-
-        document.getElementById('monthlySummaryTable').innerHTML = tableRows.join('');
     }
 
     window.onload = () => {
