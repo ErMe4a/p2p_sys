@@ -122,6 +122,9 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">{{ stat.share_percent }}%:</span> <span class="val-money" style="color: var(--accent-blue);"><span class="money">{{ stat.share_amount }}</span></span></div>
+                            {% if stat.month_expenses > 0 %}
+                            <div><span class="val-label">Расходы:</span> <span class="val-money text-muted"><span class="money">{{ stat.month_expenses }}</span></span></div>
+                            {% endif %}
                         </div>
                     </td>
 

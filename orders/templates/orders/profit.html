@@ -24,6 +24,10 @@
     .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
     .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); font-weight: 500;}
 
+    /* Кнопка "Добавить расход" */
+    .btn-add-expense { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;}
+    .btn-add-expense:hover { background: #5a78e6; }
+
     .summary-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px; margin-bottom:24px; transition: all 0.3s; }
     .summary-cards.hidden { display:none !important; }
     
@@ -53,11 +57,23 @@
     .amount-cell { font-weight:600; font-family:'Inter', monospace; }
     .buy-amount { color:var(--ok); }
     .sell-amount { color:var(--danger); }
+    .expense-amount { color: var(--warn); }
     
     .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
     .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; font-weight: 500;}
     .timezone-info { font-size:12px; color:var(--muted); }
     .hidden { display:none !important; }
+
+    /* Стили для секции расходов */
+    .expense-month-header { background: #121622; padding: 10px 16px; font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;}
+    .expense-month-header:first-child { border-top: none; }
+    .expense-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background 0.2s;}
+    .expense-row:hover { background: rgba(255,255,255,0.02); }
+    .expense-info { display: flex; flex-direction: column; gap: 4px; }
+    .expense-name { font-size: 14px; font-weight: 500; color: var(--text); }
+    .expense-date { font-size: 11px; color: var(--muted); }
+    .btn-delete-expense { background: rgba(255,108,108,0.1); color: var(--danger); border: 1px solid rgba(255,108,108,0.2); border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; transition: 0.2s;}
+    .btn-delete-expense:hover { background: var(--danger); color: #fff; }
 
     @media (max-width: 1200px) { 
         .tables-container { grid-template-columns:1fr; }
@@ -75,11 +91,12 @@
         </div>
 
         <div class="quick-dates">
-            <button type="button" class="quick-date-btn active" id="btnToday" onclick="setToday()">Детально за сегодня</button>
-            <button type="button" class="quick-date-btn" id="btnMonth" onclick="setAllMonths()">Сводка по месяцам</button>
+            <button type="button" class="quick-date-btn active" id="btnToday" onclick="setView('today')">Детально за сегодня</button>
+            <button type="button" class="quick-date-btn" id="btnMonth" onclick="setView('month')">Сводка по месяцам</button>
+            <button type="button" class="quick-date-btn" id="btnExpenses" onclick="setView('expenses')">💸 Мои расходы</button>
         </div>
 
-        <div class="form-row">
+        <div class="form-row" id="filtersRow">
             <div class="form-group" style="margin-bottom:0;">
                 <label for="exchangeSelect">Биржа</label>
                 <select class="input-profit" id="exchangeSelect" onchange="document.getElementById('bankSelect').value=''; loadTurnover();">
@@ -179,7 +196,7 @@
                         <thead>
                             <tr>
                                 <th>Месяц</th>
-                                <th>Оборот (Sell - Buy)</th>
+                                <th>Движение (RUB)</th>
                                 <th>Комиссии</th>
                                 <th>Прибыль (До вычета)</th>
                                 <th>НДФЛ (13%)</th>
@@ -192,14 +209,50 @@
                 </div>
             </div>
         </div>
+    </div>
 
+    <div id="expensesView" class="hidden">
+        <div class="form-section" style="background: rgba(255,193,7,0.05); border-color: rgba(255,193,7,0.2);">
+            <h5 style="margin-top: 0; margin-bottom: 16px; color: var(--warn); font-size: 15px;">➕ Добавить новый расход</h5>
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end;">
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Наименование (напр: Подписка TG)</label>
+                    <input type="text" id="expName" class="input-profit" placeholder="На что потратили?">
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Сумма (RUB)</label>
+                    <input type="number" id="expAmount" class="input-profit" placeholder="0.00">
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Дата</label>
+                    <input type="date" id="expDate" class="input-profit">
+                </div>
+                <div>
+                    <button class="btn-add-expense" onclick="addExpense()">Добавить</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-section" style="margin-top: 20px;">
+            <div class="table-header">
+                <div class="table-title" style="color:var(--text);">💸 Журнал расходов по месяцам</div>
+            </div>
+            <div id="expensesListContainer">
+                <div class="no-data">Загрузка расходов...</div>
+            </div>
+        </div>
     </div>
 </div>
 
 <script>
     let currentStart = '';
     let currentEnd = '';
-    let isMonthView = false;
+    let currentView = 'today'; 
+
+    function getCookie(name) {
+        const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
+        return v ? v[2] : null;
+    }
 
     function safeFloat(val) {
         if (!val) return 0;
@@ -220,27 +273,158 @@
     }
     setInterval(updateMskTime, 1000);
 
-    function setToday() {
-        const today = new Date().toISOString().split('T')[0];
-        currentStart = today;
-        currentEnd = today;
-        isMonthView = false;
-        
-        document.getElementById('btnToday').classList.add('active');
-        document.getElementById('btnMonth').classList.remove('active');
-        loadTurnover();
-    }
+    document.getElementById('expDate').valueAsDate = new Date();
 
-    function setAllMonths() {
-        currentStart = '';
-        currentEnd = '';
-        isMonthView = true;
+    function setView(viewName) {
+        currentView = viewName;
         
         document.getElementById('btnToday').classList.remove('active');
-        document.getElementById('btnMonth').classList.add('active');
-        loadTurnover();
+        document.getElementById('btnMonth').classList.remove('active');
+        document.getElementById('btnExpenses').classList.remove('active');
+        
+        document.getElementById('resultsSection').classList.add('hidden');
+        document.getElementById('expensesView').classList.add('hidden');
+        document.getElementById('filtersRow').classList.remove('hidden');
+
+        if (viewName === 'today') {
+            const today = new Date().toISOString().split('T')[0];
+            currentStart = today;
+            currentEnd = today;
+            document.getElementById('btnToday').classList.add('active');
+            loadTurnover();
+        } else if (viewName === 'month') {
+            currentStart = '';
+            currentEnd = '';
+            document.getElementById('btnMonth').classList.add('active');
+            loadTurnover();
+        } else if (viewName === 'expenses') {
+            document.getElementById('btnExpenses').classList.add('active');
+            document.getElementById('filtersRow').classList.add('hidden');
+            document.getElementById('expensesView').classList.remove('hidden');
+            loadExpenses(); 
+        }
     }
 
+    // --- ЛОГИКА РАСХОДОВ ---
+    async function loadExpenses() {
+        try {
+            const res = await fetch(`${window.location.pathname}?action=get_expenses`);
+            if (!res.ok) throw new Error('Network response was not ok');
+            const data = await res.json();
+            renderExpenses(data.expenses || []);
+        } catch (e) {
+            console.error('Ошибка при загрузке расходов:', e);
+            document.getElementById('expensesListContainer').innerHTML = '<div class="no-data" style="color:var(--danger)">Не удалось загрузить расходы</div>';
+        }
+    }
+
+    async function addExpense() {
+        const name   = document.getElementById('expName').value.trim();
+        const amount = safeFloat(document.getElementById('expAmount').value);
+        const date   = document.getElementById('expDate').value;
+        
+        if (!name || amount <= 0 || !date) { alert('Пожалуйста, заполните все поля корректно.'); return; }
+        
+        const month = date.substring(0, 7); 
+
+        try {
+            await fetch(`${window.location.pathname}?action=add_expense`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json', 
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ name, amount, month })
+            });
+            
+            document.getElementById('expName').value = '';
+            document.getElementById('expAmount').value = '';
+            loadExpenses();
+        } catch (e) {
+            alert('Произошла ошибка при добавлении расхода.');
+        }
+    }
+
+    async function deleteExpense(id) {
+        if (!confirm('Удалить этот расход?')) return;
+        
+        try {
+            await fetch(`${window.location.pathname}?action=delete_expense`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json', 
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({ id })
+            });
+            loadExpenses(); 
+        } catch (e) {
+            alert('Произошла ошибка при удалении расхода.');
+        }
+    }
+
+    function renderExpenses(expenses = []) {
+        const container = document.getElementById('expensesListContainer');
+        
+        if (expenses.length === 0) {
+            container.innerHTML = `<div class="no-data">У вас пока нет добавленных расходов</div>`;
+            return;
+        }
+
+        const grouped = {};
+        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+
+        expenses.forEach(exp => {
+            const monthKey = exp.month; 
+            let monthLabel = monthKey;
+
+            const parts = monthKey.split('-');
+            if(parts.length === 2) {
+                const year = parts[0];
+                const monthIdx = parseInt(parts[1], 10) - 1;
+                monthLabel = `${monthNames[monthIdx]} ${year}`;
+            }
+
+            if (!grouped[monthKey]) {
+                grouped[monthKey] = { label: monthLabel, total: 0, items: [] };
+            }
+            grouped[monthKey].items.push(exp);
+            grouped[monthKey].total += safeFloat(exp.amount);
+        });
+
+        const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+
+        let html = '';
+        sortedKeys.forEach(key => {
+            const data = grouped[key];
+            html += `
+                <div class="expense-month-header">
+                    <span>🗓️ ${data.label}</span>
+                    <span style="color: var(--warn);">Итого: ${formatMoney(data.total)} ₽</span>
+                </div>
+            `;
+            
+            data.items.forEach(exp => {
+                html += `
+                    <div class="expense-row">
+                        <div class="expense-info">
+                            <span class="expense-name">${exp.name}</span>
+                            <span class="expense-date">${data.label}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 16px;">
+                            <span class="amount-cell expense-amount">${formatMoney(exp.amount)} ₽</span>
+                            <button class="btn-delete-expense" onclick="deleteExpense(${exp.id})">✖</button>
+                        </div>
+                    </div>
+                `;
+            });
+        });
+
+        container.innerHTML = html;
+    }
+
+
+    // --- ОСНОВНАЯ ЛОГИКА ---
     async function loadTurnover() {
         const exchange = document.getElementById('exchangeSelect').value;
         const bank = document.getElementById('bankSelect').value; 
@@ -272,14 +456,15 @@
         const periodInfo = document.getElementById('periodInfo');
         periodInfo.style.color = 'var(--warn)';
         
-        if (isMonthView) {
+        if (currentView === 'month') {
             periodInfo.textContent = `📅 Отчетный период: За всё время | Всего сделок: ${totalCount}`;
             document.getElementById('summaryCards').classList.add('hidden');
             document.getElementById('todayView').classList.add('hidden');
             document.getElementById('monthView').classList.remove('hidden');
             
-            renderMonthlySummaryView(data.buy_orders, data.sell_orders, data.user_shares || {});
-        } else {
+            // ПЕРЕДАЕМ data.expenses_by_month
+            renderMonthlySummaryView(data.buy_orders, data.sell_orders, data.user_shares || {}, data.expenses_by_month || {});
+        } else if (currentView === 'today') {
             periodInfo.textContent = `📅 Отчетный период: СЕГОДНЯ | Всего сделок: ${totalCount}`;
             document.getElementById('summaryCards').classList.remove('hidden');
             document.getElementById('monthView').classList.add('hidden');
@@ -290,7 +475,6 @@
             document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
             document.getElementById('sellCount').textContent = data.sell_count;
             
-            // СЧИТАЕМ ПРИБЫЛЬ ЗА СЕГОДНЯ
             const bankCommToday = (data.sell_orders || []).reduce((s, o) => s + safeFloat(o.bank_comm), 0);
             const exchCommToday = (data.sell_orders || []).reduce((s, o) => s + safeFloat(o.exchange_comm), 0);
             
@@ -312,7 +496,7 @@
             const netEl = document.getElementById('netProfitValue');
             netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
             netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
-            document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">-${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">-${formatMoney(shareAmount)}₽</b>`;
+            document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">${formatMoney(shareAmount)}₽</b>`;
 
             document.getElementById('cryptoBalance').textContent = safeFloat(data.crypto_balance).toLocaleString('ru-RU', {
                 minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -351,7 +535,7 @@
             const bk = o.bank ? o.bank.toUpperCase() : 'БАНК';
             
             const totalComm = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
-            const commText = totalComm > 0 ? `-${formatMoney(totalComm)} ₽` : '0.00 ₽';
+            const commText = totalComm > 0 ? `${formatMoney(totalComm)} ₽` : '0.00 ₽';
             
             return `
             <tr>
@@ -368,13 +552,13 @@
         }).join('');
     }
 
-    function renderMonthlySummaryView(buyOrders, sellOrders, userShares) {
+    // ДОБАВЛЕН ПАРАМЕТР expensesByMonth
+    function renderMonthlySummaryView(buyOrders, sellOrders, userShares, expensesByMonth = {}) {
         const monthlyData = {};
         const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
         const processOrders = (orders, isBuy) => {
             orders.forEach(o => {
-                // ИСКЛЮЧАЕМ ИСТОРИЧЕСКИЙ ОРДЕР ОСТАТКА
                 if (o.exchange && o.exchange.includes('Остаток')) return;
 
                 const parts = o.date.split(' ')[0].split('.'); 
@@ -428,13 +612,18 @@
             const sharePercent = userShares[key] !== undefined ? parseFloat(userShares[key]) : 20.0;
             const shareAmount = afterNdfl > 0 ? afterNdfl * (sharePercent / 100) : 0;
             
-            const finalNetProfit = afterNdfl - shareAmount;
+            // ВЫЧИТАЕМ РАСХОДЫ
+            const monthExpenses = safeFloat(expensesByMonth[key]);
+            const finalNetProfit = afterNdfl - shareAmount - monthExpenses;
             
             const profitColor = profitBeforeTax >= 0 ? 'var(--ok)' : 'var(--danger)';
             const netColor = finalNetProfit >= 0 ? '#e879f9' : 'var(--danger)';
             
             const profitSign = profitBeforeTax > 0 ? '+' : '';
             const netSign = finalNetProfit > 0 ? '+' : '';
+
+            // Формируем текст расходов для вывода в колонке "Чистая прибыль"
+            const expensesHtml = monthExpenses > 0 ? `<div style="font-size:11px; color:var(--warn); margin-top:2px;">(-${formatMoney(monthExpenses)} ₽ расх.)</div>` : '';
 
             tableRows.push(`
                 <tr>
@@ -443,22 +632,24 @@
                     <td style="font-weight:500;">
                         <div style="color:var(--ok); font-size:11px;">Sell: ${formatMoney(d.sell)} ₽</div>
                         <div style="color:var(--danger); font-size:11px;">Buy: ${formatMoney(d.buy)} ₽</div>
-                        <div style="color:var(--text); margin-top:2px;">= ${formatMoney(turnover)} ₽</div>
                     </td>
                     
                     <td style="color:var(--muted); font-weight:500; font-size:12px;">
-                        -${formatMoney(totalComms)} ₽
+                        ${formatMoney(totalComms)} ₽
                     </td>
                     
                     <td style="color:${profitColor}; font-weight:600;">${profitSign}${formatMoney(profitBeforeTax)} ₽</td>
                     
-                    <td style="color:var(--warn); font-weight:500;">-${formatMoney(ndfl)} ₽</td>
+                    <td style="color:var(--warn); font-weight:500;">${formatMoney(ndfl)} ₽</td>
                     
                     <td style="color:var(--accent); font-weight:500;">
-                        ${sharePercent}% <span style="color:var(--muted); font-size:11px;">(-${formatMoney(shareAmount)} ₽)</span>
+                        ${sharePercent}% <span style="color:var(--muted); font-size:11px;">(${formatMoney(shareAmount)} ₽)</span>
                     </td>
                     
-                    <td class="amount-cell" style="color:${netColor}; font-size: 14px;">${netSign}${formatMoney(finalNetProfit)} ₽</td>
+                    <td class="amount-cell" style="color:${netColor}; font-size: 14px;">
+                        ${netSign}${formatMoney(finalNetProfit)} ₽
+                        ${expensesHtml}
+                    </td>
                 </tr>
             `);
         });
@@ -468,7 +659,7 @@
 
     window.onload = () => {
         updateMskTime();
-        setToday();
+        setView('today');
     };
 </script>
 {% endblock %}

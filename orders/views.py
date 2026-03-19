@@ -4,7 +4,7 @@ import json
 import os
 import zipfile
 from datetime import datetime, date, time, timezone as dt_timezone
-
+import json as _json
 from itertools import groupby as _groupby
 
 # --- Django ---
@@ -29,7 +29,7 @@ from .bybit_api import sync_bybit_orders
 from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
-from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder
+from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense
 from .receipt_service import create_or_update_and_send_receipt
 
 # --- Инициализация ---
@@ -368,15 +368,63 @@ def delete_unprocessed_order(request, pk):
 
     return redirect("unprocessed_orders")
 
+
+import json as _json
+from datetime import timezone as dt_timezone
+
+SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+
+
 @login_required
 def user_profit_view(request):
     """
     Страница аналитики прибыли для обычного пользователя.
-    Прибыль считается по FIFO начиная с 01.02.2026.
-    Ордера до 01.02.2026 игнорируются — начальный остаток задан вручную.
+
+    Комиссия банка  — учитывается на BUY и SELL (% или фикс → рубли)
+    Комиссия биржи  — только на SELL (из exchange_commission_rate)
+
+    action=get_turnover   — FIFO расчёт + ордера за период
+    action=get_expenses   — список расходов пользователя
+    action=add_expense    — добавить расход (POST JSON)
+    action=delete_expense — удалить расход (POST JSON)
     """
     action = request.GET.get('action')
 
+    # =====================================================================
+    # РАСХОДЫ
+    # =====================================================================
+    if action == 'get_expenses':
+        expenses = UserExpense.objects.filter(user=request.user).order_by('-month', 'name')
+        return JsonResponse({'expenses': [
+            {'id': e.id, 'name': e.name, 'amount': float(e.amount), 'month': e.month}
+            for e in expenses
+        ]})
+
+    if action == 'add_expense':
+        try:
+            body   = _json.loads(request.body)
+            name   = str(body.get('name', '')).strip()
+            amount = float(body.get('amount', 0))
+            month  = str(body.get('month', ''))  # '2026-03'
+            if not name or amount <= 0 or not month:
+                return JsonResponse({'error': 'Некорректные данные'}, status=400)
+            UserExpense.objects.create(user=request.user, name=name, amount=amount, month=month)
+            return JsonResponse({'ok': True})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    if action == 'delete_expense':
+        try:
+            body   = _json.loads(request.body)
+            exp_id = int(body.get('id', 0))
+            UserExpense.objects.filter(id=exp_id, user=request.user).delete()
+            return JsonResponse({'ok': True})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    # =====================================================================
+    # FIFO + ОРДЕРА
+    # =====================================================================
     if action == 'get_turnover':
         user           = request.user
         start_date_str = request.GET.get('start')
@@ -400,7 +448,6 @@ def user_profit_view(request):
         )
         real_current_balance = max(0.0, all_time_buy - all_time_sell)
 
-        # FIFO по хронологии с 01.02.2026
         all_orders_chrono = all_orders_for_balance.order_by('created_at')
 
         t_buy_qty = 0;  t_buy_cost = 0;  t_buy_comm = 0
@@ -426,7 +473,6 @@ def user_profit_view(request):
                 t_sell_comm       += total_comm
                 t_sell_exch_comm  += exchange_comm_val
 
-        # Защита от отрицательного остатка
         remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
         remainder_cost = 0.0
         temp_qty       = remainder_qty
@@ -435,14 +481,12 @@ def user_profit_view(request):
             if temp_qty <= 0:
                 break
             if buy['qty'] >= temp_qty:
-                buy_price_unit  = buy['cost'] / buy['qty'] if buy['qty'] else 0
-                remainder_cost += temp_qty * buy_price_unit
-                temp_qty        = 0
+                remainder_cost += temp_qty * (buy['cost'] / buy['qty'] if buy['qty'] else 0)
+                temp_qty = 0
             else:
                 remainder_cost += buy['cost']
                 temp_qty       -= buy['qty']
 
-        # Если продаж не было — прибыль 0
         if t_sell_qty == 0:
             total_profit = 0.0
         else:
@@ -451,7 +495,7 @@ def user_profit_view(request):
 
         remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
 
-        # === 2. ФИЛЬТРОВАННАЯ ВЫБОРКА — для таблиц и карточек периода ===
+        # === 2. ФИЛЬТРОВАННАЯ ВЫБОРКА ===
         period_orders = Order.objects.filter(
             user=user,
             created_at__gte=SYSTEM_START
@@ -476,7 +520,6 @@ def user_profit_view(request):
         buy_orders  = period_orders.filter(operation_type='BUY').order_by('-created_at')
         sell_orders = period_orders.filter(operation_type='SELL').order_by('-created_at')
 
-        # === 3. Суммы за период ===
         buy_sum  = float(buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
         sell_sum = float(sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
 
@@ -484,18 +527,22 @@ def user_profit_view(request):
         period_sell_crypto  = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         period_crypto_delta = period_buy_crypto - period_sell_crypto
 
-        # === 4. Сериализация ордеров ===
+        # === 3. Сериализация ===
+        # bank_comm  — считается для BUY и SELL (% или фикс → рубли)
+        # exchange_comm — только для SELL (из exchange_commission_rate)
         def serialize(qs, is_sell=False):
             res = []
             for o in qs:
                 display_id = o.external_id if o.external_id else str(o.id)
 
+                # Комиссия банка — для всех ордеров (BUY и SELL)
                 comm_val = float(o.commission or 0)
                 if o.commission_type == 'PERCENT':
                     bank_comm_rub = float(o.cost or 0) * comm_val / 100
                 else:
                     bank_comm_rub = comm_val
 
+                # Комиссия биржи — только для SELL
                 if is_sell:
                     exch_rate     = float(o.exchange_commission_rate or 0)
                     exchange_comm = float(o.amount or 0) * exch_rate / 100
@@ -511,33 +558,36 @@ def user_profit_view(request):
                     'date':          o.created_at.strftime('%d.%m.%Y %H:%M'),
                     'exchange':      getattr(o, 'exchange_type', ''),
                     'bank':          str(o.bank_detail) if o.bank_detail else '',
-                    'bank_comm':     round(bank_comm_rub, 2),
-                    'exchange_comm': round(exchange_comm, 2),
+                    'bank_comm':     round(bank_comm_rub, 2),   # BUY и SELL
+                    'exchange_comm': round(exchange_comm, 2),   # только SELL
                 })
             return res
 
+        # === 4. Расходы по месяцам ===
+        expenses_by_month = {}
+        for e in UserExpense.objects.filter(user=user):
+            expenses_by_month[e.month] = expenses_by_month.get(e.month, 0) + float(e.amount)
+
         return JsonResponse({
-            'buy_sum':         buy_sum,
-            'buy_count':       buy_orders.count(),
-            'sell_sum':        sell_sum,
-            'sell_count':      sell_orders.count(),
-            'total_sum':       buy_sum + sell_sum,
-            'profit':          total_profit,
-            'crypto_balance':  real_current_balance,
-            'remainder_qty':   remainder_qty,
-            'remainder_cost':  remainder_cost,
-            'remainder_price': remainder_price,
-            'crypto_delta':    period_crypto_delta,
-            'buy_orders':      serialize(buy_orders,  is_sell=False),
-            'sell_orders':     serialize(sell_orders, is_sell=True),
-            'user_shares':     user.profit_shares if isinstance(user.profit_shares, dict) else {},
+            'buy_sum':           buy_sum,
+            'buy_count':         buy_orders.count(),
+            'sell_sum':          sell_sum,
+            'sell_count':        sell_orders.count(),
+            'total_sum':         buy_sum + sell_sum,
+            'profit':            total_profit,
+            'crypto_balance':    real_current_balance,
+            'remainder_qty':     remainder_qty,
+            'remainder_cost':    remainder_cost,
+            'remainder_price':   remainder_price,
+            'crypto_delta':      period_crypto_delta,
+            'buy_orders':        serialize(buy_orders,  is_sell=False),
+            'sell_orders':       serialize(sell_orders, is_sell=True),
+            'user_shares':       user.profit_shares if isinstance(user.profit_shares, dict) else {},
+            'expenses_by_month': expenses_by_month,
         })
 
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
-
-
-
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1050,17 +1100,29 @@ def admin_logout(request):
 
 
 
+from datetime import timezone as dt_timezone
+
+SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
 
-    - Ордера ДО 01.02.2026 игнорируются
-    - Начальный остаток на 01.02.2026 вводится вручную через модалку
-    - FIFO считается с 01.02.2026
-    - remainder_qty защищён от отрицательных значений
-    - Остаток USDT — на конец выбранного месяца
+    Комиссия банка  — учитывается на BUY и SELL (% или фикс → рубли)
+    Комиссия биржи  — только на SELL (из exchange_commission_rate)
+
+    Цепочка:
+      оборот = sell - buy
+      - bank_comm_rub    (BUY + SELL за месяц)
+      - exchange_comm_rub (только SELL за месяц)
+      = gross_profit (FIFO за всё время до конца месяца)
+      - НДФЛ 13%
+      - доля системы X%
+      - расходы пользователя за месяц
+      = net_profit
     """
 
     now       = timezone.now()
@@ -1078,6 +1140,7 @@ def admin_profit_view(request):
         month = now.month
 
     month_str = str(month).zfill(2)
+    share_key = f"{year}-{month_str}"
 
     start_date = timezone.make_aware(datetime(year, month, 1))
     end_date   = timezone.make_aware(
@@ -1086,13 +1149,11 @@ def admin_profit_view(request):
 
     User  = get_user_model()
     users = User.objects.all().order_by('id')
-
     user_stats = []
-    share_key  = f"{year}-{month_str}"
 
     for u in users:
 
-        # === ОСТАТОК USDT НА КОНЕЦ ВЫБРАННОГО МЕСЯЦА (с 01.02.2026) ===
+        # === ОСТАТОК USDT НА КОНЕЦ МЕСЯЦА ===
         bought_until_end = float(
             Order.objects.filter(
                 user=u, operation_type='BUY',
@@ -1109,10 +1170,11 @@ def admin_profit_view(request):
         )
         crypto_balance = max(0.0, bought_until_end - sold_until_end)
 
-        # === FIFO — с 01.02.2026, без фильтра биржи/банка ===
+        # === FIFO — с 01.02.2026 до конца выбранного месяца ===
         all_orders_chrono = Order.objects.filter(
             user=u,
-            created_at__gte=SYSTEM_START
+            created_at__gte=SYSTEM_START,
+            created_at__lt=end_date
         ).order_by('created_at')
 
         t_buy_qty = 0;  t_buy_cost = 0;  t_buy_comm = 0
@@ -1138,7 +1200,6 @@ def admin_profit_view(request):
                 t_sell_comm       += total_comm
                 t_sell_exch_comm  += exchange_comm_val
 
-        # Защита от отрицательного остатка
         remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
         remainder_cost = 0.0
         temp_qty       = remainder_qty
@@ -1147,26 +1208,23 @@ def admin_profit_view(request):
             if temp_qty <= 0:
                 break
             if buy['qty'] >= temp_qty:
-                buy_price_unit  = buy['cost'] / buy['qty'] if buy['qty'] else 0
-                remainder_cost += temp_qty * buy_price_unit
-                temp_qty        = 0
+                remainder_cost += temp_qty * (buy['cost'] / buy['qty'] if buy['qty'] else 0)
+                temp_qty = 0
             else:
                 remainder_cost += buy['cost']
                 temp_qty       -= buy['qty']
 
-        # Если продаж не было — прибыль 0
         if t_sell_qty == 0:
             gross_profit = 0.0
         else:
             equalized_buy_cost = t_buy_cost - remainder_cost
             gross_profit       = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
 
-        # === ОБОРОТ ЗА МЕСЯЦ — с фильтрами ===
+        # === ОБОРОТ И КОМИССИИ ЗА МЕСЯЦ (с фильтрами) ===
         orders = Order.objects.filter(
             user=u,
             created_at__range=(start_date, end_date)
         )
-
         if exchange_filter:
             orders = orders.filter(exchange_type__icontains=exchange_filter)
         if bank_filter_id:
@@ -1179,22 +1237,23 @@ def admin_profit_view(request):
         sell_sum = float(sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
         turnover = sell_sum - buy_sum
 
-        # === КОМИССИИ по SELL-ордерам за месяц ===
-        bank_comm_rub     = 0.0
-        exchange_comm_rub = 0.0
-
-        for o in sell_orders:
+        # Комиссия банка — BUY и SELL
+        bank_comm_rub = 0.0
+        for o in orders:  # все ордера за месяц
             comm_val = float(o.commission or 0)
             if o.commission_type == 'PERCENT':
                 bank_comm_rub += float(o.cost or 0) * comm_val / 100
             else:
                 bank_comm_rub += comm_val
 
+        # Комиссия биржи — только SELL
+        exchange_comm_rub = 0.0
+        for o in sell_orders:
             exch_rate = float(o.exchange_commission_rate or 0)
             if exch_rate > 0:
                 exchange_comm_rub += float(o.amount or 0) * exch_rate / 100
 
-        # === НДФЛ и ДОЛЯ ===
+        # === НДФЛ, ДОЛЯ, РАСХОДЫ → ЧИСТАЯ ПРИБЫЛЬ ===
         ndfl       = gross_profit * 0.13 if gross_profit > 0 else 0
         after_ndfl = gross_profit - ndfl
 
@@ -1203,7 +1262,13 @@ def admin_profit_view(request):
             share_percent = float(u.profit_shares.get(share_key, 20.0))
 
         share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-        net_profit   = after_ndfl - share_amount
+
+        month_expenses = float(
+            UserExpense.objects.filter(user=u, month=share_key)
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+
+        net_profit = after_ndfl - share_amount - month_expenses
 
         user_stats.append({
             'user':                  u,
@@ -1211,14 +1276,15 @@ def admin_profit_view(request):
             'buy_sum':               buy_sum,
             'sell_sum':              sell_sum,
             'turnover':              turnover,
-            'bank_comm_rub':         bank_comm_rub,
-            'exchange_comm_rub':     exchange_comm_rub,
+            'bank_comm_rub':         bank_comm_rub,        # BUY + SELL
+            'exchange_comm_rub':     exchange_comm_rub,    # только SELL
             'total_comm_rub':        bank_comm_rub + exchange_comm_rub,
             'gross_profit':          gross_profit,
             'gross_profit_positive': gross_profit >= 0,
             'ndfl':                  ndfl,
             'share_percent':         share_percent,
             'share_amount':          share_amount,
+            'month_expenses':        month_expenses,
             'net_profit':            net_profit,
             'net_profit_positive':   net_profit >= 0,
             'has_activity':          (buy_sum > 0 or sell_sum > 0),
@@ -1244,6 +1310,7 @@ def admin_profit_view(request):
         'selected_bank':     bank_filter_id,
         'default_banks':     default_banks,
     })
+
 
 
 @login_required(login_url='admin_login')
