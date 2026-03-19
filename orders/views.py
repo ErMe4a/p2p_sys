@@ -5,6 +5,8 @@ import os
 import zipfile
 from datetime import datetime, date, time, timezone as dt_timezone
 
+from itertools import groupby as _groupby
+
 # --- Django ---
 from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
@@ -748,18 +750,33 @@ def admin_users_list(request):
     return render(request, 'custom_admin/users_list.html', {'users': users})
 
 
+
+def _month_name(n):
+    return ["Январь","Февраль","Март","Апрель","Май","Июнь",
+            "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"][n - 1]
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def export_excel_report(request):
     """
-    Экспорт отчета в Excel.
+    Экспорт отчёта в Excel — один лист.
 
-    Логика:
-    - Ордера ДО 01.02.2026 не берём — начальный остаток вводится вручную
-    - Исторический ордер "Остаток (до 1 фев)" отображается как первая строка
-      с датой 01.02.2026, количеством и курсом
-    - FIFO считается начиная с 01.02.2026
+    Если период = 1 месяц:
+      строки ордеров → итог в конце
+
+    Если период > 1 месяца:
+      строки ордеров февраля → итоги за февраль
+      строки ордеров марта  → итоги за март
+      ...
+      общий итог за весь период
+
+    - Ордера ДО 01.02.2026 не берём
+    - Исторический ордер "Остаток (до 1 фев)" — первая строка
+    - Комиссия биржи (колонка M) — только SELL, из exchange_commission_rate
+    - FIFO накопленный — остаток и прибыль считаются нарастающим итогом
     - remainder_qty защищён от отрицательных значений
+    - Если продаж не было — прибыль 0
     """
     user_id    = request.GET.get('user_id')
     start_date = request.GET.get('start')
@@ -767,16 +784,13 @@ def export_excel_report(request):
     bank_id    = request.GET.get('bank_id')
     op_type    = request.GET.get('type')
 
-    # Граница — начало системы учёта
     SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
-    # === Ордера начиная с 01.02.2026 ===
     orders = Order.objects.filter(
         user_id=user_id,
         created_at__gte=SYSTEM_START
     ).order_by('created_at')
 
-    # Фильтры из формы
     if start_date: orders = orders.filter(created_at__date__gte=start_date)
     if end_date:   orders = orders.filter(created_at__date__lte=end_date)
     if bank_id and bank_id.isdigit(): orders = orders.filter(bank_detail_id=bank_id)
@@ -784,8 +798,7 @@ def export_excel_report(request):
 
     orders_list = list(orders)
 
-    # === Исторический ордер — показываем как первую строку ===
-    # Он отображается в таблице с датой 01.02.2026, кол-вом и курсом
+    # Исторический ордер — всегда первый
     init_order = Order.objects.filter(
         user_id=user_id,
         exchange_type="Остаток (до 1 фев)"
@@ -796,8 +809,15 @@ def export_excel_report(request):
         if init_order.id not in existing_ids:
             orders_list = [init_order] + orders_list
 
-    # ======================================================================
+    # Определяем сколько месяцев в периоде
+    months_in_period = set()
+    for o in orders_list:
+        months_in_period.add((o.created_at.year, o.created_at.month))
+    multi_month = len(months_in_period) > 1
 
+    # =====================================================================
+    # Книга и стили
+    # =====================================================================
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Отчет"
@@ -806,7 +826,9 @@ def export_excel_report(request):
                           top=Side(style='thin'),  bottom=Side(style='thin'))
     bold_font    = Font(bold=True)
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left_align   = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
+    # Шапка
     ws.merge_cells('A1:M1')
     ws['A1'] = "Учет приобретенной и проданной цифровой валюты (ЦВ)"
     ws['A1'].font      = Font(size=14, bold=True)
@@ -825,117 +847,165 @@ def export_excel_report(request):
         "Кол-во", "Курс", "Стоимость", "Комиссия", "Комиссия биржи"
     ])
 
-    # Переменные для итогов
-    t_buy_qty  = 0; t_buy_cost  = 0; t_buy_comm  = 0
-    t_sell_qty = 0; t_sell_cost = 0; t_sell_comm = 0; t_sell_exch_comm = 0
+    # =====================================================================
+    # Глобальные счётчики FIFO (накопленные по всем месяцам)
+    # =====================================================================
+    g_buy_qty  = 0; g_buy_cost  = 0; g_buy_comm  = 0
+    g_sell_qty = 0; g_sell_cost = 0; g_sell_comm = 0; g_sell_exch = 0
+    g_buys     = []
+    idx        = 0  # сквозная нумерация строк
 
-    buys_list = []
-    idx = 0
+    def _fifo_remainder(buys, sell_qty, sell_exch):
+        """Считает remainder_qty, remainder_cost по FIFO"""
+        rqty  = max(0.0, sum(b['qty'] for b in buys) - sell_qty - sell_exch)
+        rcost = 0.0
+        tmp   = rqty
+        for b in reversed(buys):
+            if tmp <= 0: break
+            if b['qty'] >= tmp:
+                rcost += tmp * (b['cost'] / b['qty'] if b['qty'] else 0)
+                tmp = 0
+            else:
+                rcost += b['cost']
+                tmp   -= b['qty']
+        return rqty, rcost
 
-    for o in orders_list:
-        comm_val   = float(o.commission or 0)
-        total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
+    def _write_summary(ws, label_suffix, buy_qty, buy_cost, buy_comm,
+                       sell_qty, sell_cost, sell_comm, sell_exch,
+                       buys_snapshot):
+        """Пишет 4 итоговые строки после блока ордеров"""
+        rqty, rcost = _fifo_remainder(buys_snapshot, sell_qty, sell_exch)
+        rprice      = (rcost / rqty) if rqty > 0 else 0
 
-        amount_float = float(o.amount or 0)
-        cost_float   = float(o.cost   or 0)
-        price_float  = float(o.price  or 0)
-
-        if o.operation_type == 'BUY':
-            t_buy_qty  += amount_float
-            t_buy_cost += cost_float
-            t_buy_comm += total_comm
-            buys_list.append({'qty': amount_float, 'cost': cost_float})
-
-            b_data = [amount_float, price_float, cost_float, total_comm]
-            s_data = ["", "", "", "", ""]
-
-        else:  # SELL
-            hist_percent      = float(o.exchange_commission_rate or 0)
-            exchange_comm_val = (amount_float * hist_percent) / 100
-            t_sell_qty        += amount_float
-            t_sell_cost       += cost_float
-            t_sell_comm       += total_comm
-            t_sell_exch_comm  += exchange_comm_val
-
-            b_data = ["", "", "", ""]
-            s_data = [amount_float, price_float, cost_float, total_comm, exchange_comm_val]
-
-        idx += 1
-        ws.append([
-            idx,
-            o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
-            o.external_id,
-            "USDT",
-            *b_data,
-            *s_data
-        ])
-
-    # === РАСЧЕТ НИЖНЕЙ ПЛАШКИ (FIFO) ===
-    # Защита от отрицательного остатка
-    remainder_qty  = max(0.0, t_buy_qty - t_sell_qty - t_sell_exch_comm)
-    remainder_cost = 0.0
-    temp_qty       = remainder_qty
-
-    for buy in reversed(buys_list):
-        if temp_qty <= 0:
-            break
-        if buy['qty'] >= temp_qty:
-            buy_price_unit  = buy['cost'] / buy['qty'] if buy['qty'] else 0
-            remainder_cost += temp_qty * buy_price_unit
-            temp_qty        = 0
+        if sell_qty == 0:
+            eq_buy = 0.0
+            profit = 0.0
         else:
-            remainder_cost += buy['cost']
-            temp_qty       -= buy['qty']
+            eq_buy = buy_cost - rcost
+            profit = sell_cost - eq_buy - buy_comm - sell_comm
 
-    # Если продаж не было — прибыль 0
-    if t_sell_qty == 0:
-        equalized_buy_cost = 0.0
-        profit             = 0.0
+        ws.append([])
+        ws.append([
+            f"Торговый результат{label_suffix}:", "", "", "",
+            buy_qty, "", buy_cost, buy_comm,
+            sell_qty, "", sell_cost, sell_comm, sell_exch
+        ])
+        ws.append([
+            f"Реализованный результат{label_suffix}:", "", "", "",
+            sell_qty, "", eq_buy, sell_comm,
+            sell_qty, "", sell_cost, "", ""
+        ])
+        ws.append([
+            f"Прибыль{label_suffix}:", "", "", "",
+            profit, "", "", "", "", "", "", "", ""
+        ])
+        ws.append([
+            f"Остаток (нереализованная ЦВ){label_suffix}:", "", "", "",
+            rqty, rprice, rcost, 0, "", "", "", "", ""
+        ])
+        ws.append([])
+
+    # =====================================================================
+    # Обходим ордера — группируем по месяцам если нужно
+    # =====================================================================
+    def get_month_key(o):
+        return (o.created_at.year, o.created_at.month)
+
+    if multi_month:
+        # Месячные счётчики (только за текущий месяц)
+        for (yr, mo), month_orders in _groupby(orders_list, key=get_month_key):
+            m_buy_qty  = 0; m_buy_cost  = 0; m_buy_comm  = 0
+            m_sell_qty = 0; m_sell_cost = 0; m_sell_comm = 0; m_sell_exch = 0
+
+            for o in month_orders:
+                comm_val   = float(o.commission or 0)
+                total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
+                amount_f   = float(o.amount or 0)
+                cost_f     = float(o.cost   or 0)
+                price_f    = float(o.price  or 0)
+
+                if o.operation_type == 'BUY':
+                    m_buy_qty  += amount_f; m_buy_cost += cost_f; m_buy_comm += total_comm
+                    g_buy_qty  += amount_f; g_buy_cost += cost_f; g_buy_comm += total_comm
+                    g_buys.append({'qty': amount_f, 'cost': cost_f})
+                    b_data = [amount_f, price_f, cost_f, total_comm]
+                    s_data = ["", "", "", "", ""]
+                else:
+                    exch_c = float(o.exchange_commission_rate or 0)
+                    exch_v = (amount_f * exch_c) / 100
+                    m_sell_qty  += amount_f; m_sell_cost += cost_f; m_sell_comm += total_comm; m_sell_exch += exch_v
+                    g_sell_qty  += amount_f; g_sell_cost += cost_f; g_sell_comm += total_comm; g_sell_exch += exch_v
+                    b_data = ["", "", "", ""]
+                    s_data = [amount_f, price_f, cost_f, total_comm, exch_v]
+
+                idx += 1
+                ws.append([idx, o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
+                           o.external_id, "USDT", *b_data, *s_data])
+
+            # Итоги за месяц (FIFO накопленный до конца этого месяца)
+            _write_summary(ws, f" за {_month_name(mo)} {yr}",
+                           m_buy_qty, m_buy_cost, m_buy_comm,
+                           m_sell_qty, m_sell_cost, m_sell_comm, m_sell_exch,
+                           list(g_buys))  # snapshot накопленных покупок
+
+        # Общий итог за весь период
+        _write_summary(ws, " за весь период",
+                       g_buy_qty, g_buy_cost, g_buy_comm,
+                       g_sell_qty, g_sell_cost, g_sell_comm, g_sell_exch,
+                       g_buys)
+
     else:
-        equalized_buy_cost = t_buy_cost - remainder_cost
-        profit             = t_sell_cost - equalized_buy_cost - t_buy_comm - t_sell_comm
+        # Один месяц — просто строки и один итог
+        for o in orders_list:
+            comm_val   = float(o.commission or 0)
+            total_comm = (float(o.cost) * comm_val / 100) if o.commission_type == 'PERCENT' else comm_val
+            amount_f   = float(o.amount or 0)
+            cost_f     = float(o.cost   or 0)
+            price_f    = float(o.price  or 0)
 
-    remainder_price = (remainder_cost / remainder_qty) if remainder_qty > 0 else 0
+            if o.operation_type == 'BUY':
+                g_buy_qty  += amount_f; g_buy_cost += cost_f; g_buy_comm += total_comm
+                g_buys.append({'qty': amount_f, 'cost': cost_f})
+                b_data = [amount_f, price_f, cost_f, total_comm]
+                s_data = ["", "", "", "", ""]
+            else:
+                exch_c = float(o.exchange_commission_rate or 0)
+                exch_v = (amount_f * exch_c) / 100
+                g_sell_qty  += amount_f; g_sell_cost += cost_f; g_sell_comm += total_comm; g_sell_exch += exch_v
+                b_data = ["", "", "", ""]
+                s_data = [amount_f, price_f, cost_f, total_comm, exch_v]
 
-    # === ЗАПИСЬ ИТОГОВ В EXCEL ===
-    ws.append([])
+            idx += 1
+            ws.append([idx, o.created_at.strftime('%d.%m.%Y') if o.created_at else "",
+                       o.external_id, "USDT", *b_data, *s_data])
 
-    ws.append([
-        "Торговый результат:", "", "", "",
-        t_buy_qty, "", t_buy_cost, t_buy_comm,
-        t_sell_qty, "", t_sell_cost, t_sell_comm, t_sell_exch_comm
-    ])
-    ws.append([
-        "Уравненный результат:", "", "", "",
-        t_sell_qty, "", equalized_buy_cost, t_sell_comm,
-        t_sell_qty, "", t_sell_cost, "", ""
-    ])
-    ws.append([
-        "Прибыль:", "", "", "",
-        profit, "", "", "",
-        "", "", "", "", ""
-    ])
-    ws.append([
-        "Остаток (не реализованная ЦВ):", "", "", "",
-        remainder_qty, remainder_price, remainder_cost, 0,
-        "", "", "", "", ""
-    ])
+        _write_summary(ws, "",
+                       g_buy_qty, g_buy_cost, g_buy_comm,
+                       g_sell_qty, g_sell_cost, g_sell_comm, g_sell_exch,
+                       g_buys)
 
+    # =====================================================================
     # Оформление
+    # =====================================================================
+    summary_kw = ('результат', 'прибыль', 'остаток')
+
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=13):
         for cell in row:
             cell.border = thin_border
-            if cell.column == 1 and cell.row > idx + 3:
-                cell.alignment = Alignment(horizontal='left')
+            val = str(cell.value or '').lower()
+            if cell.column == 1 and any(k in val for k in summary_kw):
+                cell.alignment = left_align
+                cell.font      = bold_font
+            elif cell.row <= 3:
+                cell.alignment = center_align
+                cell.font      = bold_font
             else:
-                cell.alignment = center_align if cell.row <= 3 else Alignment(horizontal='center')
-            if cell.row <= 3:
-                cell.font = bold_font
+                cell.alignment = Alignment(horizontal='center')
 
     col_widths = {
-        'A': 35, 'B': 15, 'C': 25, 'D': 15,
-        'E': 15, 'F': 15, 'G': 18, 'H': 18,
-        'I': 15, 'J': 15, 'K': 18, 'L': 18, 'M': 18
+        'A': 38, 'B': 14, 'C': 24, 'D': 10,
+        'E': 14, 'F': 12, 'G': 16, 'H': 16,
+        'I': 14, 'J': 12, 'K': 16, 'L': 16, 'M': 16
     }
     for k, v in col_widths.items():
         ws.column_dimensions[k].width = v
@@ -947,7 +1017,6 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
-
 
 def admin_login(request):
     """Вход в админку"""
