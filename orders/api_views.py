@@ -12,16 +12,20 @@ from .receipt_service import should_make_receipt, create_or_update_and_send_rece
 
 # --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
 
+# --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
+
 EXCHANGE_ID_TO_NAME = {
     1: "Bybit",
     2: "HTX",
-    3: "MEXC"
+    3: "MEXC",
+    4: "Gate"  # <--- ДОБАВИЛИ GATE
 }
 
 EXCHANGE_NAME_TO_ID = {
     "Bybit": 1, "BYBIT": 1,
     "HTX": 2,
-    "MEXC": 3
+    "MEXC": 3,
+    "Gate": 4, "GATE": 4  # <--- ДОБАВИЛИ GATE
 }
 
 def get_exchange_id(name):
@@ -220,6 +224,8 @@ def order(request):
         elif 'mexc' in ex_lower: user_comm_rate = request.user.mexc_commission
         elif 'bitget' in ex_lower: user_comm_rate = request.user.bitget_commission
         elif 'telegram' in ex_lower: user_comm_rate = request.user.telegram_commission
+        # Добавляем Gate (используем getattr на случай, если в модели User еще нет поля gate_commission)
+        elif 'gate' in ex_lower: user_comm_rate = getattr(request.user, 'gate_commission', 0.0)
             
         o.exchange_commission_rate = user_comm_rate
     
