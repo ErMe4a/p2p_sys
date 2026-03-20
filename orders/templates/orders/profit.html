@@ -214,6 +214,17 @@
     <div id="expensesView" class="hidden">
         <div class="form-section" style="background: rgba(255,193,7,0.05); border-color: rgba(255,193,7,0.2);">
             <h5 style="margin-top: 0; margin-bottom: 16px; color: var(--warn); font-size: 15px;">➕ Добавить новый расход</h5>
+            
+            <div style="margin-bottom: 14px;">
+                <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Быстрый выбор</label>
+                <select class="input-profit" id="expPreset" onchange="applyPreset()">
+                    <option value="">— выбрать готовый вариант —</option>
+                    <option value="Подписка Сбер на 1.5кк|8090">Подписка Сбер на 1.5кк — 8 090 ₽</option>
+                    <option value="Подписка Сбер на 1кк|3690">Подписка Сбер на 1кк — 3 690 ₽</option>
+                    <option value="Подписка Сбер на 750к|1190">Подписка Сбер на 750к — 1 190 ₽</option>
+                </select>
+            </div>
+
             <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end;">
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Наименование (напр: Подписка TG)</label>
@@ -296,7 +307,7 @@
             currentStart = '';
             currentEnd = '';
             document.getElementById('btnMonth').classList.add('active');
-            loadMonths(); // Изменено с loadTurnover на loadMonths
+            loadMonths(); 
         } else if (viewName === 'expenses') {
             document.getElementById('btnExpenses').classList.add('active');
             document.getElementById('filtersRow').classList.add('hidden');
@@ -305,7 +316,6 @@
         }
     }
 
-    // Обработчик для фильтров
     function handleFilterChange() {
         if (currentView === 'today') {
             loadTurnover();
@@ -315,6 +325,17 @@
     }
 
     // --- ЛОГИКА РАСХОДОВ ---
+    function applyPreset() {
+        const val = document.getElementById('expPreset').value;
+        if (!val) return;
+        
+        const [name, amount] = val.split('|');
+        document.getElementById('expName').value   = name;
+        document.getElementById('expAmount').value = amount;
+        
+        document.getElementById('expPreset').value = '';
+    }
+
     async function loadExpenses() {
         try {
             const res = await fetch(`${window.location.pathname}?action=get_expenses`);
@@ -444,7 +465,6 @@
         document.getElementById('monthView').classList.remove('hidden');
 
         try {
-            // Передаем также параметры фильтров биржи/банка, если они выбраны
             const exchange = document.getElementById('exchangeSelect').value;
             const bank = document.getElementById('bankSelect').value;
             
@@ -467,45 +487,47 @@
             return;
         }
 
-        // Сортируем по убыванию (новые сверху)
         const sorted = [...months].sort((a, b) => b.key.localeCompare(a.key));
 
         document.getElementById('monthlySummaryTable').innerHTML = sorted.map(m => {
             const label      = `${monthNames[m.month - 1]} ${m.year}`;
             const grossColor = m.gross >= 0 ? 'var(--ok)' : 'var(--danger)';
             const netColor   = m.net_profit >= 0 ? '#e879f9' : 'var(--danger)';
-            const expHtml    = m.month_expenses > 0
-                ? `<div style="font-size:11px;color:var(--warn);margin-top:2px;">(-${formatMoney(m.month_expenses)} ₽ расх.)</div>`
-                : '';
 
             return `<tr>
                 <td style="font-weight:600;color:var(--text);">${label}</td>
+                
                 <td style="font-weight:500;">
                     <div style="color:var(--ok);font-size:11px;">Sell: ${formatMoney(m.sell_cost)} ₽</div>
                     <div style="color:var(--danger);font-size:11px;">Buy: ${formatMoney(m.buy_cost)} ₽</div>
                     <div style="color:var(--muted);font-size:11px;">Перенос: ${formatMoney(m.prev_balance_cost)} ₽</div>
                 </td>
-                <td style="color:var(--muted);font-size:12px;">
-                    ${formatMoney(m.buy_comm + m.sell_comm)} ₽
+                
+                <td style="font-size:12px;">
+                    <div style="color:var(--muted);">Банк: <b>${formatMoney(m.buy_comm + m.sell_comm)} ₽</b></div>
+                    <div style="color:var(--muted);">Биржа: <b>${formatMoney(m.exch_usdt)} USDT</b></div>
                 </td>
+                
                 <td style="color:${grossColor};font-weight:600;">
                     ${m.gross >= 0 ? '+' : ''}${formatMoney(m.gross)} ₽
                 </td>
+                
                 <td style="color:var(--warn);">${formatMoney(m.ndfl)} ₽</td>
+                
                 <td style="color:var(--accent);">
                     ${m.share_percent}%
                     <span style="color:var(--muted);font-size:11px;">(${formatMoney(m.share_amount)} ₽)</span>
+                    ${m.month_expenses > 0 ? `<div style="color:var(--warn);font-size:11px;margin-top:2px;">Расходы: ${formatMoney(m.month_expenses)} ₽</div>` : ''}
                 </td>
+                
                 <td class="amount-cell" style="color:${netColor};font-size:14px;">
                     ${m.net_profit >= 0 ? '+' : ''}${formatMoney(m.net_profit)} ₽
-                    ${expHtml}
                 </td>
             </tr>`;
         }).join('');
     }
 
-
-    // --- ОСНОВНАЯ ЛОГИКА ДЛЯ "СЕГОДНЯ" ---
+    // --- ОСНОВ ЛОГИКА ДЛЯ "СЕГОДНЯ" ---
     async function loadTurnover() {
         const exchange = document.getElementById('exchangeSelect').value;
         const bank = document.getElementById('bankSelect').value; 
@@ -533,7 +555,6 @@
     }
 
     function renderData(data) {
-        // Эта функция теперь вызывается только для вкладки "Сегодня"
         const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
         const periodInfo = document.getElementById('periodInfo');
         
@@ -549,7 +570,6 @@
         document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
         
-        // Значения берутся напрямую с бэкенда (без JS математики)
         const grossProfit  = safeFloat(data.gross);
         const ndfl         = safeFloat(data.ndfl);
         const shareAmount  = safeFloat(data.share_amount);

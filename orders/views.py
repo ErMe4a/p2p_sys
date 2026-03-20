@@ -487,6 +487,129 @@ def _calc_period_profit(user, period_start, period_end):
         'gross':             gross,
     }
 
+import json as _json
+from datetime import timezone as dt_timezone
+
+# Начало системы учёта — ордера до этой даты не берём
+SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
+
+
+def _calc_period_profit(user, period_start, period_end):
+    """
+    Считает прибыль за период по логике Excel.
+
+    Шаг 1. Переходящий остаток с предыдущего периода:
+        Берём все ордера с SYSTEM_START до начала периода
+        остаток_qty  = BUY_qty - SELL_qty - комса_биржи_usdt
+        остаток_cost = остаток_qty * последний_курс_BUY
+
+    Шаг 2. Добавляем покупки текущего периода:
+        итого_buy_qty  = остаток_qty  + BUY_qty за период
+        итого_buy_cost = остаток_cost + BUY_cost за период
+
+    Шаг 3. Остаток на конец периода:
+        remainder_qty  = итого_buy_qty - SELL_qty - комса_биржи за период
+        remainder_cost = remainder_qty * последний_курс_BUY периода
+
+    Шаг 4. Себестоимость проданного:
+        eq_buy_cost = итого_buy_cost - remainder_cost
+
+    Шаг 5. Прибыль до налогов:
+        gross = SELL_cost - eq_buy_cost - комса_банка_BUY - комса_банка_SELL
+    """
+    # --- Шаг 1: переходящий остаток ---
+    prev_orders = Order.objects.filter(
+        user=user,
+        created_at__gte=SYSTEM_START,
+        created_at__lt=period_start
+    ).order_by('created_at')
+
+    prev_buy_qty    = 0.0
+    prev_buy_cost   = 0.0
+    prev_sell_qty   = 0.0
+    prev_exch_usdt  = 0.0
+    prev_last_price = 0.0
+
+    for o in prev_orders:
+        amt = float(o.amount or 0)
+        if o.operation_type == 'BUY':
+            prev_buy_qty    += amt
+            prev_buy_cost   += float(o.cost or 0)
+            prev_last_price  = float(o.price or 0)
+        else:
+            exch_rate = float(o.exchange_commission_rate or 0)
+            prev_sell_qty   += amt
+            prev_exch_usdt  += amt * exch_rate / 100
+
+    prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
+    prev_balance_cost = prev_balance_qty * prev_last_price
+
+    # --- Шаг 2: ордера текущего периода ---
+    period_orders = Order.objects.filter(
+        user=user,
+        created_at__gte=period_start,
+        created_at__lt=period_end
+    ).order_by('created_at')
+
+    buy_qty    = 0.0; buy_cost   = 0.0; buy_comm   = 0.0
+    sell_qty   = 0.0; sell_cost  = 0.0; sell_comm  = 0.0
+    exch_usdt  = 0.0
+    last_price = prev_last_price
+
+    for o in period_orders:
+        amt        = float(o.amount or 0)
+        cost       = float(o.cost   or 0)
+        price      = float(o.price  or 0)
+        comm_val   = float(o.commission or 0)
+        total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
+
+        if o.operation_type == 'BUY':
+            buy_qty    += amt
+            buy_cost   += cost
+            buy_comm   += total_comm
+            last_price  = price
+        else:
+            exch_rate  = float(o.exchange_commission_rate or 0)
+            sell_qty   += amt
+            sell_cost  += cost
+            sell_comm  += total_comm
+            exch_usdt  += amt * exch_rate / 100
+
+    # --- Шаг 2: суммируем с переходящим остатком ---
+    total_buy_qty  = prev_balance_qty  + buy_qty
+    total_buy_cost = prev_balance_cost + buy_cost
+
+    # --- Шаг 3: остаток на конец периода ---
+    remainder_qty  = max(0.0, total_buy_qty - sell_qty - exch_usdt)
+    remainder_cost = remainder_qty * last_price
+
+    # --- Шаг 4: себестоимость проданного ---
+    eq_buy_cost = total_buy_cost - remainder_cost
+
+    # --- Шаг 5: прибыль до налогов ---
+    if sell_qty == 0:
+        gross = 0.0
+    else:
+        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm
+
+    return {
+        'prev_balance_qty':  prev_balance_qty,
+        'prev_balance_cost': prev_balance_cost,
+        'buy_qty':           buy_qty,
+        'buy_cost':          buy_cost,
+        'buy_comm':          buy_comm,
+        'sell_qty':          sell_qty,
+        'sell_cost':         sell_cost,
+        'sell_comm':         sell_comm,
+        'exch_usdt':         exch_usdt,
+        'total_buy_qty':     total_buy_qty,
+        'total_buy_cost':    total_buy_cost,
+        'remainder_qty':     remainder_qty,
+        'remainder_cost':    remainder_cost,
+        'eq_buy_cost':       eq_buy_cost,
+        'gross':             gross,
+    }
+
 
 @login_required
 def user_profit_view(request):
@@ -608,8 +731,9 @@ def user_profit_view(request):
                 'remainder_qty':     round(calc['remainder_qty'],     2),
                 'remainder_cost':    round(calc['remainder_cost'],    2),
                 'eq_buy_cost':       round(calc['eq_buy_cost'],       2),
-                'buy_comm':          round(calc['buy_comm'],  2),  # комса банка BUY
-                'sell_comm':         round(calc['sell_comm'], 2),  # комса банка SELL
+                'buy_comm':          round(calc['buy_comm'],       2),  # комса банка BUY
+                'sell_comm':         round(calc['sell_comm'],      2),  # комса банка SELL
+                'exch_usdt':         round(calc['exch_usdt'],      2),  # комса биржи USDT
                 'gross':             round(gross,          2),
                 'ndfl':              round(ndfl,           2),
                 'after_ndfl':        round(after_ndfl,     2),
@@ -759,7 +883,6 @@ def user_profit_view(request):
     # GET — отдаём страницу
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
-
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
