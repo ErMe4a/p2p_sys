@@ -70,6 +70,8 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         payment_address = "https://www.bitget.com/"
     elif "telegram" in exchange_type:     # <-- Добавлено
         payment_address = "https://telegram.org/"
+    elif "gate" in exchange_type:
+        payment_address = "https://www.gate.com/"
     else:
         # По умолчанию Bybit
         payment_address = "https://www.bybit.com/"
