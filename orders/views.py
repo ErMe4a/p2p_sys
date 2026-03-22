@@ -660,11 +660,11 @@ def user_profit_view(request):
         user_shares = user.profit_shares if isinstance(user.profit_shares, dict) else {}
 
         months_data = []
+        from zoneinfo import ZoneInfo
+        MSK = ZoneInfo('Europe/Moscow')
         for (yr, mo) in sorted(months_with_orders):
-            month_start = timezone.make_aware(datetime(yr, mo, 1))
-            month_end   = timezone.make_aware(
-                datetime(yr + 1, 1, 1) if mo == 12 else datetime(yr, mo + 1, 1)
-            )
+            month_start = datetime(yr, mo, 1, tzinfo=MSK)
+            month_end   = datetime(yr + 1, 1, 1, tzinfo=MSK) if mo == 12 else datetime(yr, mo + 1, 1, tzinfo=MSK)
             share_key = f"{yr}-{str(mo).zfill(2)}"
 
             # Та же функция что у админа — цифры совпадут
@@ -1386,12 +1386,6 @@ def admin_logout(request):
 
 
 
-from datetime import timezone as dt_timezone
-
-# Начало системы учёта
-SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
-
-
 def _calc_month_profit_filtered(user, month_start, month_end,
                                  exchange_filter='', bank_filter_id=''):
     """
@@ -1558,11 +1552,13 @@ def admin_profit_view(request):
     month_str  = str(month).zfill(2)
     share_key  = f"{year}-{month_str}"
 
-    # Границы выбранного месяца
-    month_start = timezone.make_aware(datetime(year, month, 1))
-    month_end   = timezone.make_aware(
-        datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
-    )
+    # Границы выбранного месяца — в МСК чтобы совпадать с Excel
+    # Ордера созданные 31.01 в 21-23 UTC = 01.02 в 00-02 МСК
+    # должны попадать в февраль как у Макса
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+    month_start = datetime(year, month, 1, tzinfo=MSK)
+    month_end   = datetime(year + 1, 1, 1, tzinfo=MSK) if month == 12 else datetime(year, month + 1, 1, tzinfo=MSK)
 
     User  = get_user_model()
     users = User.objects.all().order_by('id')
@@ -1637,6 +1633,18 @@ def admin_profit_view(request):
             'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
         })
 
+    # Итоговые карточки по всем пользователям
+    summary = {
+        'buy_sum':   sum(s['month_buy_cost']  for s in user_stats),
+        'sell_sum':  sum(s['month_sell_cost'] for s in user_stats),
+        'turnover':  sum(s['month_sell_cost'] - s['month_buy_cost'] for s in user_stats),
+        'gross':     sum(s['gross']           for s in user_stats),
+        'ndfl':      sum(s['ndfl']            for s in user_stats),
+        'our_share': sum(s['share_amount']    for s in user_stats),
+        'expenses':  sum(s['month_expenses']  for s in user_stats),
+        'net':       sum(s['net_profit']      for s in user_stats),
+    }
+
     months_list = [
         {'num': '01', 'name': 'Янв'},  {'num': '02', 'name': 'Февр'},
         {'num': '03', 'name': 'Март'}, {'num': '04', 'name': 'Апр'},
@@ -1650,6 +1658,7 @@ def admin_profit_view(request):
 
     return render(request, 'custom_admin/profit_list.html', {
         'user_stats':        user_stats,
+        'summary':           summary,
         'current_year':      year,
         'current_month':     month_str,
         'months_list':       months_list,
@@ -1657,7 +1666,6 @@ def admin_profit_view(request):
         'selected_bank':     bank_filter_id,
         'default_banks':     default_banks,
     })
-
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

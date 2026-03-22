@@ -20,9 +20,52 @@
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
     
-    /* Классы для замены inline-стилей (чтобы редактор не ругался) */
+    /* Классы для замены inline-стилей */
     .text-net-profit { color: #e879f9 !important; }
     .inactive-row { opacity: 0.4; }
+
+    /* --- Стили для 6 карточек статистики --- */
+    .summary-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+    .summary-card {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border-color);
+        padding: 16px;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        transition: transform 0.2s;
+    }
+    .summary-card:hover {
+        transform: translateY(-2px);
+        background: rgba(255, 255, 255, 0.06);
+    }
+    .summary-card .label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-weight: 600;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+    }
+    .summary-card .value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        font-family: 'Inter', monospace;
+    }
+    
+    /* Цвета для метрик в карточках */
+    .c-sell .value { color: #10b981; }     /* Продажи - Зеленый */
+    .c-buy .value { color: #ef4444; }      /* Покупки - Красный */
+    .c-volume .value { color: #3b82f6; }   /* Оборот - Синий */
+    .c-gross .value { color: #f59e0b; }    /* Грязная - Оранжевый */
+    .c-share .value { color: #8b5cf6; }    /* Доля - Фиолетовый */
+    .c-net .value { color: #e879f9; }      /* Чистая - Розовый */
 </style>
 {% endblock %}
 
@@ -65,6 +108,33 @@
                 {{ m.name }}
             </a>
         {% endfor %}
+    </div>
+
+    <div class="summary-cards">
+        <div class="summary-card c-sell">
+            <div class="label">🟢 Продажи</div>
+            <div class="value"><span class="money">{{ summary.sell_sum }}</span></div>
+        </div>
+        <div class="summary-card c-buy">
+            <div class="label">🔴 Покупки</div>
+            <div class="value"><span class="money">{{ summary.buy_sum }}</span></div>
+        </div>
+        <div class="summary-card c-volume">
+            <div class="label">🔵 Оборот</div>
+            <div class="value"><span class="money">{{ summary.turnover }}</span></div>
+        </div>
+        <div class="summary-card c-gross">
+            <div class="label">🟡 Грязная прибыль</div>
+            <div class="value"><span class="money">{{ summary.gross }}</span></div>
+        </div>
+        <div class="summary-card c-share">
+            <div class="label">💜 Наша доля</div>
+            <div class="value"><span class="money">{{ summary.our_share }}</span></div>
+        </div>
+        <div class="summary-card c-net">
+            <div class="label">🌸 Чистая прибыль</div>
+            <div class="value"><span class="money">{{ summary.net }}</span></div>
+        </div>
     </div>
 
     <div class="table-responsive">
