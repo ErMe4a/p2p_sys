@@ -371,22 +371,24 @@ def delete_unprocessed_order(request, pk):
 
 
 
-def _calc_period_profit(user, period_start, period_end):
+def _calc_month_profit_for_user(user, month_start, month_end):
     """
-    Считает прибыль за период по логике Excel.
+    Считает прибыль за месяц по логике Excel.
+    Используется и в user_profit_view и в admin_profit_view —
+    гарантирует совпадение цифр между страницами.
 
     Шаг 1. Переходящий остаток с предыдущего периода:
-        Берём все ордера с SYSTEM_START до начала периода
+        Берём все ордера с SYSTEM_START до начала месяца
         остаток_qty  = BUY_qty - SELL_qty - комса_биржи_usdt
         остаток_cost = остаток_qty * последний_курс_BUY
 
-    Шаг 2. Добавляем покупки текущего периода:
-        итого_buy_qty  = остаток_qty  + BUY_qty за период
-        итого_buy_cost = остаток_cost + BUY_cost за период
+    Шаг 2. Добавляем покупки текущего месяца:
+        итого_buy_qty  = остаток_qty  + BUY_qty за месяц
+        итого_buy_cost = остаток_cost + BUY_cost за месяц
 
-    Шаг 3. Остаток на конец периода:
-        remainder_qty  = итого_buy_qty - SELL_qty - комса_биржи за период
-        remainder_cost = remainder_qty * последний_курс_BUY периода
+    Шаг 3. Остаток на конец месяца:
+        remainder_qty  = итого_buy_qty - SELL_qty за месяц - комса_биржи за месяц
+        remainder_cost = remainder_qty * последний_курс_BUY месяца
 
     Шаг 4. Себестоимость проданного:
         eq_buy_cost = итого_buy_cost - remainder_cost
@@ -398,7 +400,7 @@ def _calc_period_profit(user, period_start, period_end):
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
-        created_at__lt=period_start
+        created_at__lt=month_start
     ).order_by('created_at')
 
     prev_buy_qty    = 0.0
@@ -421,19 +423,21 @@ def _calc_period_profit(user, period_start, period_end):
     prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
     prev_balance_cost = prev_balance_qty * prev_last_price
 
-    # --- Шаг 2: ордера текущего периода ---
-    period_orders = Order.objects.filter(
+    # --- Шаг 2: ордера текущего месяца ---
+    month_orders = Order.objects.filter(
         user=user,
-        created_at__gte=period_start,
-        created_at__lt=period_end
+        created_at__gte=month_start,
+        created_at__lt=month_end
     ).order_by('created_at')
 
-    buy_qty    = 0.0; buy_cost   = 0.0; buy_comm   = 0.0
-    sell_qty   = 0.0; sell_cost  = 0.0; sell_comm  = 0.0
-    exch_usdt  = 0.0
-    last_price = prev_last_price
+    month_buy_qty    = 0.0; month_buy_cost   = 0.0
+    month_buy_comm   = 0.0
+    month_sell_qty   = 0.0; month_sell_cost  = 0.0
+    month_sell_comm  = 0.0
+    month_exch_usdt  = 0.0
+    month_last_price = prev_last_price
 
-    for o in period_orders:
+    for o in month_orders:
         amt        = float(o.amount or 0)
         cost       = float(o.cost   or 0)
         price      = float(o.price  or 0)
@@ -441,44 +445,40 @@ def _calc_period_profit(user, period_start, period_end):
         total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
 
         if o.operation_type == 'BUY':
-            buy_qty    += amt
-            buy_cost   += cost
-            buy_comm   += total_comm
-            last_price  = price
+            month_buy_qty    += amt
+            month_buy_cost   += cost
+            month_buy_comm   += total_comm
+            month_last_price  = price
         else:
-            exch_rate  = float(o.exchange_commission_rate or 0)
-            sell_qty   += amt
-            sell_cost  += cost
-            sell_comm  += total_comm
-            exch_usdt  += amt * exch_rate / 100
+            exch_rate = float(o.exchange_commission_rate or 0)
+            month_sell_qty   += amt
+            month_sell_cost  += cost
+            month_sell_comm  += total_comm
+            month_exch_usdt  += amt * exch_rate / 100
 
-    # --- Шаг 2: суммируем с переходящим остатком ---
-    total_buy_qty  = prev_balance_qty  + buy_qty
-    total_buy_cost = prev_balance_cost + buy_cost
+    total_buy_qty  = prev_balance_qty  + month_buy_qty
+    total_buy_cost = prev_balance_cost + month_buy_cost
 
-    # --- Шаг 3: остаток на конец периода ---
-    remainder_qty  = max(0.0, total_buy_qty - sell_qty - exch_usdt)
-    remainder_cost = remainder_qty * last_price
+    remainder_qty  = max(0.0, total_buy_qty - month_sell_qty - month_exch_usdt)
+    remainder_cost = remainder_qty * month_last_price
 
-    # --- Шаг 4: себестоимость проданного ---
     eq_buy_cost = total_buy_cost - remainder_cost
 
-    # --- Шаг 5: прибыль до налогов ---
-    if sell_qty == 0:
+    if month_sell_qty == 0:
         gross = 0.0
     else:
-        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm
+        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm
 
     return {
         'prev_balance_qty':  prev_balance_qty,
         'prev_balance_cost': prev_balance_cost,
-        'buy_qty':           buy_qty,
-        'buy_cost':          buy_cost,
-        'buy_comm':          buy_comm,
-        'sell_qty':          sell_qty,
-        'sell_cost':         sell_cost,
-        'sell_comm':         sell_comm,
-        'exch_usdt':         exch_usdt,
+        'month_buy_qty':     month_buy_qty,
+        'month_buy_cost':    month_buy_cost,
+        'month_buy_comm':    month_buy_comm,
+        'month_sell_qty':    month_sell_qty,
+        'month_sell_cost':   month_sell_cost,
+        'month_sell_comm':   month_sell_comm,
+        'month_exch_usdt':   month_exch_usdt,
         'total_buy_qty':     total_buy_qty,
         'total_buy_cost':    total_buy_cost,
         'remainder_qty':     remainder_qty,
@@ -487,41 +487,21 @@ def _calc_period_profit(user, period_start, period_end):
         'gross':             gross,
     }
 
-import json as _json
-from datetime import timezone as dt_timezone
 
-# Начало системы учёта — ордера до этой даты не берём
-SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
-
-
-def _calc_period_profit(user, period_start, period_end):
+def _calc_today_profit(user, period_start, period_end):
     """
-    Считает прибыль за период по логике Excel.
-
-    Шаг 1. Переходящий остаток с предыдущего периода:
-        Берём все ордера с SYSTEM_START до начала периода
-        остаток_qty  = BUY_qty - SELL_qty - комса_биржи_usdt
-        остаток_cost = остаток_qty * последний_курс_BUY
-
-    Шаг 2. Добавляем покупки текущего периода:
-        итого_buy_qty  = остаток_qty  + BUY_qty за период
-        итого_buy_cost = остаток_cost + BUY_cost за период
-
-    Шаг 3. Остаток на конец периода:
-        remainder_qty  = итого_buy_qty - SELL_qty - комса_биржи за период
-        remainder_cost = remainder_qty * последний_курс_BUY периода
-
-    Шаг 4. Себестоимость проданного:
-        eq_buy_cost = итого_buy_cost - remainder_cost
-
-    Шаг 5. Прибыль до налогов:
-        gross = SELL_cost - eq_buy_cost - комса_банка_BUY - комса_банка_SELL
+    Считает прибыль за произвольный период (для вкладки 'Сегодня').
+    Переходящий остаток — с начала месяца до period_start.
     """
-    # --- Шаг 1: переходящий остаток ---
+    month_start = timezone.make_aware(
+        datetime(period_start.year, period_start.month, 1)
+    )
+
+    # Переходящий остаток с начала месяца до начала периода
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
-        created_at__lt=period_start
+        created_at__lt=month_start
     ).order_by('created_at')
 
     prev_buy_qty    = 0.0
@@ -544,10 +524,10 @@ def _calc_period_profit(user, period_start, period_end):
     prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
     prev_balance_cost = prev_balance_qty * prev_last_price
 
-    # --- Шаг 2: ордера текущего периода ---
+    # Ордера за период (сегодня)
     period_orders = Order.objects.filter(
         user=user,
-        created_at__gte=period_start,
+        created_at__gte=month_start,
         created_at__lt=period_end
     ).order_by('created_at')
 
@@ -575,18 +555,14 @@ def _calc_period_profit(user, period_start, period_end):
             sell_comm  += total_comm
             exch_usdt  += amt * exch_rate / 100
 
-    # --- Шаг 2: суммируем с переходящим остатком ---
     total_buy_qty  = prev_balance_qty  + buy_qty
     total_buy_cost = prev_balance_cost + buy_cost
 
-    # --- Шаг 3: остаток на конец периода ---
     remainder_qty  = max(0.0, total_buy_qty - sell_qty - exch_usdt)
     remainder_cost = remainder_qty * last_price
 
-    # --- Шаг 4: себестоимость проданного ---
     eq_buy_cost = total_buy_cost - remainder_cost
 
-    # --- Шаг 5: прибыль до налогов ---
     if sell_qty == 0:
         gross = 0.0
     else:
@@ -617,15 +593,14 @@ def user_profit_view(request):
     Страница аналитики прибыли пользователя.
 
     Вкладка 'Сегодня':
-      Расчёт по логике Excel с начала текущего месяца по сегодня.
-      Все цифры (gross, ndfl, net_profit) считаются в view и передаются в JS готовыми.
+      _calc_today_profit — расчёт с начала месяца по сегодня включительно.
 
     Вкладка 'По месяцам':
-      Каждый месяц считается отдельно по логике Excel.
-      View возвращает готовый список месяцев с расчётами — JS только отображает.
+      _calc_month_profit_for_user — та же функция что у админа.
+      Гарантирует совпадение цифр между страницами.
 
-    action=get_turnover   — расчёт за период
-    action=get_months     — расчёт по всем месяцам сразу
+    action=get_turnover   — расчёт за период (сегодня)
+    action=get_months     — расчёт по всем месяцам
     action=get_expenses   — список расходов
     action=add_expense    — добавить расход (POST JSON)
     action=delete_expense — удалить расход (POST JSON)
@@ -665,14 +640,11 @@ def user_profit_view(request):
             return JsonResponse({'error': str(e)}, status=400)
 
     # =====================================================================
-    # РАСЧЁТ ПО МЕСЯЦАМ — для вкладки "По месяцам"
-    # Считаем каждый месяц отдельно по логике Excel.
-    # JS только отображает готовые данные — не считает сам.
+    # РАСЧЁТ ПО МЕСЯЦАМ — та же функция что у админа
     # =====================================================================
     if action == 'get_months':
         user = request.user
 
-        # Находим все месяцы в которых были ордера
         all_orders = Order.objects.filter(
             user=user,
             created_at__gte=SYSTEM_START
@@ -695,58 +667,55 @@ def user_profit_view(request):
             )
             share_key = f"{yr}-{str(mo).zfill(2)}"
 
-            # Расчёт по логике Excel
-            calc = _calc_period_profit(user, month_start, month_end)
+            # Та же функция что у админа — цифры совпадут
+            calc  = _calc_month_profit_for_user(user, month_start, month_end)
             gross = calc['gross']
 
-            # НДФЛ 13%
             ndfl       = gross * 0.13 if gross > 0 else 0
             after_ndfl = gross - ndfl
 
-            # Доля системы
             share_percent = float(user_shares.get(share_key, 20.0))
             share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
 
-            # Расходы пользователя за месяц
             month_expenses = float(
                 UserExpense.objects.filter(user=user, month=share_key)
                 .aggregate(Sum('amount'))['amount__sum'] or 0
             )
 
-            # Чистая прибыль
             net_profit = after_ndfl - share_amount - month_expenses
 
             months_data.append({
-                'key':               share_key,          # '2026-03'
+                'key':               share_key,
                 'year':              yr,
                 'month':             mo,
-                'prev_balance_qty':  round(calc['prev_balance_qty'],  2),
-                'prev_balance_cost': round(calc['prev_balance_cost'], 2),
-                'buy_qty':           round(calc['buy_qty'],           2),
-                'buy_cost':          round(calc['buy_cost'],          2),
-                'sell_qty':          round(calc['sell_qty'],          2),
-                'sell_cost':         round(calc['sell_cost'],         2),
-                'total_buy_qty':     round(calc['total_buy_qty'],     2),
-                'total_buy_cost':    round(calc['total_buy_cost'],    2),
-                'remainder_qty':     round(calc['remainder_qty'],     2),
-                'remainder_cost':    round(calc['remainder_cost'],    2),
-                'eq_buy_cost':       round(calc['eq_buy_cost'],       2),
-                'buy_comm':          round(calc['buy_comm'],       2),  # комса банка BUY
-                'sell_comm':         round(calc['sell_comm'],      2),  # комса банка SELL
-                'exch_usdt':         round(calc['exch_usdt'],      2),  # комса биржи USDT
-                'gross':             round(gross,          2),
-                'ndfl':              round(ndfl,           2),
-                'after_ndfl':        round(after_ndfl,     2),
+                'prev_balance_qty':  round(calc['prev_balance_qty'],   2),
+                'prev_balance_cost': round(calc['prev_balance_cost'],  2),
+                'buy_qty':           round(calc['month_buy_qty'],      2),
+                'buy_cost':          round(calc['month_buy_cost'],     2),
+                'sell_qty':          round(calc['month_sell_qty'],     2),
+                'sell_cost':         round(calc['month_sell_cost'],    2),
+                'total_buy_qty':     round(calc['total_buy_qty'],      2),
+                'total_buy_cost':    round(calc['total_buy_cost'],     2),
+                'remainder_qty':     round(calc['remainder_qty'],      2),
+                'remainder_cost':    round(calc['remainder_cost'],     2),
+                'eq_buy_cost':       round(calc['eq_buy_cost'],        2),
+                'buy_comm':          round(calc['month_buy_comm'],     2),
+                'sell_comm':         round(calc['month_sell_comm'],    2),
+                'exch_usdt':         round(calc['month_exch_usdt'],    2),
+                'gross':             round(gross,           2),
+                'ndfl':              round(ndfl,            2),
+                'after_ndfl':        round(after_ndfl,      2),
                 'share_percent':     share_percent,
-                'share_amount':      round(share_amount,   2),
-                'month_expenses':    round(month_expenses, 2),
-                'net_profit':        round(net_profit,     2),
+                'share_amount':      round(share_amount,    2),
+                'month_expenses':    round(month_expenses,  2),
+                'net_profit':        round(net_profit,      2),
             })
 
         return JsonResponse({'months': months_data})
 
     # =====================================================================
     # РАСЧЁТ ЗА ПЕРИОД — для вкладки "Сегодня"
+    # Отдельная функция _calc_today_profit
     # =====================================================================
     if action == 'get_turnover':
         user           = request.user
@@ -755,7 +724,6 @@ def user_profit_view(request):
         exchange       = request.GET.get('exchange')
         bank_id        = request.GET.get('bank')
 
-        # Определяем период
         if start_date_str and end_date_str:
             try:
                 naive_start  = datetime.strptime(start_date_str, '%Y-%m-%d')
@@ -766,43 +734,34 @@ def user_profit_view(request):
             except ValueError:
                 return JsonResponse({'error': 'Неверный формат даты'}, status=400)
         else:
-            period_start = SYSTEM_START
+            period_start = timezone.now()
             period_end   = timezone.now()
 
-        # Начало месяца — для переходящего остатка
-        month_start = timezone.make_aware(
-            datetime(period_start.year, period_start.month, 1)
-        )
-
-        # Расчёт по логике Excel
-        calc = _calc_period_profit(user, month_start, period_end)
+        # Расчёт за сегодня (отдельная функция)
+        calc  = _calc_today_profit(user, period_start, period_end)
         gross = calc['gross']
 
-        # НДФЛ 13%
         ndfl       = gross * 0.13 if gross > 0 else 0
         after_ndfl = gross - ndfl
 
-        # Доля системы
         month_key     = f"{period_start.year}-{str(period_start.month).zfill(2)}"
         user_shares   = user.profit_shares if isinstance(user.profit_shares, dict) else {}
         share_percent = float(user_shares.get(month_key, 20.0))
         share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
 
-        # Расходы пользователя за месяц
         month_expenses = float(
             UserExpense.objects.filter(user=user, month=month_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
 
-        # Чистая прибыль
         net_profit = after_ndfl - share_amount - month_expenses
 
-        # Текущий остаток крипты
+        # Текущий глобальный остаток крипты
         all_buy  = float(Order.objects.filter(user=user, created_at__gte=SYSTEM_START, operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
         all_sell = float(Order.objects.filter(user=user, created_at__gte=SYSTEM_START, operation_type='SELL').aggregate(Sum('amount'))['amount__sum'] or 0)
         crypto_balance = max(0.0, all_buy - all_sell)
 
-        # Ордера за период для таблиц (с фильтрами биржи/банка)
+        # Ордера за период для таблиц (с фильтрами)
         period_orders = Order.objects.filter(
             user=user,
             created_at__gte=SYSTEM_START,
@@ -823,7 +782,6 @@ def user_profit_view(request):
         period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
         crypto_delta       = period_buy_crypto - period_sell_crypto
 
-        # Сериализация ордеров
         def serialize(qs, is_sell=False):
             res = []
             for o in qs:
@@ -846,13 +804,10 @@ def user_profit_view(request):
             return res
 
         return JsonResponse({
-            # Суммы за период (для карточек BUY/SELL)
             'buy_sum':            buy_sum,
             'buy_count':          buy_orders.count(),
             'sell_sum':           sell_sum,
             'sell_count':         sell_orders.count(),
-
-            # Расчёт по логике Excel — готовые цифры для карточек
             'prev_balance_qty':   round(calc['prev_balance_qty'],  2),
             'prev_balance_cost':  round(calc['prev_balance_cost'], 2),
             'total_buy_qty':      round(calc['total_buy_qty'],     2),
@@ -860,23 +815,17 @@ def user_profit_view(request):
             'remainder_qty':      round(calc['remainder_qty'],     2),
             'remainder_cost':     round(calc['remainder_cost'],    2),
             'eq_buy_cost':        round(calc['eq_buy_cost'],       2),
-            'gross':              round(gross,          2),
-            'ndfl':               round(ndfl,           2),
-            'after_ndfl':         round(after_ndfl,     2),
+            'gross':              round(gross,         2),
+            'ndfl':               round(ndfl,          2),
+            'after_ndfl':         round(after_ndfl,    2),
             'share_percent':      share_percent,
-            'share_amount':       round(share_amount,   2),
+            'share_amount':       round(share_amount,  2),
             'month_expenses':     round(month_expenses, 2),
-            'net_profit':         round(net_profit,     2),
-
-            # Остаток крипты
+            'net_profit':         round(net_profit,    2),
             'crypto_balance':     round(crypto_balance, 2),
             'crypto_delta':       round(crypto_delta,   2),
-
-            # Ордера для таблиц
             'buy_orders':         serialize(buy_orders,  is_sell=False),
             'sell_orders':        serialize(sell_orders, is_sell=True),
-
-            # Доли для JS (на случай если понадобится)
             'user_shares':        user_shares,
         })
 
