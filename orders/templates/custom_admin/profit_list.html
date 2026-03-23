@@ -16,7 +16,8 @@
     .finance-block { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
     .val-label { display: inline-block; width: 70px; color: var(--text-muted); }
     .val-money { font-family: 'Inter', monospace; font-weight: 500; }
-    
+    .balance-positive { color: #6c8cff; }
+    .balance-negative { color: #ff6c6c; }
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
     
@@ -161,7 +162,7 @@
                     </td>
                     
                     <td>
-                        <div class="fw-bold" style="color: #6c8cff; font-size: 1rem;">
+                        <div class="fw-bold {% if stat.crypto_balance >= 0 %}balance-positive{% else %}balance-negative{% endif %}" style="font-size: 1rem;">
                             <span class="money">{{ stat.crypto_balance }}</span>
                         </div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>

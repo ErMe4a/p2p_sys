@@ -196,6 +196,7 @@
                         <thead>
                             <tr>
                                 <th>Месяц</th>
+                                <th>Остаток (USDT)</th>
                                 <th>Движение (RUB)</th>
                                 <th>Комиссии</th>
                                 <th>Прибыль (До вычета)</th>
@@ -483,7 +484,7 @@
                             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
         if (!months || months.length === 0) {
             document.getElementById('monthlySummaryTable').innerHTML =
-                `<tr><td colspan="7" class="no-data">Нет данных</td></tr>`;
+                `<tr><td colspan="8" class="no-data">Нет данных</td></tr>`;
             return;
         }
 
@@ -496,6 +497,11 @@
 
             return `<tr>
                 <td style="font-weight:600;color:var(--text);">${label}</td>
+                
+                <td style="font-weight:600; color:${m.remainder_qty >= 0 ? '#6c8cff' : 'var(--danger)'};">
+                    ${m.remainder_qty.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USDT
+                    <div style="font-size:10px;color:var(--muted);">На конец месяца</div>
+                </td>
                 
                 <td style="font-weight:500;">
                     <div style="color:var(--ok);font-size:11px;">Sell: ${formatMoney(m.sell_cost)} ₽</div>
