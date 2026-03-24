@@ -31,7 +31,8 @@ from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
 from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense
 from .receipt_service import create_or_update_and_send_receipt
-
+from zoneinfo import ZoneInfo
+MSK = ZoneInfo('Europe/Moscow')
 # --- Инициализация ---
 User = get_user_model()
 SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
@@ -1035,7 +1036,6 @@ def admin_users_list(request):
 
 
 
-
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"][n - 1]
@@ -1057,6 +1057,9 @@ def export_excel_report(request):
     Себестоимость остатка = =E{ost}*F{ost}
     Реализованный = G{tr} - G{ost}
     Прибыль = K{rr} - G{rr} - H{tr} - L{tr}
+
+    Все даты и группировка по месяцам — в МСК (Europe/Moscow),
+    чтобы совпадать с логикой админки и пользовательской страницы прибыли.
     """
     user_id    = request.GET.get('user_id')
     start_date = request.GET.get('start')
@@ -1089,9 +1092,11 @@ def export_excel_report(request):
         if init_order.id not in existing_ids:
             orders_list = [init_order] + orders_list
 
+    # Группировка по месяцам в МСК — совпадает с логикой админки
     months_in_period = set()
     for o in orders_list:
-        months_in_period.add((o.created_at.year, o.created_at.month))
+        dt_msk = o.created_at.astimezone(MSK)
+        months_in_period.add((dt_msk.year, dt_msk.month))
     multi_month = len(months_in_period) > 1
 
     # =====================================================================
@@ -1142,8 +1147,15 @@ def export_excel_report(request):
         price_f    = float(o.price  or 0)
         exch_rate  = float(o.exchange_commission_rate or 0)
 
-        label = "-" if is_historical else (o.created_at.strftime('%d.%m.%Y') if o.created_at else "")
-        num   = 0 if is_historical else idx
+        # Дата в МСК — совпадает с группировкой по месяцам
+        if is_historical:
+            label = "-"
+        elif o.created_at:
+            label = o.created_at.astimezone(MSK).strftime('%d.%m.%Y')
+        else:
+            label = ""
+
+        num = 0 if is_historical else idx
 
         if o.operation_type == 'BUY':
             ws.append([
@@ -1170,15 +1182,11 @@ def export_excel_report(request):
     # Перенос остатка предыдущего месяца
     # =====================================================================
     def write_carry_row(label, prev_ost_row):
-        """
-        Добавляет строку BUY с переносом остатка прошлого месяца.
-        Ссылается формулами на строку остатка.
-        """
         ws.append([
             0, "-", label, "USDT",
-            f"=E{prev_ost_row}",   # кол-во = остаток прошлого месяца
-            f"=F{prev_ost_row}",   # курс = курс остатка прошлого месяца
-            f"=G{prev_ost_row}",   # стоимость = стоимость остатка прошлого месяца
+            f"=E{prev_ost_row}",
+            f"=F{prev_ost_row}",
+            f"=G{prev_ost_row}",
             0,
             0, 0, 0, 0, 0
         ])
@@ -1187,77 +1195,68 @@ def export_excel_report(request):
     # Итоговые строки после блока ордеров
     # =====================================================================
     def write_summary(label_suffix, data_start, data_end, last_buy_price):
-        """
-        Все итоги — формулами по диапазону data_start..data_end.
-        Возвращает номер строки Остатка (для переноса в следующий месяц).
-        """
         ws.append([])  # разделитель
 
-        # --- Торговый результат ---
         tr = ws.max_row + 1
         ws.append([
             f"Торговый результат{label_suffix}:", "", "", "",
-            f"=SUM(E{data_start}:E{data_end})",   # BUY кол-во (включая перенос)
+            f"=SUM(E{data_start}:E{data_end})",
             "",
-            f"=SUM(G{data_start}:G{data_end})",   # BUY стоимость (включая перенос)
-            f"=SUM(H{data_start}:H{data_end})",   # BUY комса банка
-            f"=SUM(I{data_start}:I{data_end})",   # SELL кол-во
+            f"=SUM(G{data_start}:G{data_end})",
+            f"=SUM(H{data_start}:H{data_end})",
+            f"=SUM(I{data_start}:I{data_end})",
             "",
-            f"=SUM(K{data_start}:K{data_end})",   # SELL стоимость
-            f"=SUM(L{data_start}:L{data_end})",   # SELL комса банка
-            f"=SUM(M{data_start}:M{data_end})",   # SELL комса биржи USDT
+            f"=SUM(K{data_start}:K{data_end})",
+            f"=SUM(L{data_start}:L{data_end})",
+            f"=SUM(M{data_start}:M{data_end})",
         ])
         tr = ws.max_row
 
-        # --- Остаток ---
-        # кол-во = E{tr} - I{tr} - M{tr}
-        # курс   = последний курс BUY
-        # стоимость = =E{ost}*F{ost}
         ost = ws.max_row + 1
         ws.append([
             f"Остаток (нереализованная ЦВ){label_suffix}:", "", "", "",
-            f"=E{tr}-I{tr}-M{tr}",   # кол-во — формулой
-            last_buy_price,           # последний курс BUY — число
-            f"=E{ost}*F{ost}",        # стоимость — формулой
+            f"=E{tr}-I{tr}-M{tr}",
+            last_buy_price,
+            f"=E{ost}*F{ost}",
             0, "", "", "", "", ""
         ])
         ost = ws.max_row
 
-        # --- Реализованный результат ---
         rr = ws.max_row + 1
         ws.append([
             f"Реализованный результат{label_suffix}:", "", "", "",
-            f"=I{tr}",           # кол-во SELL
+            f"=I{tr}",
             "",
-            f"=G{tr}-G{ost}",   # себестоимость = BUY стоимость - стоимость остатка
+            f"=G{tr}-G{ost}",
             "",
-            f"=I{tr}",           # кол-во SELL
+            f"=I{tr}",
             "",
-            f"=K{tr}",           # SELL стоимость
+            f"=K{tr}",
             "", ""
         ])
         rr = ws.max_row
 
-        # --- Прибыль ---
         ws.append([
             f"Прибыль{label_suffix}:", "", "", "",
             f"=K{rr}-G{rr}-H{tr}-L{tr}",
             "", "", "", "", "", "", "", ""
         ])
 
-        ws.append([])  # разделитель после итогов
+        ws.append([])  # разделитель
 
-        return ost  # строка остатка — нужна для переноса в следующий месяц
+        return ost
 
     # =====================================================================
-    # Обход ордеров
+    # Обход ордеров — группировка по МСК месяцам
     # =====================================================================
     idx            = 0
     last_buy_price = 0.0
     prev_ost_row   = None
 
+    # Ключ группировки — по МСК времени
     def get_month_key(o):
-        return (o.created_at.year, o.created_at.month)
+        dt_msk = o.created_at.astimezone(MSK)
+        return (dt_msk.year, dt_msk.month)
 
     if multi_month:
         is_first_month = True
@@ -1265,11 +1264,9 @@ def export_excel_report(request):
         for (yr, mo), month_orders in _groupby(orders_list, key=get_month_key):
             month_list = list(month_orders)
 
-            # FIX: data_start фиксируем ДО добавления строки переноса
-            # чтобы SUM диапазон захватывал строку переноса остатка
+            # data_start фиксируем ДО строки переноса
             data_start = ws.max_row + 1
 
-            # Если не первый месяц — добавляем перенос остатка
             if not is_first_month and prev_ost_row is not None:
                 carry_label = f"Остаток с {_month_name(mo - 1 if mo > 1 else 12)} {yr if mo > 1 else yr - 1}"
                 write_carry_row(carry_label, prev_ost_row)
@@ -1295,7 +1292,6 @@ def export_excel_report(request):
             is_first_month = False
 
     else:
-        # Один месяц — один блок итогов
         data_start = ws.max_row + 1
 
         for o in orders_list:
