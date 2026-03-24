@@ -19,16 +19,19 @@ DATE_FROM_MS = int(datetime(2026, 2, 24).timestamp() * 1000)
 
 BASE_URL = "https://api.mexc.com"
 
+# Статусы MEXC которые считаются отменёнными — такие ордера не берём
+MEXC_CANCELLED_STATES = {"CANCEL", "CANCELLED", "CANCELED", "APPEAL_CANCEL", "APPEAL_CANCELLED"}
+
 
 def sync_mexc_orders(user):
     """
-    Синхронизация ЗАВЕРШЁННЫХ P2P ордеров MEXC (state=DONE).
+    Синхронизация ЗАВЕРШЁННЫХ P2P ордеров MEXC (orderDealState=DONE).
 
     Алгоритм:
       1. Проверяем ключи.
       2. Собираем ID уже известных ордеров.
       3. Постранично тянем завершённые ордера начиная с DATE_FROM_MS.
-      4. Парсим, фильтруем дубли.
+      4. Парсим, фильтруем дубли и отменённые.
       5. Массово сохраняем в UnprocessedOrder.
 
     Возвращает: количество добавленных ордеров (int).
@@ -50,7 +53,6 @@ def sync_mexc_orders(user):
         UnprocessedOrder.objects.filter(user=user, exchange_type="MEXC")
         .values_list("order_id", flat=True)
     )
-    # !! НОВОЕ: ордера, которые пользователь навсегда скрыл
     ignored_ids = set(
         IgnoredOrder.objects.filter(user=user)
         .values_list("order_id", flat=True)
@@ -96,6 +98,25 @@ def sync_mexc_orders(user):
         created_ms = int(item.get("createTime") or 0)
         if created_ms < DATE_FROM_MS:
             continue
+
+        # ── ФИЛЬТР ОТМЕНЁННЫХ ────────────────────────────────────────────────
+        # MEXC может игнорировать orderDealState в параметрах запроса и возвращать
+        # все ордера — поэтому фильтруем по полю в ответе на стороне Python.
+        # Возможные поля: orderDealState, state, status, dealState
+        deal_state = (
+            item.get("orderDealState")
+            or item.get("dealState")
+            or item.get("state")
+            or item.get("status")
+            or ""
+        )
+        if str(deal_state).upper() in MEXC_CANCELLED_STATES:
+            logger.debug(
+                "MEXC [%s]: skipping cancelled order %s (state=%s)",
+                user.username, item.get("advOrderNo"), deal_state
+            )
+            continue
+        # ─────────────────────────────────────────────────────────────────────
 
         order_id = str(item.get("advOrderNo") or "").strip()
         if not order_id:
@@ -144,7 +165,7 @@ def sync_mexc_orders(user):
 
 def _fetch_page(user, page: int, start_time: int, end_time: int):
     """
-    Запрашивает одну страницу завершённых ордеров с MEXC.
+    Запрашивает одну страницу ордеров с MEXC.
     Возвращает (data, error_message).
     """
     timestamp = int(time.time() * 1000)
