@@ -12,7 +12,7 @@ import os
 import sys
 import django
 
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 django.setup()
 
