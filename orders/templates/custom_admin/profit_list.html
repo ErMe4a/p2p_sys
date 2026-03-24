@@ -67,6 +67,28 @@
     .c-gross .value { color: #f59e0b; }    /* Грязная - Оранжевый */
     .c-share .value { color: #8b5cf6; }    /* Доля - Фиолетовый */
     .c-net .value { color: #e879f9; }      /* Чистая - Розовый */
+
+    /* --- Стили для Тултипа расходов --- */
+    .expense-tooltip { position: relative; display: inline-block; cursor: pointer; }
+    .expense-tooltip .tooltip-box {
+        display: none;
+        position: absolute;
+        right: 0; top: 100%;
+        background: #1a2035;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 10px 14px;
+        min-width: 220px;
+        z-index: 999;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        font-size: 12px;
+        white-space: nowrap;
+    }
+    .expense-tooltip:hover .tooltip-box { display: block; }
+    .tooltip-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .tooltip-row:last-child { border-bottom: none; }
+    .tooltip-total { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0 0 0; font-weight: 700; color: #ffc107; }
+
 </style>
 {% endblock %}
 
@@ -193,8 +215,24 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">{{ stat.share_percent }}%:</span> <span class="val-money" style="color: var(--accent-blue);"><span class="money">{{ stat.share_amount }}</span></span></div>
+                            
                             {% if stat.month_expenses > 0 %}
-                            <div><span class="val-label">Расходы:</span> <span class="val-money text-muted"><span class="money">{{ stat.month_expenses }}</span></span></div>
+                            <div class="expense-tooltip">
+                                <div><span class="val-label">Расходы:</span> <span class="val-money text-warning"><span class="money">{{ stat.month_expenses }}</span></span></div>
+                                <div class="tooltip-box">
+                                    <div style="font-weight:600;color:#fff;margin-bottom:6px;">📋 Расходы за месяц</div>
+                                    {% for exp in stat.expenses_list %}
+                                    <div class="tooltip-row">
+                                        <span style="color:var(--text-muted);">{{ exp.name }}</span>
+                                        <span style="color:#ffc107;"><span class="money">{{ exp.amount }}</span> ₽</span>
+                                    </div>
+                                    {% endfor %}
+                                    <div class="tooltip-total">
+                                        <span>Итого:</span>
+                                        <span><span class="money">{{ stat.month_expenses }}</span> ₽</span>
+                                    </div>
+                                </div>
+                            </div>
                             {% endif %}
                         </div>
                     </td>
