@@ -18,7 +18,7 @@
 import os
 import sys
 import django
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_DOWN
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
@@ -52,9 +52,9 @@ def _to_decimal(value) -> Decimal:
 
 
 def _round3(value) -> Decimal:
-    """Округляет до 3 знаков после запятой."""
+    """Обрезает до 3 знаков после запятой (без округления)."""
     try:
-        return Decimal(str(value or 0)).quantize(PRECISION, rounding=ROUND_HALF_UP)
+        return Decimal(str(value or 0)).quantize(PRECISION, rounding=ROUND_DOWN)
     except Exception:
         return Decimal("0")
 
