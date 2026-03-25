@@ -7,11 +7,13 @@
     # Применить изменения:
     python sync_orders_bybit.py --update
 
-Работает только для пользователя: abisalov
+Проверяет всех пользователей у которых есть Bybit ордера и API ключи.
+Показывает расхождение только если разница > 1 по любому из полей.
+Ордера с 01.02.2026 по сегодня.
 
 Точность сравнения:
-    price, cost  — до 2 знаков (11.56 == 11.5606  -> OK)
-    amount       — до 3 знаков  (5.780 == 5.78030  -> OK)
+    price, cost  — до 2 знаков
+    amount       — до 3 знаков
 
 Что НЕ трогает: комиссию, банк, скриншот, чек, дату.
 """
@@ -40,10 +42,10 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 DO_UPDATE = "--update" in sys.argv
 
-TARGET_USERNAME = "abisalov"
-
-# Тянем ордера только начиная с этой даты
 DATE_FROM_MS = int(datetime(2026, 2, 1).timestamp() * 1000)
+
+# Порог расхождения — показываем только если разница > этого значения
+DIFF_THRESHOLD = Decimal("1")
 
 PRECISION = {
     "price":  Decimal("0.01"),
@@ -90,7 +92,6 @@ def fetch_all_bybit_orders(api, username: str) -> dict:
 
         print(f"  Страница {page}: получено {len(items)} ордеров  (всего: {len(result)})")
 
-        # Останавливаемся если последний ордер страницы старше DATE_FROM_MS
         last_item_ms = int(
             items[-1].get("createDate") or items[-1].get("createTime") or 0
         )
@@ -146,10 +147,8 @@ def fields_differ(order: Order, api_data: dict) -> list:
         precision = PRECISION[field]
         db_val  = _round(getattr(order, field), precision)
         api_val = _round(api_data[field], precision)
-        if db_val != api_val:
-            # Показываем только если разница больше 5
-            if abs(db_val - api_val) > Decimal("5"):
-                diffs.append((field, getattr(order, field), api_data[field]))
+        if abs(db_val - api_val) > DIFF_THRESHOLD:
+            diffs.append((field, getattr(order, field), api_data[field]))
     if order.operation_type != api_data["operation_type"]:
         diffs.append(("operation_type", order.operation_type, api_data["operation_type"]))
     return diffs
@@ -158,103 +157,115 @@ def fields_differ(order: Order, api_data: dict) -> list:
 def main():
     print("=" * 80)
     if DO_UPDATE:
-        print(f"  РЕЖИМ: ОБНОВЛЕНИЕ (--update)  |  пользователь: {TARGET_USERNAME}")
+        print("  РЕЖИМ: ОБНОВЛЕНИЕ (--update)")
     else:
-        print(f"  РЕЖИМ: ДИАГНОСТИКА (без изменений)  |  пользователь: {TARGET_USERNAME}")
-        print(f"  Чтобы применить: python sync_orders_bybit.py --update")
+        print("  РЕЖИМ: ДИАГНОСТИКА (без изменений)")
+        print("  Чтобы применить: python sync_orders_bybit.py --update")
+    print(f"  Порог расхождения: > {DIFF_THRESHOLD}  |  Ордера с 01.02.2026")
     print("=" * 80)
 
-    try:
-        user = User.objects.get(username=TARGET_USERNAME)
-    except User.DoesNotExist:
-        print(f"\n[!] Пользователь '{TARGET_USERNAME}' не найден в БД.")
-        sys.exit(1)
+    users = User.objects.filter(
+        order__exchange_type__in=["Bybit", "BYBIT"]
+    ).distinct()
 
-    has_keys = bool(
-        getattr(user, "bybit_api_key", None)
-        and getattr(user, "bybit_api_secret", None)
-    )
-
-    if not has_keys:
-        print(f"\n[!] У пользователя '{TARGET_USERNAME}' нет API ключей Bybit.")
-        sys.exit(1)
-
-    orders = (
-        Order.objects
-        .filter(user=user, exchange_type__in=["Bybit", "BYBIT"])
-        .exclude(external_id="")
-        .exclude(external_id__isnull=True)
-        .order_by("-created_at")
-    )
-
-    print(f"\nПользователь: {user.username}  |  ордеров в БД: {orders.count()}")
-
-    try:
-        api = P2P(
-            testnet=False,
-            api_key=user.bybit_api_key,
-            api_secret=user.bybit_api_secret,
-        )
-    except Exception as e:
-        print(f"[!] Ошибка инициализации Bybit клиента: {e}")
-        sys.exit(1)
-
-    print("  Загружаем ордера с Bybit...")
-    api_orders = fetch_all_bybit_orders(api, user.username)
-
-    if api_orders is None:
-        print("  [!] Не удалось загрузить данные с Bybit.")
-        sys.exit(1)
-
-    print(f"  Получено с Bybit API: {len(api_orders)} ордеров")
-    print(f"  Сверяем с БД...\n")
+    if not users.exists():
+        print("\nНет пользователей с Bybit ордерами.")
+        return
 
     total_checked    = 0
     total_differ     = 0
     total_updated    = 0
     total_errors     = 0
+    total_skipped    = 0
     total_not_in_api = 0
 
-    for order in orders:
-        total_checked += 1
+    for user in users:
+        has_keys = bool(
+            getattr(user, "bybit_api_key", None)
+            and getattr(user, "bybit_api_secret", None)
+        )
 
-        api_data = api_orders.get(order.external_id)
+        orders = (
+            Order.objects
+            .filter(user=user, exchange_type__in=["Bybit", "BYBIT"])
+            .exclude(external_id="")
+            .exclude(external_id__isnull=True)
+            .order_by("-created_at")
+        )
 
-        if api_data is None:
-            print(f"  {order.external_id}  ->  НЕТ В API (пропускаем)")
-            total_not_in_api += 1
+        count = orders.count()
+        print(f"\nПользователь: {user.username}  "
+              f"[{'ключи есть' if has_keys else 'КЛЮЧЕЙ НЕТ'}]  "
+              f"ордеров в БД: {count}")
+
+        if not has_keys:
+            total_skipped += count
+            print("  Пропускаем (нет API ключей Bybit)")
             continue
 
-        diffs = fields_differ(order, api_data)
-
-        if not diffs:
-            print(f"  {order.external_id}  ->  OK")
+        try:
+            api = P2P(
+                testnet=False,
+                api_key=user.bybit_api_key,
+                api_secret=user.bybit_api_secret,
+            )
+        except Exception as e:
+            print(f"  [!] Ошибка инициализации Bybit клиента: {e}")
+            total_skipped += count
             continue
 
-        total_differ += 1
-        print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
-        for field, old_val, new_val in diffs:
-            print(f"      {field}: {old_val}  =>  {new_val}")
+        print("  Загружаем ордера с Bybit...")
+        api_orders = fetch_all_bybit_orders(api, user.username)
 
-        if DO_UPDATE:
-            try:
-                update_fields = []
-                for field, _, new_val in diffs:
-                    setattr(order, field, new_val)
-                    update_fields.append(field)
-                order.save(update_fields=update_fields)
-                print(f"      [OK] Обновлено: {', '.join(update_fields)}")
-                total_updated += 1
-            except Exception as e:
-                print(f"      [!] Ошибка сохранения: {e}")
-                total_errors += 1
+        if api_orders is None:
+            print("  [!] Не удалось загрузить данные с Bybit — пропускаем")
+            total_skipped += count
+            continue
+
+        print(f"  Получено с Bybit API: {len(api_orders)} ордеров")
+        print(f"  Сверяем с БД...")
+
+        for order in orders:
+            total_checked += 1
+
+            api_data = api_orders.get(order.external_id)
+
+            if api_data is None:
+                total_not_in_api += 1
+                continue
+
+            diffs = fields_differ(order, api_data)
+
+            if not diffs:
+                continue
+
+            total_differ += 1
+            print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
+            for field, old_val, new_val in diffs:
+                diff = abs(_round(old_val, PRECISION.get(field, Decimal("0.01"))) -
+                           _round(new_val, PRECISION.get(field, Decimal("0.01"))))
+                print(f"      {field}: {old_val}  =>  {new_val}  (разница: {diff})")
+
+            if DO_UPDATE:
+                try:
+                    update_fields = []
+                    for field, _, new_val in diffs:
+                        setattr(order, field, new_val)
+                        update_fields.append(field)
+                    order.save(update_fields=update_fields)
+                    print(f"      [OK] Обновлено: {', '.join(update_fields)}")
+                    total_updated += 1
+                except Exception as e:
+                    print(f"      [!] Ошибка сохранения: {e}")
+                    total_errors += 1
 
     print("\n" + "=" * 80)
     print(f"  Проверено:           {total_checked}")
-    print(f"  Расхождений:         {total_differ}")
+    print(f"  Расхождений > 1:     {total_differ}")
     print(f"  Обновлено:           {total_updated}")
     print(f"  Нет в API (старые):  {total_not_in_api}")
     print(f"  Ошибок:              {total_errors}")
+    print(f"  Пропущено:           {total_skipped}")
     if not DO_UPDATE and total_differ > 0:
         print(f"\n  Запусти с --update чтобы применить изменения.")
     print("=" * 80 + "\n")
