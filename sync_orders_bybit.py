@@ -60,7 +60,12 @@ def fetch_all_bybit_orders(api, username: str) -> dict:
 
     while True:
         try:
-            response = api.get_orders(page=page, size=30, status=50)
+            response = api.get_orders(
+                page=page,
+                size=30,
+                status=50,
+                beginTime=DATE_FROM_MS,
+            )
         except Exception as e:
             print(f"  [!] Ошибка запроса страницы {page}: {e}")
             break
@@ -84,11 +89,6 @@ def fetch_all_bybit_orders(api, username: str) -> dict:
 
         if not items:
             break
-
-        # Дебаг: показываем ключи первого item один раз чтобы найти поле даты
-        if page == 1:
-            print(f"  [DEBUG] Поля первого ордера: {list(items[0].keys())}")
-            print(f"  [DEBUG] createDate={items[0].get('createDate')} createTime={items[0].get('createTime')} createdAt={items[0].get('createdAt')} createAt={items[0].get('createAt')}")
 
         for item in items:
             order_id = str(item.get("id") or item.get("orderId") or "").strip()
