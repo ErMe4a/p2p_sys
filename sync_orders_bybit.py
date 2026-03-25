@@ -20,6 +20,7 @@ import os
 import sys
 import django
 from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
@@ -40,6 +41,9 @@ User = get_user_model()
 DO_UPDATE = "--update" in sys.argv
 
 TARGET_USERNAME = "abisalov"
+
+# Тянем ордера только начиная с этой даты
+DATE_FROM_MS = int(datetime(2026, 2, 1).timestamp() * 1000)
 
 PRECISION = {
     "price":  Decimal("0.01"),
@@ -86,7 +90,11 @@ def fetch_all_bybit_orders(api, username: str) -> dict:
 
         print(f"  Страница {page}: получено {len(items)} ордеров  (всего: {len(result)})")
 
-        if len(items) < 30:
+        # Останавливаемся если последний ордер страницы старше DATE_FROM_MS
+        last_item_ms = int(
+            items[-1].get("createDate") or items[-1].get("createTime") or 0
+        )
+        if len(items) < 30 or last_item_ms < DATE_FROM_MS:
             break
 
         page += 1
