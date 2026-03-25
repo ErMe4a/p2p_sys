@@ -7,18 +7,19 @@
     # Применить изменения:
     python sync_orders_bybit.py --update
 
-Что делает:
-    Берёт все Order с exchange_type="Bybit" у каждого пользователя.
-    Тянет данные этих ордеров с Bybit API через get_order_details.
-    Сравнивает price, amount, cost, operation_type.
-    При расхождении — показывает (или обновляет при --update).
-    Комиссию, банк, скриншот, чек, дату — НЕ ТРОГАЕТ.
+Логика сравнения:
+    price       — сравниваем до 2 знаков после запятой
+    cost        — сравниваем до 2 знаков после запятой
+    amount      — сравниваем до 3 знаков после запятой
+    operation_type — точное совпадение
+
+Комиссию, банк, скриншот, чек, дату — НЕ ТРОГАЕТ.
 """
 
 import os
 import sys
 import django
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
@@ -38,14 +39,17 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 DO_UPDATE = "--update" in sys.argv
 
+# Точность сравнения для каждого поля
+PRECISION = {
+    "price":  Decimal("0.01"),    # 2 знака
+    "cost":   Decimal("0.01"),    # 2 знака
+    "amount": Decimal("0.001"),   # 3 знака
+}
+
 
 # ── Получение данных одного ордера с Bybit ────────────────────────────────────
 
 def fetch_bybit_order(api, order_id: str):
-    """
-    Запрашивает данные одного ордера через get_order_details.
-    Возвращает (item_dict, error_string).
-    """
     try:
         response = api.get_order_details(orderId=order_id)
 
@@ -58,8 +62,6 @@ def fetch_bybit_order(api, order_id: str):
             return None, f"API error code={ret_code} msg={msg}"
 
         result = response.get("result") or {}
-
-        # Bybit может вернуть result напрямую или внутри result.order
         item = result.get("order") or result or {}
 
         if not item:
@@ -71,17 +73,15 @@ def fetch_bybit_order(api, order_id: str):
         return None, str(e)
 
 
-def parse_bybit_item(item: dict):
-    """Вытаскивает нужные поля из ответа Bybit."""
+def parse_bybit_item(item: dict) -> dict:
     side_val = str(item.get("side") or "")
     operation_type = "SELL" if side_val == "1" else "BUY"
 
-    price = _to_decimal(item.get("price"), 2)
-
+    price = _to_decimal(item.get("price"))
     crypto_amount = _to_decimal(
-        item.get("notifyTokenQuantity") or item.get("quantity"), 8
+        item.get("notifyTokenQuantity") or item.get("quantity")
     )
-    fiat_amount = _to_decimal(item.get("amount"), 2)
+    fiat_amount = _to_decimal(item.get("amount"))
 
     if crypto_amount == Decimal("0") and price > 0 and fiat_amount > 0:
         crypto_amount = (fiat_amount / price).quantize(
@@ -89,44 +89,45 @@ def parse_bybit_item(item: dict):
         )
 
     return {
-        "price": price,
-        "amount": crypto_amount,
-        "cost": fiat_amount,
+        "price":          price,
+        "amount":         crypto_amount,
+        "cost":           fiat_amount,
         "operation_type": operation_type,
     }
 
 
 # ── Вспомогательные ───────────────────────────────────────────────────────────
 
-def _to_decimal(value, decimal_places: int) -> Decimal:
-    fmt = "0." + "0" * decimal_places
+def _to_decimal(value) -> Decimal:
     try:
-        return Decimal(str(float(value or 0))).quantize(
-            Decimal(fmt), rounding=ROUND_DOWN
-        )
+        return Decimal(str(float(value or 0)))
     except Exception:
         return Decimal("0")
 
 
-def _d(value) -> Decimal:
+def _round(value, precision: Decimal) -> Decimal:
+    """Округляет до нужной точности."""
     try:
-        return Decimal(str(value or 0))
+        return Decimal(str(value or 0)).quantize(precision, rounding=ROUND_HALF_UP)
     except Exception:
         return Decimal("0")
 
 
 def fields_differ(order: Order, api_data: dict) -> list:
-    """Возвращает список полей которые отличаются."""
+    """
+    Сравнивает поля с учётом точности:
+      price, cost  — до 2 знаков
+      amount       — до 3 знаков
+    Возвращает список (field, old_val, new_val) только реальных расхождений.
+    """
     diffs = []
 
-    if round(_d(order.price), 2) != round(api_data["price"], 2):
-        diffs.append(("price", _d(order.price), api_data["price"]))
-
-    if round(_d(order.amount), 8) != round(api_data["amount"], 8):
-        diffs.append(("amount", _d(order.amount), api_data["amount"]))
-
-    if round(_d(order.cost), 2) != round(api_data["cost"], 2):
-        diffs.append(("cost", _d(order.cost), api_data["cost"]))
+    for field in ("price", "cost", "amount"):
+        precision = PRECISION[field]
+        db_val  = _round(getattr(order, field), precision)
+        api_val = _round(api_data[field], precision)
+        if db_val != api_val:
+            diffs.append((field, getattr(order, field), api_data[field]))
 
     if order.operation_type != api_data["operation_type"]:
         diffs.append(("operation_type", order.operation_type, api_data["operation_type"]))
@@ -173,12 +174,13 @@ def main():
             .order_by("-created_at")
         )
 
+        count = orders.count()
         print(f"\nПользователь: {user.username}  "
               f"[{'ключи есть' if has_keys else 'КЛЮЧЕЙ НЕТ'}]  "
-              f"ордеров в БД: {orders.count()}")
+              f"ордеров в БД: {count}")
 
         if not has_keys:
-            total_skipped += orders.count()
+            total_skipped += count
             print("  Пропускаем (нет API ключей Bybit)")
             continue
 
@@ -190,7 +192,7 @@ def main():
             )
         except Exception as e:
             print(f"  [!] Ошибка инициализации Bybit клиента: {e}")
-            total_skipped += orders.count()
+            total_skipped += count
             continue
 
         for order in orders:
