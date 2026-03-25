@@ -3,17 +3,14 @@
 
     python sync_orders_bybit.py
 
-После завершения сохраняет файл:
-    bybit_diff_YYYY-MM-DD.xlsx
+После завершения сохраняет: bybit_diff_YYYY-MM-DD.xlsx
 
-Залей на git и скачай.
+Стратегия:
+    <= 200 ордеров в БД  -> get_order_details по каждому ID (быстро, точно)
+    >  200 ордеров в БД  -> get_orders страницами с остановкой по дате
 
-Точность сравнения:
-    price, cost  — до 2 знаков
-    amount       — до 3 знаков
-    operation_type — точное совпадение
-
-Порог: показывает только расхождения > 1.
+Порог расхождения: > 1
+Ордера с 01.02.2026
 Что НЕ трогает: комиссию, банк, скриншот, чек, дату.
 """
 
@@ -42,14 +39,15 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
-DATE_FROM_MS   = int(datetime(2026, 2, 1).timestamp() * 1000)
-DIFF_THRESHOLD = Decimal("1")
+DATE_FROM_MS     = int(datetime(2026, 2, 1).timestamp() * 1000)
+DIFF_THRESHOLD   = Decimal("1")
+BATCH_THRESHOLD  = 200  # если ордеров <= этого — идём по ID, иначе страницами
+
 PRECISION = {
     "price":  Decimal("0.01"),
     "cost":   Decimal("0.01"),
     "amount": Decimal("0.001"),
 }
-
 FIELD_LABELS = {
     "price":          "Курс",
     "cost":           "Сумма (руб)",
@@ -58,9 +56,55 @@ FIELD_LABELS = {
 }
 
 
-# ── Bybit API ─────────────────────────────────────────────────────────────────
+# ── Стратегия 1: по ID через get_order_details ────────────────────────────────
 
-def fetch_all_bybit_orders(api) -> dict:
+def fetch_by_ids(api, order_ids: list) -> dict:
+    """
+    Запрашивает каждый ордер отдельно по ID через get_order_details.
+    Возвращает {order_id: parsed_data}.
+    """
+    result = {}
+    total = len(order_ids)
+
+    for i, order_id in enumerate(order_ids, 1):
+        try:
+            response = api.get_order_details(orderId=order_id)
+
+            ret_code = response.get("ret_code")
+            if ret_code is None:
+                ret_code = response.get("retCode")
+
+            if ret_code != 0:
+                msg = response.get("ret_msg") or response.get("retMsg") or "unknown"
+                print(f"  [{i}/{total}] {order_id}  ->  API ошибка: {msg}")
+                time.sleep(0.3)
+                continue
+
+            # get_order_details возвращает данные прямо в result (не в result.order)
+            item = response.get("result") or {}
+
+            if item:
+                result[order_id] = _parse_item(item)
+                print(f"  [{i}/{total}] {order_id}  ->  OK")
+            else:
+                print(f"  [{i}/{total}] {order_id}  ->  пустой ответ")
+
+        except Exception as e:
+            print(f"  [{i}/{total}] {order_id}  ->  ОШИБКА: {e}")
+
+        time.sleep(0.3)
+
+    return result
+
+
+# ── Стратегия 2: страницами через get_orders ──────────────────────────────────
+
+def fetch_by_pages(api) -> dict:
+    """
+    Тянет завершённые ордера страницами.
+    Останавливается когда дошли до ордеров старше DATE_FROM_MS.
+    Возвращает {order_id: parsed_data}.
+    """
     result = {}
     page = 1
 
@@ -71,6 +115,7 @@ def fetch_all_bybit_orders(api) -> dict:
                 size=30,
                 status=50,
                 beginTime=DATE_FROM_MS,
+                endTime=int(datetime.now().timestamp() * 1000),
             )
         except Exception as e:
             print(f"  [!] Ошибка запроса страницы {page}: {e}")
@@ -101,9 +146,9 @@ def fetch_all_bybit_orders(api) -> dict:
             if order_id:
                 result[order_id] = _parse_item(item)
 
+        last_ms = int(items[-1].get("createDate") or items[-1].get("createTime") or 0)
         print(f"  Страница {page}: {len(items)} ордеров  (всего: {len(result)})")
 
-        last_ms = int(items[-1].get("createDate") or items[-1].get("createTime") or 0)
         if len(items) < 30 or last_ms < DATE_FROM_MS:
             break
 
@@ -113,15 +158,27 @@ def fetch_all_bybit_orders(api) -> dict:
     return result
 
 
+# ── Парсинг и утилиты ─────────────────────────────────────────────────────────
+
 def _parse_item(item: dict) -> dict:
-    side_val       = str(item.get("side") or "")
+    # side: в get_orders — строка "1"=SELL, "0"=BUY
+    #        в get_order_details — int 1=SELL, 0=BUY
+    side_val       = str(item.get("side") or "0").strip()
     operation_type = "SELL" if side_val == "1" else "BUY"
-    price          = _to_decimal(item.get("price"))
-    crypto_amount  = _to_decimal(item.get("notifyTokenQuantity") or item.get("quantity"))
-    fiat_amount    = _to_decimal(item.get("amount"))
+
+    price = _to_decimal(item.get("price"))
+
+    # get_order_details использует "quantity", get_orders — "notifyTokenQuantity"
+    crypto_amount = _to_decimal(
+        item.get("notifyTokenQuantity") or item.get("quantity")
+    )
+    # amount — сумма в рублях (одинаково в обоих методах)
+    fiat_amount = _to_decimal(item.get("amount"))
 
     if crypto_amount == Decimal("0") and price > 0 and fiat_amount > 0:
-        crypto_amount = (fiat_amount / price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+        crypto_amount = (fiat_amount / price).quantize(
+            Decimal("0.00000001"), rounding=ROUND_DOWN
+        )
 
     return {
         "price":          price,
@@ -130,8 +187,6 @@ def _parse_item(item: dict) -> dict:
         "operation_type": operation_type,
     }
 
-
-# ── Утилиты ───────────────────────────────────────────────────────────────────
 
 def _to_decimal(value) -> Decimal:
     try:
@@ -167,53 +222,40 @@ def create_excel(rows: list) -> str:
     ws = wb.active
     ws.title = "Расхождения Bybit"
 
-    # Стили
-    header_font    = Font(bold=True, color="FFFFFF", size=11)
-    header_fill    = PatternFill("solid", fgColor="1F4E79")
-    red_fill       = PatternFill("solid", fgColor="FFE0E0")
-    center         = Alignment(horizontal="center", vertical="center")
-    left           = Alignment(horizontal="left",   vertical="center")
-    thin           = Side(style="thin", color="CCCCCC")
-    border         = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    red_fill    = PatternFill("solid", fgColor="FFE0E0")
+    center      = Alignment(horizontal="center", vertical="center")
+    left        = Alignment(horizontal="left",   vertical="center")
+    thin        = Side(style="thin", color="CCCCCC")
+    border      = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    headers = [
-        "Пользователь",
-        "ID ордера",
-        "Поле",
-        "В базе",
-        "На Bybit",
-        "Разница",
-        "Дата ордера",
-    ]
-
+    headers = ["Пользователь", "ID ордера", "Поле", "В базе", "На Bybit", "Разница", "Дата ордера"]
     ws.row_dimensions[1].height = 22
 
     for col_idx, header in enumerate(headers, 1):
         cell = ws.cell(row=1, column=col_idx, value=header)
-        cell.font      = header_font
-        cell.fill      = header_fill
+        cell.font = header_font
+        cell.fill = header_fill
         cell.alignment = center
-        cell.border    = border
+        cell.border = border
 
-    # Ширина колонок
     col_widths = [20, 24, 18, 18, 18, 14, 18]
     for i, w in enumerate(col_widths, 1):
         ws.column_dimensions[ws.cell(1, i).column_letter].width = w
 
-    # Данные
     for row_idx, row in enumerate(rows, 2):
         username, order_id, field, db_val, api_val, diff, order_date = row
-
-        values = [username, order_id, FIELD_LABELS.get(field, field),
-                  str(db_val), str(api_val), str(diff), order_date]
-
+        values = [
+            username, order_id, FIELD_LABELS.get(field, field),
+            str(db_val), str(api_val), str(diff), order_date,
+        ]
         for col_idx, value in enumerate(values, 1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
             cell.fill      = red_fill
             cell.border    = border
             cell.alignment = center if col_idx != 1 else left
 
-    # Итого внизу
     last_row = len(rows) + 3
     ws.cell(row=last_row, column=1, value=f"Всего расхождений: {len(rows)}").font = Font(bold=True)
 
@@ -227,8 +269,9 @@ def create_excel(rows: list) -> str:
 
 def main():
     print("=" * 80)
-    print("  РЕЖИМ: ДИАГНОСТИКА + EXCEL")
-    print(f"  Порог расхождения: > {DIFF_THRESHOLD}  |  Ордера с 01.02.2026")
+    print("  ДИАГНОСТИКА + EXCEL")
+    print(f"  Порог: > {DIFF_THRESHOLD}  |  Ордера с 01.02.2026")
+    print(f"  Стратегия: <= {BATCH_THRESHOLD} ордеров -> по ID | > {BATCH_THRESHOLD} -> страницами")
     print("=" * 80)
 
     users = User.objects.filter(
@@ -243,8 +286,7 @@ def main():
     total_differ     = 0
     total_not_in_api = 0
     total_skipped    = 0
-
-    excel_rows = []  # Все строки для Excel
+    excel_rows       = []
 
     for user in users:
         has_keys = bool(
@@ -261,9 +303,11 @@ def main():
         )
 
         count = orders.count()
+        strategy = "по ID" if count <= BATCH_THRESHOLD else "страницами"
+
         print(f"\nПользователь: {user.username}  "
               f"[{'ключи есть' if has_keys else 'КЛЮЧЕЙ НЕТ'}]  "
-              f"ордеров в БД: {count}")
+              f"ордеров в БД: {count}  |  стратегия: {strategy}")
 
         if not has_keys:
             total_skipped += count
@@ -281,16 +325,21 @@ def main():
             total_skipped += count
             continue
 
-        print("  Загружаем ордера с Bybit...")
-        api_orders = fetch_all_bybit_orders(api)
+        # Выбираем стратегию
+        if count <= BATCH_THRESHOLD:
+            order_ids = list(orders.values_list("external_id", flat=True))
+            print(f"  Запрашиваем {len(order_ids)} ордеров по ID...")
+            api_orders = fetch_by_ids(api, order_ids)
+        else:
+            print(f"  Загружаем ордера страницами (останавливаемся на 01.02.2026)...")
+            api_orders = fetch_by_pages(api)
 
         if api_orders is None:
             print("  [!] Не удалось загрузить данные — пропускаем")
             total_skipped += count
             continue
 
-        print(f"  Получено с Bybit API: {len(api_orders)} ордеров")
-        print(f"  Сверяем с БД...")
+        print(f"  Получено с Bybit: {len(api_orders)} ордеров  |  Сверяем...")
 
         user_diffs = 0
 
@@ -308,7 +357,6 @@ def main():
 
             total_differ += 1
             user_diffs   += 1
-
             order_date = order.created_at.strftime("%d.%m.%Y") if order.created_at else ""
 
             print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
@@ -316,21 +364,14 @@ def main():
                 prec = PRECISION.get(field, Decimal("0.01"))
                 diff = abs(_round(db_val, prec) - _round(api_val, prec))
                 print(f"      {FIELD_LABELS.get(field, field)}: {db_val}  =>  {api_val}  (разница: {diff})")
-
                 excel_rows.append((
-                    user.username,
-                    order.external_id,
-                    field,
-                    db_val,
-                    api_val,
-                    diff,
-                    order_date,
+                    user.username, order.external_id, field,
+                    db_val, api_val, diff, order_date,
                 ))
 
         if user_diffs == 0:
             print("  Расхождений нет.")
 
-    # ── Итог ─────────────────────────────────────────────────────────────────
     print("\n" + "=" * 80)
     print(f"  Проверено:           {total_checked}")
     print(f"  Расхождений > 1:     {total_differ}")
