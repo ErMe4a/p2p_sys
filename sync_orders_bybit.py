@@ -8,10 +8,9 @@
     python sync_orders_bybit.py --update
 
 Логика сравнения:
-    price       — сравниваем до 2 знаков после запятой
-    cost        — сравниваем до 2 знаков после запятой
-    amount      — сравниваем до 3 знаков после запятой
-    operation_type — точное совпадение
+    price, cost, amount — сравниваем до 3 знаков после запятой.
+    Если первые 3 знака совпадают — OK, не расхождение.
+    operation_type      — точное совпадение строк.
 
 Комиссию, банк, скриншот, чек, дату — НЕ ТРОГАЕТ.
 """
@@ -19,7 +18,7 @@
 import os
 import sys
 import django
-from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
@@ -39,17 +38,34 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 DO_UPDATE = "--update" in sys.argv
 
-# Точность сравнения для каждого поля
-PRECISION = {
-    "price":  Decimal("0.01"),    # 2 знака
-    "cost":   Decimal("0.01"),    # 2 знака
-    "amount": Decimal("0.001"),   # 3 знака
-}
+# Единая точность сравнения для всех числовых полей — 3 знака после запятой
+PRECISION = Decimal("0.001")
 
 
-# ── Получение данных одного ордера с Bybit ────────────────────────────────────
+# ── Вспомогательные ───────────────────────────────────────────────────────────
+
+def _to_decimal(value) -> Decimal:
+    try:
+        return Decimal(str(float(value or 0)))
+    except Exception:
+        return Decimal("0")
+
+
+def _round3(value) -> Decimal:
+    """Округляет до 3 знаков после запятой."""
+    try:
+        return Decimal(str(value or 0)).quantize(PRECISION, rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal("0")
+
+
+# ── Bybit API ─────────────────────────────────────────────────────────────────
 
 def fetch_bybit_order(api, order_id: str):
+    """
+    Запрашивает данные одного ордера через get_order_details.
+    Возвращает (item_dict, error_string).
+    """
     try:
         response = api.get_order_details(orderId=order_id)
 
@@ -59,7 +75,7 @@ def fetch_bybit_order(api, order_id: str):
 
         if ret_code != 0:
             msg = response.get("ret_msg") or response.get("retMsg") or "unknown"
-            return None, f"API error code={ret_code} msg={msg}"
+            return None, f"code={ret_code} msg={msg}"
 
         result = response.get("result") or {}
         item = result.get("order") or result or {}
@@ -74,19 +90,16 @@ def fetch_bybit_order(api, order_id: str):
 
 
 def parse_bybit_item(item: dict) -> dict:
+    """Парсит нужные поля из ответа Bybit."""
     side_val = str(item.get("side") or "")
     operation_type = "SELL" if side_val == "1" else "BUY"
 
-    price = _to_decimal(item.get("price"))
-    crypto_amount = _to_decimal(
-        item.get("notifyTokenQuantity") or item.get("quantity")
-    )
-    fiat_amount = _to_decimal(item.get("amount"))
+    price         = _to_decimal(item.get("price"))
+    crypto_amount = _to_decimal(item.get("notifyTokenQuantity") or item.get("quantity"))
+    fiat_amount   = _to_decimal(item.get("amount"))
 
     if crypto_amount == Decimal("0") and price > 0 and fiat_amount > 0:
-        crypto_amount = (fiat_amount / price).quantize(
-            Decimal("0.00000001"), rounding=ROUND_DOWN
-        )
+        crypto_amount = fiat_amount / price
 
     return {
         "price":          price,
@@ -96,36 +109,16 @@ def parse_bybit_item(item: dict) -> dict:
     }
 
 
-# ── Вспомогательные ───────────────────────────────────────────────────────────
-
-def _to_decimal(value) -> Decimal:
-    try:
-        return Decimal(str(float(value or 0)))
-    except Exception:
-        return Decimal("0")
-
-
-def _round(value, precision: Decimal) -> Decimal:
-    """Округляет до нужной точности."""
-    try:
-        return Decimal(str(value or 0)).quantize(precision, rounding=ROUND_HALF_UP)
-    except Exception:
-        return Decimal("0")
-
-
 def fields_differ(order: Order, api_data: dict) -> list:
     """
-    Сравнивает поля с учётом точности:
-      price, cost  — до 2 знаков
-      amount       — до 3 знаков
-    Возвращает список (field, old_val, new_val) только реальных расхождений.
+    Сравнивает поля до 3 знаков после запятой.
+    Возвращает список (field, db_value, api_value) только реальных расхождений.
     """
     diffs = []
 
     for field in ("price", "cost", "amount"):
-        precision = PRECISION[field]
-        db_val  = _round(getattr(order, field), precision)
-        api_val = _round(api_data[field], precision)
+        db_val  = _round3(getattr(order, field))
+        api_val = _round3(api_data[field])
         if db_val != api_val:
             diffs.append((field, getattr(order, field), api_data[field]))
 
@@ -217,7 +210,7 @@ def main():
             total_differ += 1
             print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
             for field, old_val, new_val in diffs:
-                print(f"      {field}: {old_val}  =>  {new_val}")
+                print(f"      {field}:  БД={old_val}  ->  API={new_val}")
 
             if DO_UPDATE:
                 try:
