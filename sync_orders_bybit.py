@@ -7,18 +7,19 @@
     # Применить изменения:
     python sync_orders_bybit.py --update
 
-Логика сравнения:
-    price, cost, amount — сравниваем до 3 знаков после запятой.
-    Если первые 3 знака совпадают — OK, не расхождение.
-    operation_type      — точное совпадение строк.
+Работает только для пользователя: abisalov
 
-Комиссию, банк, скриншот, чек, дату — НЕ ТРОГАЕТ.
+Точность сравнения:
+    price, cost  — до 2 знаков (11.56 == 11.5606  -> OK)
+    amount       — до 3 знаков  (5.780 == 5.78030  -> OK)
+
+Что НЕ трогает: комиссию, банк, скриншот, чек, дату.
 """
 
 import os
 import sys
 import django
-from decimal import Decimal, ROUND_DOWN
+from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
@@ -38,36 +39,25 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 DO_UPDATE = "--update" in sys.argv
 
-# Единая точность сравнения для всех числовых полей — 3 знака после запятой
-PRECISION = Decimal("0.001")
+TARGET_USERNAME = "abisalov"
+
+PRECISION = {
+    "price":  Decimal("0.01"),
+    "cost":   Decimal("0.01"),
+    "amount": Decimal("0.001"),
+}
 
 
-# ── Вспомогательные ───────────────────────────────────────────────────────────
+def fetch_all_bybit_orders(api, username: str) -> dict:
+    result = {}
+    page = 1
 
-def _to_decimal(value) -> Decimal:
-    try:
-        return Decimal(str(float(value or 0)))
-    except Exception:
-        return Decimal("0")
-
-
-def _round3(value) -> Decimal:
-    """Обрезает до 3 знаков после запятой (без округления)."""
-    try:
-        return Decimal(str(value or 0)).quantize(PRECISION, rounding=ROUND_DOWN)
-    except Exception:
-        return Decimal("0")
-
-
-# ── Bybit API ─────────────────────────────────────────────────────────────────
-
-def fetch_bybit_order(api, order_id: str):
-    """
-    Запрашивает данные одного ордера через get_order_details.
-    Возвращает (item_dict, error_string).
-    """
-    try:
-        response = api.get_order_details(orderId=order_id)
+    while True:
+        try:
+            response = api.get_orders(page=page, size=30, status=50)
+        except Exception as e:
+            print(f"  [!] Ошибка запроса страницы {page}: {e}")
+            break
 
         ret_code = response.get("ret_code")
         if ret_code is None:
@@ -75,31 +65,50 @@ def fetch_bybit_order(api, order_id: str):
 
         if ret_code != 0:
             msg = response.get("ret_msg") or response.get("retMsg") or "unknown"
-            return None, f"code={ret_code} msg={msg}"
+            print(f"  [!] Bybit API ошибка (страница {page}): code={ret_code} msg={msg}")
+            if page == 1:
+                return None
+            break
 
-        result = response.get("result") or {}
-        item = result.get("order") or result or {}
+        items = (
+            response.get("result", {}).get("items")
+            or response.get("result", {}).get("list")
+            or []
+        )
 
-        if not item:
-            return None, "empty result"
+        if not items:
+            break
 
-        return item, None
+        for item in items:
+            order_id = str(item.get("id") or item.get("orderId") or "").strip()
+            if order_id:
+                result[order_id] = _parse_item(item)
 
-    except Exception as e:
-        return None, str(e)
+        print(f"  Страница {page}: получено {len(items)} ордеров  (всего: {len(result)})")
+
+        if len(items) < 30:
+            break
+
+        page += 1
+        time.sleep(0.3)
+
+    return result
 
 
-def parse_bybit_item(item: dict) -> dict:
-    """Парсит нужные поля из ответа Bybit."""
+def _parse_item(item: dict) -> dict:
     side_val = str(item.get("side") or "")
     operation_type = "SELL" if side_val == "1" else "BUY"
 
-    price         = _to_decimal(item.get("price"))
-    crypto_amount = _to_decimal(item.get("notifyTokenQuantity") or item.get("quantity"))
-    fiat_amount   = _to_decimal(item.get("amount"))
+    price = _to_decimal(item.get("price"))
+    crypto_amount = _to_decimal(
+        item.get("notifyTokenQuantity") or item.get("quantity")
+    )
+    fiat_amount = _to_decimal(item.get("amount"))
 
     if crypto_amount == Decimal("0") and price > 0 and fiat_amount > 0:
-        crypto_amount = fiat_amount / price
+        crypto_amount = (fiat_amount / price).quantize(
+            Decimal("0.00000001"), rounding=ROUND_DOWN
+        )
 
     return {
         "price":          price,
@@ -109,130 +118,133 @@ def parse_bybit_item(item: dict) -> dict:
     }
 
 
-def fields_differ(order: Order, api_data: dict) -> list:
-    """
-    Сравнивает поля до 3 знаков после запятой.
-    Возвращает список (field, db_value, api_value) только реальных расхождений.
-    """
-    diffs = []
+def _to_decimal(value) -> Decimal:
+    try:
+        return Decimal(str(float(value or 0)))
+    except Exception:
+        return Decimal("0")
 
+
+def _round(value, precision: Decimal) -> Decimal:
+    try:
+        return Decimal(str(value or 0)).quantize(precision, rounding=ROUND_HALF_UP)
+    except Exception:
+        return Decimal("0")
+
+
+def fields_differ(order: Order, api_data: dict) -> list:
+    diffs = []
     for field in ("price", "cost", "amount"):
-        db_val  = _round3(getattr(order, field))
-        api_val = _round3(api_data[field])
+        precision = PRECISION[field]
+        db_val  = _round(getattr(order, field), precision)
+        api_val = _round(api_data[field], precision)
         if db_val != api_val:
             diffs.append((field, getattr(order, field), api_data[field]))
-
     if order.operation_type != api_data["operation_type"]:
         diffs.append(("operation_type", order.operation_type, api_data["operation_type"]))
-
     return diffs
 
-
-# ── Основная логика ───────────────────────────────────────────────────────────
 
 def main():
     print("=" * 80)
     if DO_UPDATE:
-        print("  РЕЖИМ: ОБНОВЛЕНИЕ (--update)")
+        print(f"  РЕЖИМ: ОБНОВЛЕНИЕ (--update)  |  пользователь: {TARGET_USERNAME}")
     else:
-        print("  РЕЖИМ: ДИАГНОСТИКА (без изменений)")
-        print("  Чтобы применить: python sync_orders_bybit.py --update")
+        print(f"  РЕЖИМ: ДИАГНОСТИКА (без изменений)  |  пользователь: {TARGET_USERNAME}")
+        print(f"  Чтобы применить: python sync_orders_bybit.py --update")
     print("=" * 80)
 
-    users = User.objects.filter(
-        order__exchange_type__in=["Bybit", "BYBIT"]
-    ).distinct()
+    try:
+        user = User.objects.get(username=TARGET_USERNAME)
+    except User.DoesNotExist:
+        print(f"\n[!] Пользователь '{TARGET_USERNAME}' не найден в БД.")
+        sys.exit(1)
 
-    if not users.exists():
-        print("\nНет пользователей с Bybit ордерами в Order.")
-        return
+    has_keys = bool(
+        getattr(user, "bybit_api_key", None)
+        and getattr(user, "bybit_api_secret", None)
+    )
 
-    total_checked = 0
-    total_differ  = 0
-    total_updated = 0
-    total_errors  = 0
-    total_skipped = 0
+    if not has_keys:
+        print(f"\n[!] У пользователя '{TARGET_USERNAME}' нет API ключей Bybit.")
+        sys.exit(1)
 
-    for user in users:
-        has_keys = bool(
-            getattr(user, "bybit_api_key", None)
-            and getattr(user, "bybit_api_secret", None)
+    orders = (
+        Order.objects
+        .filter(user=user, exchange_type__in=["Bybit", "BYBIT"])
+        .exclude(external_id="")
+        .exclude(external_id__isnull=True)
+        .order_by("-created_at")
+    )
+
+    print(f"\nПользователь: {user.username}  |  ордеров в БД: {orders.count()}")
+
+    try:
+        api = P2P(
+            testnet=False,
+            api_key=user.bybit_api_key,
+            api_secret=user.bybit_api_secret,
         )
+    except Exception as e:
+        print(f"[!] Ошибка инициализации Bybit клиента: {e}")
+        sys.exit(1)
 
-        orders = (
-            Order.objects
-            .filter(user=user, exchange_type__in=["Bybit", "BYBIT"])
-            .exclude(external_id="")
-            .exclude(external_id__isnull=True)
-            .order_by("-created_at")
-        )
+    print("  Загружаем ордера с Bybit...")
+    api_orders = fetch_all_bybit_orders(api, user.username)
 
-        count = orders.count()
-        print(f"\nПользователь: {user.username}  "
-              f"[{'ключи есть' if has_keys else 'КЛЮЧЕЙ НЕТ'}]  "
-              f"ордеров в БД: {count}")
+    if api_orders is None:
+        print("  [!] Не удалось загрузить данные с Bybit.")
+        sys.exit(1)
 
-        if not has_keys:
-            total_skipped += count
-            print("  Пропускаем (нет API ключей Bybit)")
+    print(f"  Получено с Bybit API: {len(api_orders)} ордеров")
+    print(f"  Сверяем с БД...\n")
+
+    total_checked    = 0
+    total_differ     = 0
+    total_updated    = 0
+    total_errors     = 0
+    total_not_in_api = 0
+
+    for order in orders:
+        total_checked += 1
+
+        api_data = api_orders.get(order.external_id)
+
+        if api_data is None:
+            print(f"  {order.external_id}  ->  НЕТ В API (пропускаем)")
+            total_not_in_api += 1
             continue
 
-        try:
-            api = P2P(
-                testnet=False,
-                api_key=user.bybit_api_key,
-                api_secret=user.bybit_api_secret,
-            )
-        except Exception as e:
-            print(f"  [!] Ошибка инициализации Bybit клиента: {e}")
-            total_skipped += count
+        diffs = fields_differ(order, api_data)
+
+        if not diffs:
+            print(f"  {order.external_id}  ->  OK")
             continue
 
-        for order in orders:
-            total_checked += 1
+        total_differ += 1
+        print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
+        for field, old_val, new_val in diffs:
+            print(f"      {field}: {old_val}  =>  {new_val}")
 
-            item, error = fetch_bybit_order(api, order.external_id)
-
-            if error:
-                print(f"  {order.external_id}  ->  ОШИБКА: {error}")
+        if DO_UPDATE:
+            try:
+                update_fields = []
+                for field, _, new_val in diffs:
+                    setattr(order, field, new_val)
+                    update_fields.append(field)
+                order.save(update_fields=update_fields)
+                print(f"      [OK] Обновлено: {', '.join(update_fields)}")
+                total_updated += 1
+            except Exception as e:
+                print(f"      [!] Ошибка сохранения: {e}")
                 total_errors += 1
-                time.sleep(0.2)
-                continue
-
-            api_data = parse_bybit_item(item)
-            diffs = fields_differ(order, api_data)
-
-            if not diffs:
-                print(f"  {order.external_id}  ->  OK")
-                time.sleep(0.15)
-                continue
-
-            total_differ += 1
-            print(f"  {order.external_id}  ->  РАСХОЖДЕНИЕ:")
-            for field, old_val, new_val in diffs:
-                print(f"      {field}:  БД={old_val}  ->  API={new_val}")
-
-            if DO_UPDATE:
-                try:
-                    update_fields = []
-                    for field, _, new_val in diffs:
-                        setattr(order, field, new_val)
-                        update_fields.append(field)
-                    order.save(update_fields=update_fields)
-                    print(f"      [OK] Обновлено: {', '.join(update_fields)}")
-                    total_updated += 1
-                except Exception as e:
-                    print(f"      [!] Ошибка сохранения: {e}")
-                    total_errors += 1
-
-            time.sleep(0.15)
 
     print("\n" + "=" * 80)
-    print(f"  Проверено:        {total_checked}")
-    print(f"  Расхождений:      {total_differ}")
-    print(f"  Обновлено:        {total_updated}")
-    print(f"  Ошибок API:       {total_errors}")
-    print(f"  Пропущено:        {total_skipped}")
+    print(f"  Проверено:           {total_checked}")
+    print(f"  Расхождений:         {total_differ}")
+    print(f"  Обновлено:           {total_updated}")
+    print(f"  Нет в API (старые):  {total_not_in_api}")
+    print(f"  Ошибок:              {total_errors}")
     if not DO_UPDATE and total_differ > 0:
         print(f"\n  Запусти с --update чтобы применить изменения.")
     print("=" * 80 + "\n")
