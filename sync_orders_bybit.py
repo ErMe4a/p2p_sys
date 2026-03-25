@@ -147,7 +147,9 @@ def fields_differ(order: Order, api_data: dict) -> list:
         db_val  = _round(getattr(order, field), precision)
         api_val = _round(api_data[field], precision)
         if db_val != api_val:
-            diffs.append((field, getattr(order, field), api_data[field]))
+            # Показываем только если разница больше 5
+            if abs(db_val - api_val) > Decimal("5"):
+                diffs.append((field, getattr(order, field), api_data[field]))
     if order.operation_type != api_data["operation_type"]:
         diffs.append(("operation_type", order.operation_type, api_data["operation_type"]))
     return diffs
