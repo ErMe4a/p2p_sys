@@ -25,7 +25,7 @@ from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")  # <-- поменяй если надо
 
 try:
     django.setup()
@@ -84,6 +84,11 @@ def fetch_all_bybit_orders(api, username: str) -> dict:
 
         if not items:
             break
+
+        # Дебаг: показываем ключи первого item один раз чтобы найти поле даты
+        if page == 1:
+            print(f"  [DEBUG] Поля первого ордера: {list(items[0].keys())}")
+            print(f"  [DEBUG] createDate={items[0].get('createDate')} createTime={items[0].get('createTime')} createdAt={items[0].get('createdAt')} createAt={items[0].get('createAt')}")
 
         for item in items:
             order_id = str(item.get("id") or item.get("orderId") or "").strip()
