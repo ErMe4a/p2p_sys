@@ -25,7 +25,7 @@ from decimal import Decimal, ROUND_DOWN, ROUND_HALF_UP
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")  # <-- поменяй если надо
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")  # <-- поменяй если надо
 
 try:
     django.setup()
