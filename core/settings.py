@@ -26,6 +26,7 @@ ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['127.0.0.1', 'localhost'])
 # protocol. Provide full origins (including scheme) in `.env` like
 # "https://mininp2p.ru,http://127.0.0.1". Empty by default for local use.
 CSRF_TRUSTED_ORIGINS = env.list('CSRF_TRUSTED_ORIGINS', default=[])
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
 # ------------------------------------------------------------------------------
 # Applications and middleware

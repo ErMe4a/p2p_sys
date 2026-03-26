@@ -408,7 +408,7 @@ def _calc_month_profit_for_user(user, month_start, month_end):
             prev_sell_qty   += amt
             prev_exch_usdt  += amt * exch_rate / 100
 
-    prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
+    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
     prev_balance_cost = prev_balance_qty * prev_last_price
 
     # --- Ордера текущего месяца ---
@@ -509,7 +509,7 @@ def _calc_today_profit(user, period_start, period_end):
             prev_sell_qty   += amt
             prev_exch_usdt  += amt * exch_rate / 100
 
-    prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
+    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
     prev_balance_cost = prev_balance_qty * prev_last_price
 
     period_orders = Order.objects.filter(
@@ -656,8 +656,9 @@ def user_profit_view(request):
             calc  = _calc_month_profit_for_user(user, month_start, month_end)
             gross = calc['gross']
 
-            ndfl       = gross * 0.13 if gross > 0 else 0
-            after_ndfl = gross - ndfl
+            taxable    = max(0.0, gross - month_expenses)
+            ndfl       = taxable * 0.13 if taxable > 0 else 0
+            after_ndfl = taxable - ndfl
 
             share_percent = float(user_shares.get(share_key, 20.0))
             share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
@@ -667,7 +668,7 @@ def user_profit_view(request):
                 .aggregate(Sum('amount'))['amount__sum'] or 0
             )
 
-            net_profit = after_ndfl - share_amount - month_expenses
+            net_profit = after_ndfl - share_amount
 
             months_data.append({
                 'key':               share_key,
@@ -725,20 +726,19 @@ def user_profit_view(request):
         calc  = _calc_today_profit(user, period_start, period_end)
         gross = calc['gross']
 
-        ndfl       = gross * 0.13 if gross > 0 else 0
-        after_ndfl = gross - ndfl
-
         month_key     = f"{period_start.year}-{str(period_start.month).zfill(2)}"
         user_shares   = user.profit_shares if isinstance(user.profit_shares, dict) else {}
         share_percent = float(user_shares.get(month_key, 20.0))
-        share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
 
         month_expenses = float(
             UserExpense.objects.filter(user=user, month=month_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
-
-        net_profit = after_ndfl - share_amount - month_expenses
+        taxable    = max(0.0, gross - month_expenses)
+        ndfl       = taxable * 0.13 if taxable > 0 else 0
+        after_ndfl = taxable - ndfl
+        share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+        net_profit = after_ndfl - share_amount
 
         # Текущий глобальный остаток = all_buy - all_sell - all_exch_comm
         all_orders_sell = Order.objects.filter(
@@ -1406,7 +1406,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
             prev_sell_qty   += amt
             prev_exch_usdt  += amt * exch_rate / 100
 
-    prev_balance_qty  = max(0.0, prev_buy_qty - prev_sell_qty - prev_exch_usdt)
+    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
     prev_balance_cost = prev_balance_qty * prev_last_price
 
     # --- Ордера текущего месяца С фильтрами ---
@@ -1529,14 +1529,6 @@ def admin_profit_view(request):
         )
         gross = calc['gross']
 
-        ndfl       = gross * 0.13 if gross > 0 else 0
-        after_ndfl = gross - ndfl
-
-        share_percent = 20.0
-        if u.profit_shares and isinstance(u.profit_shares, dict):
-            share_percent = float(u.profit_shares.get(share_key, 20.0))
-        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-
         month_expenses = float(
             UserExpense.objects.filter(user=u, month=share_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
@@ -1547,7 +1539,17 @@ def admin_profit_view(request):
             .values('name', 'amount')
         )
 
-        net_profit = after_ndfl - share_amount - month_expenses
+        # НДФЛ считается после вычета расходов (правильная налоговая база)
+        taxable    = max(0.0, gross - month_expenses)
+        ndfl       = taxable * 0.13 if taxable > 0 else 0
+        after_ndfl = taxable - ndfl
+
+        share_percent = 20.0
+        if u.profit_shares and isinstance(u.profit_shares, dict):
+            share_percent = float(u.profit_shares.get(share_key, 20.0))
+        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+
+        net_profit = after_ndfl - share_amount
 
         # Остаток для отображения (может быть отрицательным)
         crypto_balance = calc['remainder_qty_display']
