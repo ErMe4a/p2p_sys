@@ -371,20 +371,15 @@ def delete_unprocessed_order(request, pk):
 
 
 
-import json as _json
-from datetime import timezone as dt_timezone
-
-SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
-
 
 def _calc_month_profit_for_user(user, month_start, month_end):
     """
     Та же функция что у админа — гарантирует совпадение цифр.
 
+    prev_balance_qty    — может быть отрицательным (долг переносится)
     remainder_qty_display — для показа (может быть отрицательным)
-    remainder_qty_calc    — для расчётов (>= 0, иначе прибыль искажается)
+    remainder_qty_calc    — для расчётов (>= 0)
     """
-    # --- Переходящий остаток ---
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
@@ -411,7 +406,6 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
     prev_balance_cost = prev_balance_qty * prev_last_price
 
-    # --- Ордера текущего месяца ---
     month_orders = Order.objects.filter(
         user=user,
         created_at__gte=month_start,
@@ -447,13 +441,10 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
 
-    # Остаток для отображения — может быть отрицательным
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    # Остаток для расчётов — не уходит в минус
     remainder_qty_calc    = max(0.0, remainder_qty_display)
     remainder_cost        = remainder_qty_calc * month_last_price
-
-    eq_buy_cost = total_buy_cost - remainder_cost
+    eq_buy_cost           = total_buy_cost - remainder_cost
 
     if month_sell_qty == 0:
         gross = 0.0
@@ -577,16 +568,6 @@ def _calc_today_profit(user, period_start, period_end):
 
 @login_required
 def user_profit_view(request):
-    """
-    Страница аналитики прибыли пользователя.
-
-    Вкладка 'Сегодня':   _calc_today_profit
-    Вкладка 'По месяцам': _calc_month_profit_for_user (та же что у админа)
-
-    Остаток:
-      - crypto_balance (карточка) = all_buy - all_sell - all_exch_comm
-      - remainder_qty (месяц)     = показывает отрицательный если продали больше
-    """
     action = request.GET.get('action')
 
     # =====================================================================
@@ -626,18 +607,15 @@ def user_profit_view(request):
     # =====================================================================
     if action == 'get_months':
         user = request.user
-
         from zoneinfo import ZoneInfo
         MSK = ZoneInfo('Europe/Moscow')
 
         all_orders = Order.objects.filter(
-            user=user,
-            created_at__gte=SYSTEM_START
+            user=user, created_at__gte=SYSTEM_START
         ).order_by('created_at')
 
         months_with_orders = set()
         for o in all_orders:
-            # Переводим в МСК для определения месяца
             dt_msk = o.created_at.astimezone(MSK)
             months_with_orders.add((dt_msk.year, dt_msk.month))
 
@@ -652,21 +630,22 @@ def user_profit_view(request):
             month_end   = datetime(yr + 1, 1, 1, tzinfo=MSK) if mo == 12 else datetime(yr, mo + 1, 1, tzinfo=MSK)
             share_key   = f"{yr}-{str(mo).zfill(2)}"
 
-            # Та же функция что у админа
             calc  = _calc_month_profit_for_user(user, month_start, month_end)
             gross = calc['gross']
 
+            # Расходы
+            month_expenses = float(
+                UserExpense.objects.filter(user=user, month=share_key)
+                .aggregate(Sum('amount'))['amount__sum'] or 0
+            )
+
+            # НДФЛ после вычета расходов
             taxable    = max(0.0, gross - month_expenses)
             ndfl       = taxable * 0.13 if taxable > 0 else 0
             after_ndfl = taxable - ndfl
 
             share_percent = float(user_shares.get(share_key, 20.0))
             share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-
-            month_expenses = float(
-                UserExpense.objects.filter(user=user, month=share_key)
-                .aggregate(Sum('amount'))['amount__sum'] or 0
-            )
 
             net_profit = after_ndfl - share_amount
 
@@ -682,7 +661,6 @@ def user_profit_view(request):
                 'sell_cost':         round(calc['month_sell_cost'],        2),
                 'total_buy_qty':     round(calc['total_buy_qty'],          2),
                 'total_buy_cost':    round(calc['total_buy_cost'],         2),
-                # Остаток для отображения (может быть отрицательным)
                 'remainder_qty':     round(calc['remainder_qty_display'],  2),
                 'remainder_cost':    round(calc['remainder_cost'],         2),
                 'eq_buy_cost':       round(calc['eq_buy_cost'],            2),
@@ -701,7 +679,7 @@ def user_profit_view(request):
         return JsonResponse({'months': months_data})
 
     # =====================================================================
-    # РАСЧЁТ ЗА ПЕРИОД — для вкладки "Сегодня"
+    # РАСЧЁТ ЗА ПЕРИОД — вкладка "Сегодня"
     # =====================================================================
     if action == 'get_turnover':
         user           = request.user
@@ -726,21 +704,26 @@ def user_profit_view(request):
         calc  = _calc_today_profit(user, period_start, period_end)
         gross = calc['gross']
 
-        month_key     = f"{period_start.year}-{str(period_start.month).zfill(2)}"
-        user_shares   = user.profit_shares if isinstance(user.profit_shares, dict) else {}
-        share_percent = float(user_shares.get(month_key, 20.0))
+        month_key      = f"{period_start.year}-{str(period_start.month).zfill(2)}"
+        user_shares    = user.profit_shares if isinstance(user.profit_shares, dict) else {}
 
+        # Расходы
         month_expenses = float(
             UserExpense.objects.filter(user=user, month=month_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
+
+        # НДФЛ после вычета расходов
         taxable    = max(0.0, gross - month_expenses)
         ndfl       = taxable * 0.13 if taxable > 0 else 0
         after_ndfl = taxable - ndfl
+
+        share_percent = float(user_shares.get(month_key, 20.0))
         share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+
         net_profit = after_ndfl - share_amount
 
-        # Текущий глобальный остаток = all_buy - all_sell - all_exch_comm
+        # Глобальный остаток крипты
         all_orders_sell = Order.objects.filter(
             user=user, created_at__gte=SYSTEM_START, operation_type='SELL'
         )
@@ -750,7 +733,6 @@ def user_profit_view(request):
             float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
             for o in all_orders_sell
         )
-        # Отображаем с минусом если продали больше чем купили
         crypto_balance = all_buy - all_sell - all_exch_comm
 
         period_orders = Order.objects.filter(
@@ -822,6 +804,8 @@ def user_profit_view(request):
 
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
+
+
 
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1379,8 +1363,9 @@ def _calc_month_profit_filtered(user, month_start, month_end,
     """
     Считает прибыль за месяц по логике Excel с учётом фильтров.
 
-    remainder_qty_calc    — для расчётов (max 0, не уходит в минус)
+    prev_balance_qty    — может быть отрицательным (долг переносится)
     remainder_qty_display — для отображения (может быть отрицательным)
+    remainder_qty_calc    — для расчётов (>= 0, иначе прибыль искажается)
     """
     # --- Переходящий остаток — всегда без фильтра ---
     prev_orders = Order.objects.filter(
@@ -1406,6 +1391,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
             prev_sell_qty   += amt
             prev_exch_usdt  += amt * exch_rate / 100
 
+    # Может быть отрицательным — долг переносится в следующий месяц
     prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
     prev_balance_cost = prev_balance_qty * prev_last_price
 
@@ -1451,9 +1437,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
 
-    # Остаток для отображения — может быть отрицательным
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    # Остаток для расчётов — не уходит в минус (иначе себестоимость будет завышена)
     remainder_qty_calc    = max(0.0, remainder_qty_display)
     remainder_cost        = remainder_qty_calc * month_last_price
 
@@ -1476,8 +1460,8 @@ def _calc_month_profit_filtered(user, month_start, month_end,
         'month_exch_usdt':       month_exch_usdt,
         'total_buy_qty':         total_buy_qty,
         'total_buy_cost':        total_buy_cost,
-        'remainder_qty_display': remainder_qty_display,  # для показа (может быть < 0)
-        'remainder_qty_calc':    remainder_qty_calc,      # для расчётов (>= 0)
+        'remainder_qty_display': remainder_qty_display,
+        'remainder_qty_calc':    remainder_qty_calc,
         'remainder_cost':        remainder_cost,
         'eq_buy_cost':           eq_buy_cost,
         'gross':                 gross,
@@ -1489,9 +1473,14 @@ def _calc_month_profit_filtered(user, month_start, month_end,
 def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
-    Фильтры биржи/банка влияют на весь расчёт.
-    Переходящий остаток считается без фильтра.
-    Границы месяца в МСК — совпадает с Excel Макса.
+
+    Цепочка расчёта:
+      gross      = SELL - себестоимость - комса банка
+      taxable    = gross - расходы пользователя  (налоговая база)
+      ndfl       = taxable * 13%
+      after_ndfl = taxable - ndfl
+      share      = after_ndfl * X%
+      net_profit = after_ndfl - share
     """
     now       = timezone.now()
     year_str  = request.GET.get('year',  str(now.year))
@@ -1510,7 +1499,6 @@ def admin_profit_view(request):
     month_str = str(month).zfill(2)
     share_key = f"{year}-{month_str}"
 
-    # Границы месяца в МСК чтобы совпадать с Excel
     from zoneinfo import ZoneInfo
     MSK = ZoneInfo('Europe/Moscow')
     month_start = datetime(year, month, 1, tzinfo=MSK)
@@ -1529,6 +1517,7 @@ def admin_profit_view(request):
         )
         gross = calc['gross']
 
+        # Расходы пользователя за месяц
         month_expenses = float(
             UserExpense.objects.filter(user=u, month=share_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
@@ -1544,22 +1533,22 @@ def admin_profit_view(request):
         ndfl       = taxable * 0.13 if taxable > 0 else 0
         after_ndfl = taxable - ndfl
 
+        # Доля системы
         share_percent = 20.0
         if u.profit_shares and isinstance(u.profit_shares, dict):
             share_percent = float(u.profit_shares.get(share_key, 20.0))
         share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
 
+        # Чистая прибыль
         net_profit = after_ndfl - share_amount
 
-        # Остаток для отображения (может быть отрицательным)
-        crypto_balance = calc['remainder_qty_display']
-
+        crypto_balance    = calc['remainder_qty_display']
         bank_comm_rub     = calc['month_buy_comm'] + calc['month_sell_comm']
         exchange_comm_rub = calc['month_exch_usdt']
 
         user_stats.append({
             'user':                  u,
-            'crypto_balance':        crypto_balance,        # отображаемый (может < 0)
+            'crypto_balance':        crypto_balance,
             'prev_balance_qty':      calc['prev_balance_qty'],
             'prev_balance_cost':     calc['prev_balance_cost'],
             'month_buy_qty':         calc['month_buy_qty'],
@@ -1583,7 +1572,6 @@ def admin_profit_view(request):
             'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
         })
 
-    # Итоговые карточки
     summary = {
         'buy_sum':   sum(s['month_buy_cost']  for s in user_stats),
         'sell_sum':  sum(s['month_sell_cost'] for s in user_stats),
