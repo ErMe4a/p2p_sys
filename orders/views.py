@@ -418,6 +418,7 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     month_sell_comm  = 0.0
     month_exch_usdt  = 0.0
     month_last_price = prev_last_price
+    month_last_sell_price = 0.0
 
     for o in month_orders:
         amt        = float(o.amount or 0)
@@ -437,6 +438,7 @@ def _calc_month_profit_for_user(user, month_start, month_end):
             month_sell_cost  += cost
             month_sell_comm  += total_comm
             month_exch_usdt  += amt * exch_rate / 100
+            month_last_sell_price = price
 
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
@@ -446,10 +448,13 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     remainder_cost        = remainder_qty_calc * month_last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
+    # Комиссия биржи в рублях = кол-во USDT * последний курс SELL
+    exch_comm_rub = month_exch_usdt * month_last_sell_price
+
     if month_sell_qty == 0:
         gross = 0.0
     else:
-        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm
+        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm - exch_comm_rub
 
     return {
         'prev_balance_qty':      prev_balance_qty,
@@ -541,10 +546,17 @@ def _calc_today_profit(user, period_start, period_end):
     remainder_cost        = remainder_qty_calc * last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
+    last_sell_price = 0.0
+    for o2 in period_orders:
+        if o2.operation_type == 'SELL' and float(o2.price or 0) > 0:
+            last_sell_price = float(o2.price)
+    exch_comm_rub = exch_usdt * last_sell_price
+
     if sell_qty == 0:
         gross = 0.0
     else:
-        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm
+        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm - exch_comm_rub
+        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm - exch_comm_rub
 
     return {
         'prev_balance_qty':      prev_balance_qty,
@@ -1178,7 +1190,7 @@ def export_excel_report(request):
     # =====================================================================
     # Итоговые строки после блока ордеров
     # =====================================================================
-    def write_summary(label_suffix, data_start, data_end, last_buy_price):
+    def write_summary(label_suffix, data_start, data_end, last_buy_price, last_sell_price=0.0):
         ws.append([])  # разделитель
 
         tr = ws.max_row + 1
@@ -1214,7 +1226,7 @@ def export_excel_report(request):
             f"=G{tr}-G{ost}",
             "",
             f"=I{tr}",
-            "",
+            last_sell_price,   # последний курс SELL — для расчёта комсы биржи в рублях
             f"=K{tr}",
             "", ""
         ])
@@ -1222,7 +1234,7 @@ def export_excel_report(request):
 
         ws.append([
             f"Прибыль{label_suffix}:", "", "", "",
-            f"=K{rr}-G{rr}-H{tr}-L{tr}",
+            f"=K{rr}-G{rr}-H{tr}-L{tr}-M{tr}*J{rr}",
             "", "", "", "", "", "", "", ""
         ])
 
@@ -1234,8 +1246,9 @@ def export_excel_report(request):
     # Обход ордеров — группировка по МСК месяцам
     # =====================================================================
     idx            = 0
-    last_buy_price = 0.0
-    prev_ost_row   = None
+    last_buy_price  = 0.0
+    last_sell_price = 0.0
+    prev_ost_row    = None
 
     # Ключ группировки — по МСК времени
     def get_month_key(o):
@@ -1266,12 +1279,14 @@ def export_excel_report(request):
 
                 if o.operation_type == 'BUY':
                     last_buy_price = price_f
+                else:
+                    last_sell_price = price_f
 
             data_end     = ws.max_row
             prev_ost_row = write_summary(
                 f" за {_month_name(mo)} {yr}",
                 data_start, data_end,
-                last_buy_price
+                last_buy_price, last_sell_price
             )
             is_first_month = False
 
@@ -1289,9 +1304,11 @@ def export_excel_report(request):
 
             if o.operation_type == 'BUY':
                 last_buy_price = price_f
+            else:
+                last_sell_price = price_f
 
         data_end = ws.max_row
-        write_summary("", data_start, data_end, last_buy_price)
+        write_summary("", data_start, data_end, last_buy_price, last_sell_price)
 
     # =====================================================================
     # Оформление
@@ -1415,6 +1432,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
     month_exch_usdt  = 0.0
     month_last_price = prev_last_price
 
+    month_last_sell_price = 0.0
     for o in month_orders:
         amt        = float(o.amount or 0)
         cost       = float(o.cost   or 0)
@@ -1434,6 +1452,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
             month_sell_comm  += total_comm
             month_exch_usdt  += amt * exch_rate / 100
 
+            month_last_sell_price = price
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
 
@@ -1443,11 +1462,12 @@ def _calc_month_profit_filtered(user, month_start, month_end,
 
     eq_buy_cost = total_buy_cost - remainder_cost
 
+    exch_comm_rub = month_exch_usdt * month_last_sell_price
     if month_sell_qty == 0:
         gross = 0.0
     else:
         gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm
-
+        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm - exch_comm_rub
     return {
         'prev_balance_qty':      prev_balance_qty,
         'prev_balance_cost':     prev_balance_cost,
