@@ -444,7 +444,7 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     total_buy_cost = prev_balance_cost + month_buy_cost
 
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    remainder_qty_calc    = max(0.0, remainder_qty_display)
+    remainder_qty_calc    = remainder_qty_display
     remainder_cost        = remainder_qty_calc * month_last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
@@ -542,7 +542,7 @@ def _calc_today_profit(user, period_start, period_end):
     total_buy_cost = prev_balance_cost + buy_cost
 
     remainder_qty_display = total_buy_qty - sell_qty - exch_usdt
-    remainder_qty_calc    = max(0.0, remainder_qty_display)
+    remainder_qty_calc    = remainder_qty_display
     remainder_cost        = remainder_qty_calc * last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
@@ -1153,23 +1153,29 @@ def export_excel_report(request):
 
         num = 0 if is_historical else idx
 
+        is_telegram = 'telegram' in str(getattr(o, 'exchange_type', '') or '').lower()
+
         if o.operation_type == 'BUY':
+            # Для Telegram берём реальный cost, для остальных формулой =E*F
+            buy_cost_val = float(o.cost or 0) if is_telegram else f"=E{row_num}*F{row_num}"
             ws.append([
                 num, label, o.external_id, "USDT",
                 amount_f,
                 price_f,
-                f"=E{row_num}*F{row_num}",
+                buy_cost_val,
                 total_comm if total_comm > 0 else 0,
                 0, 0, 0, 0, 0
             ])
         else:
             exch_comm_usdt = amount_f * exch_rate / 100
+            # Для Telegram берём реальный cost, для остальных формулой =I*J
+            sell_cost_val = float(o.cost or 0) if is_telegram else f"=I{row_num}*J{row_num}"
             ws.append([
                 num, label, o.external_id, "USDT",
                 0, 0, 0, 0,
                 amount_f,
                 price_f,
-                f"=I{row_num}*J{row_num}",
+                sell_cost_val,
                 total_comm if total_comm > 0 else 0,
                 exch_comm_usdt if exch_rate > 0 else 0
             ])
@@ -1457,7 +1463,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
     total_buy_cost = prev_balance_cost + month_buy_cost
 
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    remainder_qty_calc    = max(0.0, remainder_qty_display)
+    remainder_qty_calc    = remainder_qty_display
     remainder_cost        = remainder_qty_calc * month_last_price
 
     eq_buy_cost = total_buy_cost - remainder_cost
