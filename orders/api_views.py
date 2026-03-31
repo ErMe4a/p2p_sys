@@ -167,7 +167,12 @@ def order(request):
 
     exchange_name = get_exchange_name(data.get("exchangeType", 1))
     
-    op_type = data.get("type", "BUY")
+    op_type = str(data.get("type") or "").strip().upper()
+    if op_type not in ("SELL", "BUY"):
+        return Response({
+            "success": False,
+            "message": f"Недопустимый тип операции: '{op_type}'. Ожидается SELL или BUY. Чек не отправлен."
+        }, status=400)
     commission = data.get("commission") or 0
     commission_type = data.get("commissionType", "PERCENT") 
     
@@ -251,7 +256,15 @@ def order(request):
     # --- ЛОГИКА ОТПРАВКИ ЧЕКА ---
     receipt_debug = None
     if should_make_receipt(data):
-        receipt_debug = create_or_update_and_send_receipt(o, receipt_dict)
+        # Защита: чек только если тип чёткий, контакт и сумма есть
+        if o.operation_type not in ("SELL", "BUY"):
+            receipt_debug = None
+        elif not receipt_dict.get("contact"):
+            receipt_debug = None
+        elif not receipt_dict.get("sum") and not o.cost:
+            receipt_debug = None
+        else:
+            receipt_debug = create_or_update_and_send_receipt(o, receipt_dict)
     
     return Response({
         "success": True,
