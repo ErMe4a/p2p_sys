@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
 from django.http import FileResponse, Http404
 from django.utils.dateparse import parse_datetime
+from django.db import transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -12,20 +13,18 @@ from .receipt_service import should_make_receipt, create_or_update_and_send_rece
 
 # --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
 
-# --- ВСПОМОГАТЕЛЬНЫЕ КАРТЫ ДЛЯ ТЕКСТОВОГО ПОЛЯ EXCHANGE_TYPE ---
-
 EXCHANGE_ID_TO_NAME = {
     1: "Bybit",
     2: "HTX",
     3: "MEXC",
-    4: "Gate"  # <--- ДОБАВИЛИ GATE
+    4: "Gate"
 }
 
 EXCHANGE_NAME_TO_ID = {
     "Bybit": 1, "BYBIT": 1,
     "HTX": 2,
     "MEXC": 3,
-    "Gate": 4, "GATE": 4  # <--- ДОБАВИЛИ GATE
+    "Gate": 4, "GATE": 4
 }
 
 def get_exchange_id(name):
@@ -79,7 +78,6 @@ def users_me(request):
             "evotorPassword": getattr(u, "evotor_password", "") or "",
         })
 
-    # Упрощенный маппинг для PUT
     mapping = {
         "inn": "inn", "kktId": "kkt_id", "paymentAddress": "payment_address",
         "taxType": "tax_type", "evotorLogin": "evotor_login", "evotorPassword": "evotor_password",
@@ -98,20 +96,15 @@ def users_me(request):
 @permission_classes([IsAuthenticated])
 def details(request):
     if request.method == "GET":
-        # ИЗМЕНЕНИЕ: Отдаем все активные банки (общий список)
-        # Убрали фильтр user=request.user
         qs = BankDetail.objects.filter(is_deleted=False).order_by("id")
         return Response([{"id": d.id, "name": d.name} for d in qs])
 
-    # ИЗМЕНЕНИЕ: Запрещаем создание новых банков через API
     return Response({"message": "Creating banks is disabled via API"}, status=403)
 
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def details_delete(request, pk: int):
-    # Удаление тоже можно запретить или оставить только для админов, 
-    # но пока оставим логику "не нашел - 404", так как у юзера нет своих банков
     return Response({"message": "Deletion disabled"}, status=403)
 
 
@@ -122,7 +115,7 @@ def order(request):
     GET  /api/order?id=...&exchangeType=1
     POST /api/order (save/update)
     """
-    # === GET: Поиск (БЕЗ ИЗМЕНЕНИЙ) ===
+    # === GET ===
     if request.method == "GET":
         order_id = (request.query_params.get("id") or "").strip()
         exchange_name = get_exchange_name(request.query_params.get("exchangeType", 1))
@@ -158,7 +151,7 @@ def order(request):
             "receipt": receipt_data
         })
 
-    # === POST: Сохранение ордера (ТУТ ПРАВКИ) ===
+    # === POST ===
     data = request.data
     
     external_id = str(data.get("orderId") or data.get("stringOrderId") or "").strip()
@@ -173,6 +166,7 @@ def order(request):
             "success": False,
             "message": f"Недопустимый тип операции: '{op_type}'. Ожидается SELL или BUY. Чек не отправлен."
         }, status=400)
+
     commission = data.get("commission") or 0
     commission_type = data.get("commissionType", "PERCENT") 
     
@@ -203,60 +197,74 @@ def order(request):
     if not quantity: quantity = receipt_dict.get("amount")
     if not cost: cost = receipt_dict.get("sum")
 
-    # Сохранение (update_or_create)
-    o, created = Order.objects.update_or_create(
-        user=request.user, 
-        external_id=external_id,
-        exchange_type=exchange_name, 
-        defaults={
-            "operation_type": op_type
-        },
-    )
+    # --- ЗАЩИТА ОТ ДУБЛЕЙ через atomic + select_for_update ---
+    # select_for_update блокирует строку на время транзакции —
+    # второй одновременный запрос с тем же external_id будет ждать,
+    # а не создавать дубль
+    with transaction.atomic():
+        try:
+            # Пробуем найти существующий ордер с блокировкой
+            o = Order.objects.select_for_update().get(
+                user=request.user,
+                external_id=external_id,
+                exchange_type=exchange_name,
+            )
+            created = False
+        except Order.DoesNotExist:
+            # Ордера нет — создаём новый
+            o = Order.objects.create(
+                user=request.user,
+                external_id=external_id,
+                exchange_type=exchange_name,
+                operation_type=op_type,
+            )
+            created = True
 
-    # Принудительно обновляем поля
-    o.operation_type = op_type
-    o.commission = commission
-    o.commission_type = commission_type
-    o.bank_detail = bank 
-    
-    # ФИКСИРУЕМ ПРОЦЕНТ (Твоя логика)
-    if created:
-        ex_lower = str(exchange_name).lower()
-        user_comm_rate = 0.0
-        
-        if 'bybit' in ex_lower: user_comm_rate = request.user.bybit_commission
-        elif 'htx' in ex_lower or 'huobi' in ex_lower: user_comm_rate = request.user.htx_commission
-        elif 'mexc' in ex_lower: user_comm_rate = request.user.mexc_commission
-        elif 'bitget' in ex_lower: user_comm_rate = request.user.bitget_commission
-        elif 'telegram' in ex_lower: user_comm_rate = request.user.telegram_commission
-        # Добавляем Gate (используем getattr на случай, если в модели User еще нет поля gate_commission)
-        elif 'gate' in ex_lower: user_comm_rate = getattr(request.user, 'gate_commission', 0.0)
-            
-        o.exchange_commission_rate = user_comm_rate
-    
-    if created_at: o.created_at = created_at
-    if "screenshotName" in data: o.screenshot_name = data.get("screenshotName")
+        # Обновляем поля
+        o.operation_type = op_type
+        o.commission = commission
+        o.commission_type = commission_type
+        o.bank_detail = bank
 
-    # Сохраняем цифры
-    if price: o.price = price
-    if cost: o.cost = cost
-    if quantity: o.amount = quantity
+        # Фиксируем процент биржи только при создании
+        if created:
+            ex_lower = str(exchange_name).lower()
+            user_comm_rate = 0.0
+            if 'bybit' in ex_lower:
+                user_comm_rate = request.user.bybit_commission
+            elif 'htx' in ex_lower or 'huobi' in ex_lower:
+                user_comm_rate = request.user.htx_commission
+            elif 'mexc' in ex_lower:
+                user_comm_rate = request.user.mexc_commission
+            elif 'bitget' in ex_lower:
+                user_comm_rate = request.user.bitget_commission
+            elif 'telegram' in ex_lower:
+                user_comm_rate = request.user.telegram_commission
+            elif 'gate' in ex_lower:
+                user_comm_rate = getattr(request.user, 'gate_commission', 0.0)
+            o.exchange_commission_rate = user_comm_rate
 
-    o.save()
+        if created_at:
+            o.created_at = created_at
+        if "screenshotName" in data:
+            o.screenshot_name = data.get("screenshotName")
 
-    # !!! ВСТАВКА: ОЧИСТКА НЕОБРАБОТАННЫХ !!!
-    # Как только ордер сохранен в Order, удаляем его из буфера
-    if external_id:
-        UnprocessedOrder.objects.filter(
-            user=request.user, 
-            order_id=external_id
-        ).delete()
-    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    
+        # Сохраняем цифры
+        if price: o.price = price
+        if cost:  o.cost = cost
+        if quantity: o.amount = quantity
+
+        o.save()
+
+    # Очистка необработанных
+    UnprocessedOrder.objects.filter(
+        user=request.user,
+        order_id=external_id
+    ).delete()
+
     # --- ЛОГИКА ОТПРАВКИ ЧЕКА ---
     receipt_debug = None
     if should_make_receipt(data):
-        # Защита: чек только если тип чёткий, контакт и сумма есть
         if o.operation_type not in ("SELL", "BUY"):
             receipt_debug = None
         elif not receipt_dict.get("contact"):
@@ -313,7 +321,6 @@ def order_my(request):
             "commission": str(getattr(o, "commission", 0)),
             "commissionType": getattr(o, "commission_type", "PERCENT"),
             "createdAt": o.created_at.isoformat() if getattr(o, "created_at", None) else None,
-            # Если банк удален, name может упасть, добавил защиту
             "details": {"name": o.bank_detail.name} if getattr(o, "bank_detail", None) else None,
             "price": str(getattr(o, "price", 0)),
             "amount": str(getattr(o, "cost", 0)),     
@@ -334,11 +341,9 @@ def order_by_string_id(request):
         exchange_type=exchange_name,
     ).first()
 
-    if not o: return Response({"message": "not found"}, status=404)
+    if not o:
+        return Response({"message": "not found"}, status=404)
 
-    # ЛОГИКА ИСПРАВЛЕНИЯ:
-    # Проверяем, есть ли внутри receipt ключ 'uuid'.
-    # Если uuid нет или он null — отдаем None, чтобы фронт не рисовал плашку.
     receipt_data = None
     if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
         receipt_data = o.receipt

@@ -67,24 +67,31 @@
 </style>
 
 <div class="form-section">
-    <form method="post" enctype="multipart/form-data">
+    {% if request.session.order_error %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
+            <strong>Ошибка!</strong> {{ request.session.order_error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+        </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="createOrderForm">
         {% csrf_token %}
         
         <div class="row mb-3">
             <div class="col-12">
-                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера">
+                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
             </div>
         </div>
 
         <div class="row g-3 mb-3">
             <div class="col-md-2">
-                <input type="text" name="price" class="form-control" placeholder="Курс">
+                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
             </div>
             <div class="col-md-2">
-                <input type="text" name="amount" class="form-control" placeholder="Количество">
+                <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
             </div>
             <div class="col-md-2">
-                <input type="text" name="cost" class="form-control" placeholder="Стоимость">
+                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
             </div>
             <div class="col-md-3">
                 <select class="form-select" name="operation_type">
@@ -108,7 +115,7 @@
 
         <div class="row g-3 align-items-start">
             <div class="col-md-3">
-                <select class="form-select" name="details">
+                <select class="form-select" name="details" required>
                     <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
                     {% for bank in default_banks %}
                         <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
@@ -127,7 +134,7 @@
             </div>
             
             <div class="col-md-3">
-                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}">
+                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
             </div>
             
             <div class="col-md-2 pt-4"> 
@@ -184,7 +191,7 @@
                 <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
                         <button class="btn btn-action" 
-                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.name|escapejs }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id|default:0 }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
                             Изм.
                         </button>
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
@@ -218,13 +225,20 @@
                     <div class="row g-3">
                         <div class="col-md-6"><label class="form-label">Тип операции</label><select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select></div>
                         <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option><option value="Gate">Gate</option><option value="EMCD">EMCD</option><option value="BingX">BingX</option></select></div>
-                        <div class="col-12"><label class="form-label">Реквизиты</label><select class="form-select" name="details" id="modal_details">{% for bank in default_banks %}<option value="{{ bank }}">{{ bank }}</option>{% endfor %}</select></div>
-                        <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control"></div>
-                        <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control"></div>
-                        <div class="col-12"><label class="form-label">Стоимость</label><input type="text" name="cost" id="modal_cost" class="form-control"></div>
+                        <div class="col-12"><label class="form-label">Реквизиты</label>
+                            <select class="form-select" name="details" id="modal_details">
+                                <option value="">Не указано</option>
+                                {% for bank in default_banks %}
+                                    <option value="{{ bank.id }}">{{ bank.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control" required></div>
+                        <div class="col-12"><label class="form-label">Стоимость</label><input type="text" name="cost" id="modal_cost" class="form-control" required></div>
                         <div class="col-md-6"><label class="form-label">Комиссия</label><div class="commission-group"><input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1"><select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select></div></div>
-                        <div class="col-md-6"><label class="form-label">Номер ордера</label><input type="text" name="external_id" id="modal_ext_id" class="form-control"></div>
-                        <div class="col-12"><label class="form-label">Дата и время</label><input type="datetime-local" name="created_at" id="modal_date" class="form-control"></div>
+                        <div class="col-md-6"><label class="form-label">Номер ордера</label><input type="text" name="external_id" id="modal_ext_id" class="form-control" required></div>
+                        <div class="col-12"><label class="form-label">Дата и время</label><input type="datetime-local" name="created_at" id="modal_date" class="form-control" required></div>
                     </div>
                 </div>
                 <div class="modal-footer pb-3 pt-3 justify-content-between">
@@ -257,7 +271,6 @@
 
         if (this.checked) {
             emailWrapper.style.display = 'block';
-            // Если поле пустое, генерируем. Если юзер ввел своё - не трогаем.
             if (!emailInput.value) {
                 emailInput.value = generateRandomEmail();
             }
@@ -266,18 +279,33 @@
         }
     });
 
-    function openEditModal(id, opType, exchange, details, price, amount, cost, commVal, commType, extId, date) {
+    // ИСПРАВЛЕНИЕ №5: Валидация перед отправкой (Особенно если нужен чек)
+    document.getElementById('createOrderForm').addEventListener('submit', function(e) {
+        const price = document.getElementById('main_price').value.trim().replace(',', '.');
+        const amount = document.getElementById('main_amount').value.trim().replace(',', '.');
+        const cost = document.getElementById('main_cost').value.trim().replace(',', '.');
+        const checkDocs = document.getElementById('checkDocs').checked;
+
+        if (checkDocs) {
+            const p = parseFloat(price);
+            const a = parseFloat(amount);
+            const c = parseFloat(cost);
+
+            // Если чекбокс стоит, мы строго проверяем что введены правильные цифры, т.к. Эвотор выдаст ошибку
+            if (isNaN(p) || p <= 0 || isNaN(a) || a <= 0 || isNaN(c) || c <= 0) {
+                e.preventDefault();
+                alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
+            }
+        }
+    });
+
+    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date) {
         document.getElementById('editForm').action = "/edit/" + id + "/";
         document.getElementById('display_id').innerText = id;
 
+        // ИСПРАВЛЕНИЕ №3: Теперь мы выбираем банк по его id
         const detailsSelect = document.getElementById('modal_details');
-        detailsSelect.value = details;
-
-        if (detailsSelect.value !== details && details !== 'None' && details !== '') {
-            let newOpt = new Option(details, details);
-            detailsSelect.add(newOpt);
-            detailsSelect.value = details;
-        }
+        detailsSelect.value = bankId;
 
         document.getElementById('modal_op_type').value = opType;
         document.getElementById('modal_exchange').value = exchange;

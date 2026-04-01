@@ -44,7 +44,6 @@ SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
 
 
-
 def safe_decimal(value):
     """
     Превращает '1,4' -> 1.4, '1 000' -> 1000.0
@@ -81,6 +80,10 @@ def my_orders_list(request):
 
     # ЛОГИКА СОЗДАНИЯ
     if request.method == 'POST' and 'create_order' in request.POST:
+
+        # Очищаем старую ошибку из сессии
+        request.session.pop('order_error', None)
+
         raw_date = request.POST.get('created_at')
         if raw_date:
             naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
@@ -90,13 +93,31 @@ def my_orders_list(request):
 
         # 1. Сохраняем настройки формы В ТОМ ВИДЕ, КАК ВВЕЛ ЮЗЕР
         request.session['saved_order_form'] = {
-            'operation_type':  request.POST.get('operation_type'),
-            'exchange':        request.POST.get('exchange'),
-            'details':         request.POST.get('details'),
+            'operation_type':   request.POST.get('operation_type'),
+            'exchange':         request.POST.get('exchange'),
+            'details':          request.POST.get('details'),
             'commission_value': request.POST.get('commission_value'),
-            'commission_type': request.POST.get('commission_type'),
-            'created_at':      raw_date
+            'commission_type':  request.POST.get('commission_type'),
+            'created_at':       raw_date
         }
+
+        # ЗАЩИТА 1: external_id обязателен
+        external_id = request.POST.get('external_id', '').strip()
+        if not external_id:
+            request.session['order_error'] = 'Номер ордера биржи обязателен — заполните поле "Номер ордера"'
+            return redirect('my_orders')
+
+        # ЗАЩИТА 2: проверяем дубль у этого пользователя
+        exchange_val = request.POST.get('exchange', '').strip()
+        already_exists = Order.objects.filter(
+            user=request.user,
+            external_id=external_id,
+            exchange_type=exchange_val,
+        ).exists()
+
+        if already_exists:
+            request.session['order_error'] = f'Ордер {external_id} ({exchange_val}) уже существует в вашей системе'
+            return redirect('my_orders')
 
         bank_id = request.POST.get('details')
         bank_instance = None
@@ -110,7 +131,7 @@ def my_orders_list(request):
         commission_val = safe_decimal(request.POST.get('commission_value'))
 
         # 3. Определяем процент биржи
-        exchange_name  = request.POST.get('exchange', '').lower()
+        exchange_name  = exchange_val.lower()
         user_comm_rate = 0.0
 
         if 'bybit' in exchange_name:
@@ -124,8 +145,6 @@ def my_orders_list(request):
         elif 'telegram' in exchange_name:
             user_comm_rate = request.user.telegram_commission
 
-        external_id = request.POST.get('external_id')
-
         # 4. Создаём ордер (в БД храним полные значения без обрезки)
         order = Order.objects.create(
             user=request.user,
@@ -135,7 +154,7 @@ def my_orders_list(request):
             cost=cost_val,
             commission=commission_val,
             operation_type=request.POST.get('operation_type'),
-            exchange_type=request.POST.get('exchange'),
+            exchange_type=exchange_val,
             bank_detail=bank_instance,
             commission_type=request.POST.get('commission_type'),
             exchange_commission_rate=user_comm_rate,
@@ -144,23 +163,21 @@ def my_orders_list(request):
         )
 
         # 5. Удаляем из необработанных
-        if external_id:
-            UnprocessedOrder.objects.filter(
-                user=request.user,
-                order_id=external_id
-            ).delete()
+        UnprocessedOrder.objects.filter(
+            user=request.user,
+            order_id=external_id
+        ).delete()
 
         # 6. Логика чека (Эвотор)
         need_receipt = request.POST.get('need_receipt') == 'on'
 
         if need_receipt:
-            contact_email = request.POST.get('receipt_contact')
+            contact_email = request.POST.get('receipt_contact', '').strip()
             if not contact_email:
                 contact_email = request.user.email
 
             # Эвотор не принимает больше 3 знаков после запятой.
             # ОБРЕЗАЕМ (не округляем) только для чека — в БД данные полные.
-            # Пример: 86.3429 -> 86.342  |  523.1239 -> 523.123
             receipt_data = {
                 "contact": contact_email,
                 "sum":    truncate(order.cost,   3),
@@ -195,7 +212,6 @@ def my_orders_list(request):
         'current_time':  current_time,
         'saved_data':    saved_data
     })
-
 
 @login_required
 def edit_order(request, order_id):
