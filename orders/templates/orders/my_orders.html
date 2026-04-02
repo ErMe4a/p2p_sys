@@ -64,265 +64,274 @@
     
     .btn-save-modal { background-color: var(--accent-blue); color: white; border-radius: 6px; border: none; font-weight: 600; }
     .btn-cancel-modal { background-color: var(--bg-input); color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
+    .badge-receipt-ok { background:#0d2b1a; color:#4caf50; border:1px solid #2d6a4f; font-size:11px; padding:3px 8px; border-radius:4px; }
+    .badge-receipt-no { background:#2b1a0d; color:#ff9800; border:1px solid #5a3d0d; font-size:11px; padding:3px 8px; border-radius:4px; }
 </style>
 
 <div class="form-section">
-    {% if request.session.order_error %}
-        <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
-            <strong>Ошибка!</strong> {{ request.session.order_error }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
-        </div>
-    {% endif %}
+    {% if request.session.order_error %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
+            <strong>Ошибка!</strong> {{ request.session.order_error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+        </div>
+    {% endif %}
 
-    <form method="post" enctype="multipart/form-data" id="createOrderForm">
-        {% csrf_token %}
-        
-        <div class="row mb-3">
-            <div class="col-12">
-                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
-            </div>
-        </div>
+    <form method="post" enctype="multipart/form-data" id="createOrderForm">
+        {% csrf_token %}
+        
+        <div class="row mb-3">
+            <div class="col-12">
+                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
+            </div>
+        </div>
 
-        <div class="row g-3 mb-3">
-            <div class="col-md-2">
-                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
-            </div>
-            <div class="col-md-2">
-                <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
-            </div>
-            <div class="col-md-2">
-                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
-            </div>
-            <div class="col-md-3">
-                <select class="form-select" name="operation_type">
-                    <option value="BUY" {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
-                    <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <select class="form-select" name="exchange">
-                    <option value="Bybit" {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
-                    <option value="HTX" {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
-                    <option value="MEXC" {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
-                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
-                    <option value="Bitget" {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
-                    <option value="Gate" {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
-                    <option value="EMCD" {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
-                    <option value="BingX" {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
-                </select>
-            </div>
-        </div>
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
+                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
+            </div>
+            <div class="col-md-2">
+                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="operation_type">
+                    <option value="BUY" {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
+                    <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="exchange">
+                    <option value="Bybit" {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                    <option value="HTX" {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                    <option value="MEXC" {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="Bitget" {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                    <option value="Gate" {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                    <option value="EMCD" {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                    <option value="BingX" {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
+                </select>
+            </div>
+        </div>
 
-        <div class="row g-3 align-items-start">
-            <div class="col-md-3">
-                <select class="form-select" name="details" required>
-                    <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
-                    {% for bank in default_banks %}
-                        <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="col-md-2">
-                <div class="commission-group">
-                    <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
-                    <select class="form-select commission-select" name="commission_type">
-                        <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
-                        <option value="RUB" {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
-                    </select>
-                </div>
-            </div>
-            
-            <div class="col-md-3">
-                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
-            </div>
-            
-            <div class="col-md-2 pt-4"> 
-                <div class="d-flex gap-3 align-items-center h-100 ps-2">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
-                        <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
-                    </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
-                        <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-md-2">
-                <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
-            </div>
-        </div>
+        <div class="row g-3 align-items-start">
+            <div class="col-md-3">
+                <select class="form-select" name="details" required>
+                    <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
+                    {% for bank in default_banks %}
+                        <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="col-md-2">
+                <div class="commission-group">
+                    <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
+                    <select class="form-select commission-select" name="commission_type">
+                        <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
+                        <option value="RUB" {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
+            </div>
+            
+            <div class="col-md-2 pt-4"> 
+                <div class="d-flex gap-3 align-items-center h-100 ps-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
+                        <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
+                        <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-2">
+                <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
+            </div>
+        </div>
 
-        <div id="emailInputWrapper" class="mt-3" style="display: none;">
-            <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
-            <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
-        </div>
+        <div id="emailInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
+            <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
+        </div>
 
-        <div id="fileInputWrapper" class="mt-3" style="display: none;">
-            <label class="form-label">Прикрепить скриншот</label>
-            <input type="file" name="screenshot" class="form-control">
-        </div>
-    </form>
+        <div id="fileInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Прикрепить скриншот</label>
+            <input type="file" name="screenshot" class="form-control">
+        </div>
+    </form>
 </div>
 
 <div class="table-container shadow-sm">
-    <table class="table">
-        <thead>
-            <tr>
-                <th>ID</th><th>Тип</th><th>Биржа</th><th>Курс</th><th>Кол-во</th><th>Стоимость</th><th>Комис.</th><th>Тип</th><th>№ Ордера</th><th>Создан</th><th class="text-end">Действия</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for order in orders %}
-            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
-            <tr>
-                <td class="fw-bold">{{ order.id }}</td>
-                <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
-                <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
-                <td>{{ formatted_price }}</td>
-                <td>{{ formatted_amount }}</td>
-                <td>{{ formatted_cost }}</td>
-                <td>{{ formatted_comm }}</td>
-                <td class="text-muted">{% if order.commission_type == 'PERCENT' %}%{% else %}₽{% endif %}</td>
-                <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
-                <td class="small text-muted" style="line-height: 1.2;">{{ order_date }}<br>{{ order_time }}</td>
-                <td>
-                    <div class="d-flex gap-1 justify-content-end align-items-center">
-                        <button class="btn btn-action" 
-                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id|default:0 }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
-                            Изм.
-                        </button>
-                        <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
-                        <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
-                            {% csrf_token %}
-                            <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
-                        </form>
-                        {% if order.screenshot %}
-                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть">👁️</a>
-                        {% endif %}
-                        <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
-                    </div>
-                </td>
-            </tr>
-            {% endwith %}
-            {% endfor %}
-        </tbody>
-    </table>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th><th>Тип</th><th>Биржа</th><th>Курс</th><th>Кол-во</th><th>Стоимость</th><th>Комис.</th><th>Тип</th><th>№ Ордера</th><th>Создан</th><th>Чек</th><th class="text-end">Действия</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for order in orders %}
+            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
+            <tr>
+                <td class="fw-bold">{{ order.id }}</td>
+                <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
+                <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
+                <td>{{ formatted_price }}</td>
+                <td>{{ formatted_amount }}</td>
+                <td>{{ formatted_cost }}</td>
+                <td>{{ formatted_comm }}</td>
+                <td class="text-muted">{% if order.commission_type == 'PERCENT' %}%{% else %}₽{% endif %}</td>
+                <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
+                <td class="small text-muted" style="line-height: 1.2;">{{ order_date }}<br>{{ order_time }}</td>
+                <td>
+                    {% if order.receipt and order.receipt.uuid %}
+                        <span class="badge-receipt-ok">✓ Чек</span>
+                    {% else %}
+                        <span class="badge-receipt-no">Нет чека</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="d-flex gap-1 justify-content-end align-items-center">
+                        <button class="btn btn-action" 
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id|default:0 }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
+                            Изм.
+                        </button>
+                        <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
+                        <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
+                            {% csrf_token %}
+                            <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
+                        </form>
+                        {% if order.screenshot %}
+                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть">👁️</a>
+                        {% endif %}
+                        <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
+                    </div>
+                </td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
 <div class="modal fade" id="editModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content shadow-lg" style="border-radius: 12px;">
-            <div class="modal-header">
-                <h5 class="modal-title fw-bold">Редактирование ордера #<span id="display_id"></span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <form id="editForm" method="post">
-                {% csrf_token %}
-                <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-md-6"><label class="form-label">Тип операции</label><select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select></div>
-                        <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option><option value="Gate">Gate</option><option value="EMCD">EMCD</option><option value="BingX">BingX</option></select></div>
-                        <div class="col-12"><label class="form-label">Реквизиты</label>
-                            <select class="form-select" name="details" id="modal_details">
-                                <option value="">Не указано</option>
-                                {% for bank in default_banks %}
-                                    <option value="{{ bank.id }}">{{ bank.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control" required></div>
-                        <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control" required></div>
-                        <div class="col-12"><label class="form-label">Стоимость</label><input type="text" name="cost" id="modal_cost" class="form-control" required></div>
-                        <div class="col-md-6"><label class="form-label">Комиссия</label><div class="commission-group"><input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1"><select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select></div></div>
-                        <div class="col-md-6"><label class="form-label">Номер ордера</label><input type="text" name="external_id" id="modal_ext_id" class="form-control" required></div>
-                        <div class="col-12"><label class="form-label">Дата и время</label><input type="datetime-local" name="created_at" id="modal_date" class="form-control" required></div>
-                    </div>
-                </div>
-                <div class="modal-footer pb-3 pt-3 justify-content-between">
-                    <button type="button" class="btn btn-cancel-modal px-4 py-2" data-bs-dismiss="modal">Отмена</button>
-                    <button type="submit" class="btn btn-save-modal px-4 py-2">Сохранить</button>
-                </div>
-            </form>
-        </div>
-    </div>
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content shadow-lg" style="border-radius: 12px;">
+            <div class="modal-header">
+                <h5 class="modal-title fw-bold">Редактирование ордера #<span id="display_id"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm" method="post">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-6"><label class="form-label">Тип операции</label><select class="form-select" name="operation_type" id="modal_op_type"><option value="BUY">Покупка</option><option value="SELL">Продажа</option></select></div>
+                        <div class="col-md-6"><label class="form-label">Биржа</label><select class="form-select" name="exchange" id="modal_exchange"><option value="Bybit">Bybit</option><option value="HTX">HTX</option><option value="MEXC">MEXC</option><option value="Telegram">Telegram</option><option value="Bitget">Bitget</option><option value="Gate">Gate</option><option value="EMCD">EMCD</option><option value="BingX">BingX</option></select></div>
+                        <div class="col-12"><label class="form-label">Реквизиты</label>
+                            <select class="form-select" name="details" id="modal_details">
+                                <option value="">Не указано</option>
+                                {% for bank in default_banks %}
+                                    <option value="{{ bank.id }}">{{ bank.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6"><label class="form-label">Курс</label><input type="text" name="price" id="modal_price" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Количество</label><input type="text" name="amount" id="modal_amount" class="form-control" required></div>
+                        <div class="col-12"><label class="form-label">Стоимость</label><input type="text" name="cost" id="modal_cost" class="form-control" required></div>
+                        <div class="col-md-6"><label class="form-label">Комиссия</label><div class="commission-group"><input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1"><select class="form-select commission-select" name="commission_type" id="modal_comm_type"><option value="PERCENT">%</option><option value="RUB">₽</option></select></div></div>
+                        <div class="col-md-6"><label class="form-label">Номер ордера</label><input type="text" name="external_id" id="modal_ext_id" class="form-control" required></div>
+                        <div class="col-12"><label class="form-label">Дата и время</label><input type="datetime-local" name="created_at" id="modal_date" class="form-control" required></div>
+                    </div>
+                </div>
+                <div class="modal-footer pb-3 pt-3 justify-content-between">
+                    <button type="button" class="btn btn-cancel-modal px-4 py-2" data-bs-dismiss="modal">Отмена</button>
+                    <button type="submit" class="btn btn-save-modal px-4 py-2">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <script>
-    document.getElementById('checkScreen').addEventListener('change', function() {
-        document.getElementById('fileInputWrapper').style.display = this.checked ? 'block' : 'none';
-    });
+    document.getElementById('checkScreen').addEventListener('change', function() {
+        document.getElementById('fileInputWrapper').style.display = this.checked ? 'block' : 'none';
+    });
 
-    // === ГЕНЕРАЦИЯ ПОЧТЫ ===
-    function generateRandomEmail() {
-        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-        let str = '';
-        for(let i=0; i<8; i++) {
-            str += chars[Math.floor(Math.random() * chars.length)];
-        }
-        return str + '@gmail.com';
-    }
+    // === ГЕНЕРАЦИЯ ПОЧТЫ ===
+    function generateRandomEmail() {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        let str = '';
+        for(let i=0; i<8; i++) {
+            str += chars[Math.floor(Math.random() * chars.length)];
+        }
+        return str + '@gmail.com';
+    }
 
-    document.getElementById('checkDocs').addEventListener('change', function() {
-        const emailWrapper = document.getElementById('emailInputWrapper');
-        const emailInput = document.getElementById('receiptContact');
+    document.getElementById('checkDocs').addEventListener('change', function() {
+        const emailWrapper = document.getElementById('emailInputWrapper');
+        const emailInput = document.getElementById('receiptContact');
 
-        if (this.checked) {
-            emailWrapper.style.display = 'block';
-            if (!emailInput.value) {
-                emailInput.value = generateRandomEmail();
-            }
-        } else {
-            emailWrapper.style.display = 'none';
-        }
-    });
+        if (this.checked) {
+            emailWrapper.style.display = 'block';
+            if (!emailInput.value) {
+                emailInput.value = generateRandomEmail();
+            }
+        } else {
+            emailWrapper.style.display = 'none';
+        }
+    });
 
-    // ИСПРАВЛЕНИЕ №5: Валидация перед отправкой (Особенно если нужен чек)
-    document.getElementById('createOrderForm').addEventListener('submit', function(e) {
-        const price = document.getElementById('main_price').value.trim().replace(',', '.');
-        const amount = document.getElementById('main_amount').value.trim().replace(',', '.');
-        const cost = document.getElementById('main_cost').value.trim().replace(',', '.');
-        const checkDocs = document.getElementById('checkDocs').checked;
+    // ИСПРАВЛЕНИЕ №5: Валидация перед отправкой (Особенно если нужен чек)
+    document.getElementById('createOrderForm').addEventListener('submit', function(e) {
+        const price = document.getElementById('main_price').value.trim().replace(',', '.');
+        const amount = document.getElementById('main_amount').value.trim().replace(',', '.');
+        const cost = document.getElementById('main_cost').value.trim().replace(',', '.');
+        const checkDocs = document.getElementById('checkDocs').checked;
 
-        if (checkDocs) {
-            const p = parseFloat(price);
-            const a = parseFloat(amount);
-            const c = parseFloat(cost);
+        if (checkDocs) {
+            const p = parseFloat(price);
+            const a = parseFloat(amount);
+            const c = parseFloat(cost);
 
-            // Если чекбокс стоит, мы строго проверяем что введены правильные цифры, т.к. Эвотор выдаст ошибку
-            if (isNaN(p) || p <= 0 || isNaN(a) || a <= 0 || isNaN(c) || c <= 0) {
-                e.preventDefault();
-                alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
-            }
-        }
-    });
+            // Если чекбокс стоит, мы строго проверяем что введены правильные цифры, т.к. Эвотор выдаст ошибку
+            if (isNaN(p) || p <= 0 || isNaN(a) || a <= 0 || isNaN(c) || c <= 0) {
+                e.preventDefault();
+                alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
+            }
+        }
+    });
 
-    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date) {
-        document.getElementById('editForm').action = "/edit/" + id + "/";
-        document.getElementById('display_id').innerText = id;
+    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date) {
+        document.getElementById('editForm').action = "/edit/" + id + "/";
+        document.getElementById('display_id').innerText = id;
 
-        // ИСПРАВЛЕНИЕ №3: Теперь мы выбираем банк по его id
-        const detailsSelect = document.getElementById('modal_details');
-        detailsSelect.value = bankId;
+        // ИСПРАВЛЕНИЕ №3: Теперь мы выбираем банк по его id
+        const detailsSelect = document.getElementById('modal_details');
+        detailsSelect.value = bankId;
 
-        document.getElementById('modal_op_type').value = opType;
-        document.getElementById('modal_exchange').value = exchange;
-        document.getElementById('modal_price').value = price;
-        document.getElementById('modal_amount').value = amount;
-        document.getElementById('modal_cost').value = cost;
-        document.getElementById('modal_comm_val').value = commVal;
-        document.getElementById('modal_comm_type').value = commType;
-        document.getElementById('modal_ext_id').value = extId;
-        document.getElementById('modal_date').value = date; 
-        
-        new bootstrap.Modal(document.getElementById('editModal')).show();
-    }
+        document.getElementById('modal_op_type').value = opType;
+        document.getElementById('modal_exchange').value = exchange;
+        document.getElementById('modal_price').value = price;
+        document.getElementById('modal_amount').value = amount;
+        document.getElementById('modal_cost').value = cost;
+        document.getElementById('modal_comm_val').value = commVal;
+        document.getElementById('modal_comm_type').value = commType;
+        document.getElementById('modal_ext_id').value = extId;
+        document.getElementById('modal_date').value = date; 
+        
+        new bootstrap.Modal(document.getElementById('editModal')).show();
+    }
 
-    function triggerUpload(orderId) {
-        const fileInput = document.getElementById('file-input-' + orderId);
-        if (fileInput) fileInput.click();
-    }
+    function triggerUpload(orderId) {
+        const fileInput = document.getElementById('file-input-' + orderId);
+        if (fileInput) fileInput.click();
+    }
 </script>
 {% endblock %}
