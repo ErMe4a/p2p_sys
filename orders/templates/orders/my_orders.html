@@ -64,6 +64,8 @@
     
     .btn-save-modal { background-color: var(--accent-blue); color: white; border-radius: 6px; border: none; font-weight: 600; }
     .btn-cancel-modal { background-color: var(--bg-input); color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
+    .badge-receipt-ok { background:#0d2b1a; color:#4caf50; border:1px solid #2d6a4f; font-size:11px; padding:3px 8px; border-radius:4px; }
+    .badge-receipt-no { background:#2b1a0d; color:#ff9800; border:1px solid #5a3d0d; font-size:11px; padding:3px 8px; border-radius:4px; }
 </style>
 
 <div class="form-section">
@@ -171,7 +173,7 @@
     <table class="table">
         <thead>
             <tr>
-                <th>ID</th><th>Тип</th><th>Биржа</th><th>Курс</th><th>Кол-во</th><th>Стоимость</th><th>Комис.</th><th>Тип</th><th>№ Ордера</th><th>Создан</th><th class="text-end">Действия</th>
+                <th>ID</th><th>Тип</th><th>Биржа</th><th>Курс</th><th>Кол-во</th><th>Стоимость</th><th>Комис.</th><th>Тип</th><th>№ Ордера</th><th>Создан</th><th>Чек</th><th class="text-end">Действия</th>
             </tr>
         </thead>
         <tbody>
@@ -189,9 +191,16 @@
                 <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
                 <td class="small text-muted" style="line-height: 1.2;">{{ order_date }}<br>{{ order_time }}</td>
                 <td>
+                    {% if order.receipt and order.receipt.uuid %}
+                        <span class="badge-receipt-ok">✓ Чек</span>
+                    {% else %}
+                        <span class="badge-receipt-no">Нет чека</span>
+                    {% endif %}
+                </td>
+                <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
                         <button class="btn btn-action" 
-                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id|default:0 }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}')">
                             Изм.
                         </button>
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
@@ -279,7 +288,7 @@
         }
     });
 
-    // ИСПРАВЛЕНИЕ №5: Валидация перед отправкой (Особенно если нужен чек)
+    // Валидация перед отправкой (Особенно если нужен чек)
     document.getElementById('createOrderForm').addEventListener('submit', function(e) {
         const price = document.getElementById('main_price').value.trim().replace(',', '.');
         const amount = document.getElementById('main_amount').value.trim().replace(',', '.');
@@ -303,7 +312,6 @@
         document.getElementById('editForm').action = "/edit/" + id + "/";
         document.getElementById('display_id').innerText = id;
 
-        // ИСПРАВЛЕНИЕ №3: Теперь мы выбираем банк по его id
         const detailsSelect = document.getElementById('modal_details');
         detailsSelect.value = bankId;
 
