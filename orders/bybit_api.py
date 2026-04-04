@@ -81,6 +81,18 @@ def sync_bybit_orders(user):
                 status=50,  # 50 = завершённые (COMPLETED)
             )
         except Exception as e:
+            err_str = str(e)
+            # Библиотека bybit_p2p выбрасывает exception при 33004
+            # раньше чем мы успеваем проверить ret_code — ловим здесь
+            if "33004" in err_str or "api key has expired" in err_str.lower():
+                user.bybit_key_valid = False
+                user.save(update_fields=["bybit_key_valid"])
+                logger.warning(
+                    "Bybit [%s]: ключ протух (ErrCode 33004) — "
+                    "помечен невалидным, следующие циклы будут пропущены.",
+                    user.username,
+                )
+                return 0  # выходим сразу
             logger.error(
                 "Bybit get_orders page=%d for %s: %s", page, user.username, e
             )
