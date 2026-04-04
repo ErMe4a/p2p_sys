@@ -26,6 +26,16 @@ class User(AbstractUser):
     initial_crypto_balance = models.DecimalField(max_digits=20, decimal_places=8, default=0, verbose_name="Начальный остаток USDT")
     profit_shares = models.JSONField(default=dict, blank=True, null=True)
 
+
+    bybit_key_valid = models.BooleanField(
+        default=True, 
+        verbose_name="Bybit ключ валиден"
+    )
+    mexc_key_valid = models.BooleanField(
+        default=True, 
+        verbose_name="MEXC ключ валиден"
+    )
+
     def __str__(self):
         return self.username
 

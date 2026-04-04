@@ -7,7 +7,7 @@ import urllib3
 from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
-from .models import UnprocessedOrder, Order, IgnoredOrder  # <-- добавлен IgnoredOrder
+from .models import UnprocessedOrder, Order, IgnoredOrder
 
 # Отключаем предупреждения о SSL
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -22,13 +22,22 @@ BASE_URL = "https://api.mexc.com"
 # Статусы MEXC которые считаются отменёнными — такие ордера не берём
 MEXC_CANCELLED_STATES = {"CANCEL", "CANCELLED", "CANCELED", "APPEAL_CANCEL", "APPEAL_CANCELLED"}
 
+# Коды ошибок MEXC которые означают что ключ невалиден навсегда
+# 10072 = Api key info invalid
+# 10073 = Api key not exists
+MEXC_INVALID_KEY_CODES = {10072, 10073}
+
+# Код ошибки MEXC для IP не в whitelist — ключ сам по себе валиден,
+# просто нужно убрать IP-ограничение в настройках ключа на MEXC
+MEXC_IP_WHITELIST_CODE = 700006
+
 
 def sync_mexc_orders(user):
     """
     Синхронизация ЗАВЕРШЁННЫХ P2P ордеров MEXC (orderDealState=DONE).
 
     Алгоритм:
-      1. Проверяем ключи.
+      1. Проверяем ключи — если нет или помечены невалидными, выходим.
       2. Собираем ID уже известных ордеров.
       3. Постранично тянем завершённые ордера начиная с DATE_FROM_MS.
       4. Парсим, фильтруем дубли и отменённые.
@@ -40,6 +49,14 @@ def sync_mexc_orders(user):
     # ── 1. Проверка ключей ────────────────────────────────────────────────────
     if not getattr(user, 'mexc_api_key', None) or not getattr(user, 'mexc_api_secret', None):
         logger.debug("User %s: MEXC keys not set, skipping.", user.username)
+        return 0
+
+    # ── НОВОЕ: пропускаем юзеров с помеченными невалидными ключами ───────────
+    if not user.mexc_key_valid:
+        logger.debug(
+            "MEXC [%s]: ключ помечен невалидным — пропускаем.",
+            user.username,
+        )
         return 0
 
     # ── 2. Чёрный список уже известных ID ────────────────────────────────────
@@ -65,10 +82,33 @@ def sync_mexc_orders(user):
     end_time = int(time.time() * 1000)
 
     while True:
-        data, error = _fetch_page(user, page, DATE_FROM_MS, end_time)
+        data, error_code, error_msg = _fetch_page(user, page, DATE_FROM_MS, end_time)
 
-        if error:
-            logger.error("MEXC API error for %s: %s", user.username, error)
+        if error_code is not None:
+            # ── НОВОЕ: невалидный ключ — помечаем и выходим ──────────────────
+            if error_code in MEXC_INVALID_KEY_CODES:
+                user.mexc_key_valid = False
+                user.save(update_fields=["mexc_key_valid"])
+                logger.warning(
+                    "MEXC [%s]: ключ невалиден (код %s) — "
+                    "помечен невалидным, следующие циклы будут пропущены.",
+                    user.username,
+                    error_code,
+                )
+                return 0
+
+            # ── НОВОЕ: IP не в whitelist — не трогаем флаг, просто логируем ─
+            if error_code == MEXC_IP_WHITELIST_CODE:
+                logger.warning(
+                    "MEXC [%s]: IP сервера не в whitelist ключа (код 700006). "
+                    "Попросите пользователя убрать IP-ограничение в настройках "
+                    "API ключа на MEXC (или добавить IP 89.169.143.100).",
+                    user.username,
+                )
+                return 0
+
+            # Прочие ошибки — логируем и выходим
+            logger.error("MEXC API error for %s: code=%s msg=%s", user.username, error_code, error_msg)
             break
 
         items = data.get("data") or []
@@ -99,10 +139,6 @@ def sync_mexc_orders(user):
         if created_ms < DATE_FROM_MS:
             continue
 
-        # ── ФИЛЬТР ОТМЕНЁННЫХ ────────────────────────────────────────────────
-        # MEXC может игнорировать orderDealState в параметрах запроса и возвращать
-        # все ордера — поэтому фильтруем по полю в ответе на стороне Python.
-        # Возможные поля: orderDealState, state, status, dealState
         deal_state = (
             item.get("orderDealState")
             or item.get("dealState")
@@ -116,7 +152,6 @@ def sync_mexc_orders(user):
                 user.username, item.get("advOrderNo"), deal_state
             )
             continue
-        # ─────────────────────────────────────────────────────────────────────
 
         order_id = str(item.get("advOrderNo") or "").strip()
         if not order_id:
@@ -166,7 +201,9 @@ def sync_mexc_orders(user):
 def _fetch_page(user, page: int, start_time: int, end_time: int):
     """
     Запрашивает одну страницу ордеров с MEXC.
-    Возвращает (data, error_message).
+    Возвращает (data, error_code, error_message).
+    При успехе: (data, None, None)
+    При ошибке: (None, code, message)
     """
     timestamp = int(time.time() * 1000)
 
@@ -198,13 +235,14 @@ def _fetch_page(user, page: int, start_time: int, end_time: int):
         response = requests.get(url, headers=headers, timeout=30, verify=False)
         data = response.json()
 
-        if data.get("code") != 0:
-            return None, f"code={data.get('code')} msg={data.get('msg')}"
+        code = data.get("code")
+        if code != 0:
+            return None, code, data.get("msg")
 
-        return data, None
+        return data, None, None
 
     except Exception as e:
-        return None, str(e)
+        return None, None, str(e)
 
 
 def _to_float(value) -> float:

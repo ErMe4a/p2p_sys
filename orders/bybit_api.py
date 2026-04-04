@@ -3,7 +3,7 @@ from datetime import datetime
 from django.utils import timezone
 from django.utils.timezone import make_aware
 from bybit_p2p import P2P
-from .models import UnprocessedOrder, Order, IgnoredOrder  # <-- добавлен IgnoredOrder
+from .models import UnprocessedOrder, Order, IgnoredOrder
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +16,12 @@ def sync_bybit_orders(user):
     Синхронизация ЗАВЕРШЁННЫХ P2P ордеров Bybit (status=50).
 
     Алгоритм:
-      1. Проверяем ключи — если нет, выходим.
+      1. Проверяем ключи — если нет или помечены невалидными, выходим.
       2. Собираем все ID уже существующих ордеров — чтобы не дублировать.
       3. Постранично тянем завершённые ордера (status=50, по 30 штук).
          Останавливаемся когда:
            - страница неполная (последняя)
-           - или дошли до ордеров старше 01.02.2026
+           - или дошли до ордеров старше 24.02.2026
       4. Парсим каждый ордер, пропускаем уже известные и старые.
       5. Массово сохраняем новые в UnprocessedOrder.
 
@@ -31,6 +31,14 @@ def sync_bybit_orders(user):
     # ── 1. Проверка ключей ────────────────────────────────────────────────────
     if not user.bybit_api_key or not user.bybit_api_secret:
         logger.debug("User %s: Bybit keys not set, skipping.", user.username)
+        return 0
+
+    # ── НОВОЕ: пропускаем юзеров с помеченными невалидными ключами ───────────
+    if not user.bybit_key_valid:
+        logger.debug(
+            "Bybit [%s]: ключ помечен невалидным — пропускаем.",
+            user.username,
+        )
         return 0
 
     # ── 2. Инициализация клиента ──────────────────────────────────────────────
@@ -55,7 +63,6 @@ def sync_bybit_orders(user):
         UnprocessedOrder.objects.filter(user=user)
         .values_list("order_id", flat=True)
     )
-    # !! НОВОЕ: ордера, которые пользователь навсегда скрыл
     ignored_ids = set(
         IgnoredOrder.objects.filter(user=user)
         .values_list("order_id", flat=True)
@@ -84,11 +91,24 @@ def sync_bybit_orders(user):
             ret_code = response.get("retCode")
 
         if ret_code != 0:
+            ret_msg = response.get("ret_msg") or response.get("retMsg") or ""
+
+            # ── НОВОЕ: ловим протухший ключ (33004) ──────────────────────────
+            if ret_code == 33004 or "api key has expired" in str(ret_msg).lower():
+                user.bybit_key_valid = False
+                user.save(update_fields=["bybit_key_valid"])
+                logger.warning(
+                    "Bybit [%s]: ключ протух (код 33004) — "
+                    "помечен невалидным, следующие циклы будут пропущены.",
+                    user.username,
+                )
+                return 0  # выходим сразу, не тратим время на следующие страницы
+
             logger.warning(
                 "Bybit API error for %s (code %s): %s",
                 user.username,
                 ret_code,
-                response.get("ret_msg") or response.get("retMsg"),
+                ret_msg,
             )
             break
 

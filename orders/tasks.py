@@ -12,11 +12,14 @@ def sync_bybit_orders_task(self):
     """
     Запускается Celery Beat каждые 3 минуты.
     Синхронизирует завершённые ордера Bybit и MEXC для всех пользователей.
+    Юзеры с невалидными ключами (bybit_key_valid=False / mexc_key_valid=False)
+    пропускаются — они помечаются автоматически при получении ошибки от биржи.
     """
 
     # ── Bybit ─────────────────────────────────────────────────────────────────
     bybit_users = (
         User.objects
+        .filter(bybit_key_valid=True)                        # ← только валидные
         .exclude(bybit_api_key__isnull=True).exclude(bybit_api_key="")
         .exclude(bybit_api_secret__isnull=True).exclude(bybit_api_secret="")
     )
@@ -34,6 +37,7 @@ def sync_bybit_orders_task(self):
     # ── MEXC ──────────────────────────────────────────────────────────────────
     mexc_users = (
         User.objects
+        .filter(mexc_key_valid=True)                         # ← только валидные
         .exclude(mexc_api_key__isnull=True).exclude(mexc_api_key="")
         .exclude(mexc_api_secret__isnull=True).exclude(mexc_api_secret="")
     )
