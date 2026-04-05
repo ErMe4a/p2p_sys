@@ -17,8 +17,8 @@ const HTX_GOLD_COLOR = '#F7A600';
 // State variables
 let observer = null;
 let isInitializing = false;
-let currentDisplayName = '';
-let currentSellDisplayNameTemp = '';
+let currentDisplayName = '';  // Активное имя для текущей страницы (BUY или SELL)
+let storedBuyName = '';       // Из storage — применяется ТОЛЬКО на BUY страницах
 let originalBuyName = '';
 
 // ============================================
@@ -143,11 +143,11 @@ function isSellPage() {
 async function loadDisplayNameFromStorage() {
     try {
         const res = await chrome.storage.sync.get(['displayName']);
-        currentDisplayName = res.displayName || '';
-        return currentDisplayName;
+        storedBuyName = res.displayName || '';
+        return storedBuyName;
     } catch (e) {
         console.warn('P2P Analytics HTX: Failed to load display name:', e);
-        currentDisplayName = '';
+        storedBuyName = '';
         return '';
     }
 }
@@ -1538,9 +1538,11 @@ let nameReplacementStarted = false;
 
 // И измени startNameReplacement:
 function startNameReplacement() {
-    if (!currentDisplayName) return;
+    if (!storedBuyName) return;
+    if (!isBuyPage()) return;  // Из storage применяем ТОЛЬКО на BUY страницах
     if (nameReplacementStarted) return; // защита от повторного запуска
     nameReplacementStarted = true;
+    currentDisplayName = storedBuyName;  // Активируем для текущей страницы
 
     replaceNameInUserList(currentDisplayName);
 
@@ -1634,8 +1636,9 @@ new MutationObserver(() => {
     if (url !== lastUrl) {
         lastUrl = url;
         initRetryCount = 0;
-        nameReplacementStarted = false; // ← добавить
-        originalBuyName = '';           // ← добавить, чтобы имя сохранялось заново
+        nameReplacementStarted = false;
+        currentDisplayName = '';   // Сбрасываем активное имя при смене страницы
+        originalBuyName = '';
         if (observer) {
             observer.disconnect();
             observer = null;
