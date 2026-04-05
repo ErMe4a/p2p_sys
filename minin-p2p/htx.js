@@ -1606,7 +1606,7 @@ if (document.readyState === 'loading') {
     setTimeout(tryInitialize, 500);
 }
 
-// Обработчик сообщений от popup (сброс имени BUY)
+// Обработчик сообщений от popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'resetBuyName') {
         currentDisplayName = '';
@@ -1614,6 +1614,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         originalBuyName = '';
         restoreOriginalName();
         chrome.storage.sync.set({ displayName: '' }).catch(() => {});
+        sendResponse({ success: true });
+    } else if (message.action === 'applySellName') {
+        const name = message.name || '';
+        currentDisplayName = name;
+        nameReplacementStarted = false;
+        if (name) {
+            replaceNameInUserList(name);
+            nameReplacementStarted = true;
+        }
         sendResponse({ success: true });
     }
     return true;
