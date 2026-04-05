@@ -1447,13 +1447,13 @@ function initializeMutationObserver() {
                 '.l-trade-status',
                 '.l-trade-payment'
             ];
-            
+
             let targetDiv = null;
             for (const selector of targetSelectors) {
                 targetDiv = document.querySelector(selector);
                 if (targetDiv) break;
             }
-            
+
             if (targetDiv) {
                 const existingMenus = document.querySelectorAll('.p2p-analytics-dropdown-container');
                 if (existingMenus.length === 0) {
@@ -1463,6 +1463,11 @@ function initializeMutationObserver() {
                         existingMenus[i].remove();
                     }
                 }
+            }
+
+            // Повторная замена имени после любой перерисовки SPA
+            if (currentDisplayName) {
+                replaceNameInUserList(currentDisplayName);
             }
         }, 100);
     });
@@ -1536,16 +1541,20 @@ function startNameReplacement() {
     if (!currentDisplayName) return;
     if (nameReplacementStarted) return; // защита от повторного запуска
     nameReplacementStarted = true;
-    
+
     replaceNameInUserList(currentDisplayName);
-    
+
     let attempts = 0;
     const maxAttempts = 20;
-    
+
+    // Polling только до первого успеха или таймаута.
+    // После этого поддержку берёт на себя MutationObserver в initializeMutationObserver.
     const nameInterval = setInterval(() => {
         attempts++;
         const replaced = replaceNameInUserList(currentDisplayName);
-        if (replaced || attempts >= maxAttempts) {
+        if (attempts >= maxAttempts) {
+            clearInterval(nameInterval);
+        } else if (replaced) {
             clearInterval(nameInterval);
         }
     }, 300);
@@ -1596,6 +1605,19 @@ if (document.readyState === 'loading') {
     addStyles();
     setTimeout(tryInitialize, 500);
 }
+
+// Обработчик сообщений от popup (сброс имени BUY)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'resetBuyName') {
+        currentDisplayName = '';
+        nameReplacementStarted = false;
+        originalBuyName = '';
+        restoreOriginalName();
+        chrome.storage.sync.set({ displayName: '' }).catch(() => {});
+        sendResponse({ success: true });
+    }
+    return true;
+});
 
 let lastUrl = location.href;
 new MutationObserver(() => {
