@@ -10,22 +10,56 @@
     .form-row { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
     .form-group { margin-bottom:16px; }
     .form-group label { display:block; margin-bottom:6px; color:var(--text-muted); font-size:12px; font-weight:500; }
-    
+
     .alert { padding: 10px 15px; border-radius: 8px; font-size: 13px; margin-bottom: 15px; border: 1px solid transparent; }
     .alert-success { background: rgba(88,214,141,0.1); color: #58d68d; border-color: rgba(88,214,141,0.2); }
     .alert-danger { background: rgba(255,108,108,0.1); color: #ff6c6c; border-color: rgba(255,108,108,0.2); }
 
-    /* Стили для скриншота */
     .screenshot-container { margin-top: 10px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border-color); max-width: 100%; }
     .screenshot-preview { width: 100%; cursor: pointer; transition: 0.3s; display: block; }
     .screenshot-preview:hover { opacity: 0.8; }
     .no-screenshot { padding: 20px; text-align: center; color: var(--text-muted); background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px dashed var(--border-color); }
+
+    .user-search-wrap { position: relative; }
+    .user-search-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+        background: #1a1f2e; border: 1px solid var(--border-color); border-top: none;
+        border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto;
+    }
+    .user-search-item {
+        padding: 8px 12px; font-size: 13px; color: var(--text-main); cursor: pointer;
+        display: flex; justify-content: space-between; align-items: center;
+    }
+    .user-search-item:hover { background: rgba(61,90,254,0.15); }
+    .user-search-item .uid { color: var(--text-muted); font-size: 11px; }
+    .selected-user-badge {
+        display: inline-flex; align-items: center; gap: 8px;
+        background: rgba(61,90,254,0.12); border: 1px solid rgba(61,90,254,0.3);
+        border-radius: 6px; padding: 6px 10px; font-size: 13px; color: var(--text-main);
+        margin-top: 6px;
+    }
+    .selected-user-badge .clear-user { cursor: pointer; color: var(--text-muted); font-size: 16px; line-height: 1; }
+    .selected-user-badge .clear-user:hover { color: #ff6c6c; }
+    .commission-group-admin { display: flex; }
+    .commission-group-admin .form-control { border-top-right-radius: 0 !important; border-bottom-right-radius: 0 !important; border-right: none !important; }
+    .commission-select-admin {
+        width: 65px; flex-shrink: 0;
+        background: rgba(61,90,254,0.1) !important; border: 1px solid var(--border-color) !important;
+        color: #6c8cff !important; font-weight: bold;
+        border-top-left-radius: 0 !important; border-bottom-left-radius: 0 !important;
+    }
+    .btn-create-admin {
+        background: #3d5afe; color: #fff; border: none; height: 38px;
+        border-radius: 6px; width: 100%; font-weight: 600; font-size: 13px;
+        cursor: pointer; transition: background 0.2s;
+    }
+    .btn-create-admin:hover { background: #304ffe; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="section">
-    
+
     {% if messages %}
         {% for message in messages %}
             <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}success{% endif %}">
@@ -35,12 +69,107 @@
     {% endif %}
 
     <div class="form-section">
+        <h3>➕ Создать ордер для пользователя</h3>
+        <form method="POST" action="{% url 'admin_orders_editor' %}" id="adminCreateOrderForm">
+            {% csrf_token %}
+            <input type="hidden" name="target_user_id" id="target_user_id" value="{{ last_user.id|default:'' }}">
+
+            <div class="form-row" style="grid-template-columns: 1fr 1fr; margin-bottom: 4px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Пользователь</label>
+                    <div class="user-search-wrap">
+                        <input type="text" id="userSearchInput" class="form-control" autocomplete="off"
+                               placeholder="Поиск по имени или ID..."
+                               value="{{ last_user.username|default:'' }}">
+                        <div class="user-search-dropdown" id="userSearchDropdown" style="display:none;"></div>
+                    </div>
+                    <div id="selectedUserBadge" style="display: {% if last_user %}flex{% else %}none{% endif %};">
+                        <div class="selected-user-badge">
+                            <span id="selectedUserName">{{ last_user.username|default:'' }}</span>
+                            <span class="uid">#<span id="selectedUserId">{{ last_user.id|default:'' }}</span></span>
+                            <span class="clear-user" onclick="clearUser()" title="Сбросить">×</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Номер ордера</label>
+                    <input type="text" name="external_id" class="form-control" placeholder="Номер ордера биржи" required>
+                </div>
+            </div>
+
+            <div class="form-row" style="margin-top: 12px;">
+                <div class="form-group">
+                    <label>Курс</label>
+                    <input type="text" name="price" class="form-control" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label>Количество</label>
+                    <input type="text" name="amount" class="form-control" placeholder="0.00000000" required>
+                </div>
+                <div class="form-group">
+                    <label>Стоимость (RUB)</label>
+                    <input type="text" name="cost" class="form-control" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label>Тип операции</label>
+                    <select class="form-select" name="operation_type">
+                        <option value="BUY">Покупка (BUY)</option>
+                        <option value="SELL">Продажа (SELL)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Биржа</label>
+                    <select class="form-select" name="exchange">
+                        <option value="Bybit">Bybit</option>
+                        <option value="HTX">HTX</option>
+                        <option value="MEXC">MEXC</option>
+                        <option value="Telegram">Telegram</option>
+                        <option value="Bitget">Bitget</option>
+                        <option value="Gate">Gate</option>
+                        <option value="EMCD">EMCD</option>
+                        <option value="BingX">BingX</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Банк / Реквизиты</label>
+                    <select class="form-select" name="details">
+                        <option value="">Не выбран</option>
+                        {% for bank in all_banks %}
+                            <option value="{{ bank.id }}">{{ bank.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Комиссия</label>
+                    <div class="commission-group-admin">
+                        <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0">
+                        <select class="form-select commission-select-admin" name="commission_type">
+                            <option value="PERCENT">%</option>
+                            <option value="RUB">₽</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Дата и время</label>
+                    <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
+                </div>
+                <div class="form-group d-flex align-items-end">
+                    <button type="submit" name="create_order_admin" class="btn-create-admin">Создать ордер</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="form-section">
         <h3>🔍 Поиск заказа</h3>
         <form method="GET" action="{% url 'admin_orders_editor' %}">
             <div class="form-row">
                 <div class="form-group">
                     <label>ID заказа (ID или External ID)</label>
-                    <input class="form-control" type="text" name="order_id_search" 
+                    <input class="form-control" type="text" name="order_id_search"
                            value="{{ request.GET.order_id_search|default:'' }}" placeholder="Введите номер...">
                 </div>
                 <div class="form-group">
@@ -67,7 +196,7 @@
         <form method="POST">
             {% csrf_token %}
             <input type="hidden" name="target_order_pk" value="{{ order.pk }}">
-            
+
             <div class="form-row">
                 <div class="form-group">
                     <label>External ID</label>
@@ -77,7 +206,6 @@
                     <label>Владелец (нельзя менять)</label>
                     <div class="info-field">{{ order.user.username }}</div>
                 </div>
-
             </div>
 
             <div class="form-row">
@@ -104,7 +232,7 @@
                     <input class="form-control" type="datetime-local" name="created_at" value="{{ order.created_at|date:'Y-m-d\TH:i' }}">
                 </div>
             </div>
-            
+
             <div class="form-row">
                 <div class="form-group">
                     <label>Цена</label>
@@ -119,7 +247,7 @@
                     <input class="form-control" type="number" name="cost" step="0.01" value="{{ order.cost|stringformat:'.2f' }}">
                 </div>
             </div>
-            
+
             <div class="form-row">
                 <div class="form-group">
                     <label>Комиссия</label>
@@ -158,6 +286,90 @@
     </div>
     {% endif %}
 
-    
 </div>
+
+<script>
+(function() {
+    const searchInput = document.getElementById('userSearchInput');
+    const dropdown = document.getElementById('userSearchDropdown');
+    const hiddenId = document.getElementById('target_user_id');
+    const badge = document.getElementById('selectedUserBadge');
+    const badgeName = document.getElementById('selectedUserName');
+    const badgeId = document.getElementById('selectedUserId');
+
+    let debounceTimer = null;
+
+    searchInput.addEventListener('input', function() {
+        const q = this.value.trim();
+        clearTimeout(debounceTimer);
+
+        if (hiddenId.value) {
+            hiddenId.value = '';
+            badge.style.display = 'none';
+        }
+
+        if (q.length < 1) {
+            dropdown.style.display = 'none';
+            return;
+        }
+
+        debounceTimer = setTimeout(function() {
+            fetch(`{% url 'api_search_users' %}?q=${encodeURIComponent(q)}`)
+                .then(r => r.json())
+                .then(users => {
+                    dropdown.innerHTML = '';
+                    if (!users.length) {
+                        dropdown.style.display = 'none';
+                        return;
+                    }
+                    users.forEach(u => {
+                        const item = document.createElement('div');
+                        item.className = 'user-search-item';
+                        item.innerHTML = `<span>${u.username}</span><span class="uid">#${u.id}</span>`;
+                        item.addEventListener('mousedown', function(e) {
+                            e.preventDefault();
+                            selectUser(u.id, u.username);
+                        });
+                        dropdown.appendChild(item);
+                    });
+                    dropdown.style.display = 'block';
+                })
+                .catch(() => { dropdown.style.display = 'none'; });
+        }, 200);
+    });
+
+    searchInput.addEventListener('blur', function() {
+        setTimeout(() => { dropdown.style.display = 'none'; }, 150);
+    });
+
+    searchInput.addEventListener('focus', function() {
+        if (dropdown.children.length > 0) dropdown.style.display = 'block';
+    });
+
+    window.selectUser = function(id, username) {
+        hiddenId.value = id;
+        searchInput.value = username;
+        badgeName.textContent = username;
+        badgeId.textContent = id;
+        badge.style.display = 'flex';
+        dropdown.style.display = 'none';
+    };
+
+    window.clearUser = function() {
+        hiddenId.value = '';
+        searchInput.value = '';
+        badge.style.display = 'none';
+        dropdown.style.display = 'none';
+        searchInput.focus();
+    };
+
+    document.getElementById('adminCreateOrderForm').addEventListener('submit', function(e) {
+        if (!hiddenId.value) {
+            e.preventDefault();
+            alert('Выберите пользователя из списка поиска.');
+            searchInput.focus();
+        }
+    });
+})();
+</script>
 {% endblock %}

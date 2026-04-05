@@ -17,9 +17,10 @@ const HTX_GOLD_COLOR = '#F7A600';
 // State variables
 let observer = null;
 let isInitializing = false;
-let currentDisplayName = '';
-let currentSellDisplayNameTemp = '';
+let currentDisplayName = '';  // Активное имя для текущей страницы (BUY или SELL)
+let storedBuyName = '';       // Из storage — применяется ТОЛЬКО на BUY страницах
 let originalBuyName = '';
+let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
 
 // ============================================
 // Timezone and Date Helpers (MSK)
@@ -143,11 +144,11 @@ function isSellPage() {
 async function loadDisplayNameFromStorage() {
     try {
         const res = await chrome.storage.sync.get(['displayName']);
-        currentDisplayName = res.displayName || '';
-        return currentDisplayName;
+        storedBuyName = res.displayName || '';
+        return storedBuyName;
     } catch (e) {
         console.warn('P2P Analytics HTX: Failed to load display name:', e);
-        currentDisplayName = '';
+        storedBuyName = '';
         return '';
     }
 }
@@ -1447,13 +1448,13 @@ function initializeMutationObserver() {
                 '.l-trade-status',
                 '.l-trade-payment'
             ];
-            
+
             let targetDiv = null;
             for (const selector of targetSelectors) {
                 targetDiv = document.querySelector(selector);
                 if (targetDiv) break;
             }
-            
+
             if (targetDiv) {
                 const existingMenus = document.querySelectorAll('.p2p-analytics-dropdown-container');
                 if (existingMenus.length === 0) {
@@ -1462,6 +1463,15 @@ function initializeMutationObserver() {
                     for (let i = 1; i < existingMenus.length; i++) {
                         existingMenus[i].remove();
                     }
+                }
+            }
+
+            // Повторная замена имени после любой перерисовки SPA
+            if (currentDisplayName) {
+                replaceNameInUserList(currentDisplayName);
+                // ФИО в реквизитах — только на BUY (на SELL там своё имя)
+                if (isBuyPage()) {
+                    replaceFioInPaymentDetails(currentDisplayName);
                 }
             }
         }, 100);
@@ -1510,16 +1520,50 @@ function replaceNameInUserList(name) {
     }
 }
 
-function restoreOriginalName() {
-    if (!originalBuyName) return;
-    
+// Замена ФИО в блоке реквизитов контрагента (только на BUY страницах)
+function replaceFioInPaymentDetails(name) {
+    if (!name) return false;
     try {
-        const userList = document.querySelector('.user-list');
-        if (!userList) return;
-        
-        const firstLi = userList.querySelector('ul li:first-child');
-        if (firstLi) {
-            firstLi.textContent = `· ${originalBuyName}`;
+        const wrappers = document.querySelectorAll('.info-item-wrapper');
+        let replaced = false;
+        for (const wrapper of wrappers) {
+            const label = wrapper.querySelector('.label');
+            if (!label) continue;
+            if (label.textContent.trim().toUpperCase() !== 'ФИО') continue;
+            const span = wrapper.querySelector('.detail span');
+            if (!span) continue;
+            if (!originalFioName && span.textContent.trim()) {
+                originalFioName = span.textContent.trim();
+            }
+            if (span.textContent.trim() === name) {
+                replaced = true;
+                continue;
+            }
+            span.textContent = name;
+            replaced = true;
+        }
+        return replaced;
+    } catch (e) {
+        console.warn('P2P Analytics HTX: replaceFioInPaymentDetails error:', e);
+        return false;
+    }
+}
+
+function restoreOriginalName() {
+    try {
+        if (originalBuyName) {
+            const userList = document.querySelector('.user-list');
+            const firstLi = userList?.querySelector('ul li:first-child');
+            if (firstLi) firstLi.textContent = `· ${originalBuyName}`;
+        }
+        if (originalFioName) {
+            const wrappers = document.querySelectorAll('.info-item-wrapper');
+            for (const wrapper of wrappers) {
+                const label = wrapper.querySelector('.label');
+                if (label?.textContent.trim().toUpperCase() !== 'ФИО') continue;
+                const span = wrapper.querySelector('.detail span');
+                if (span) span.textContent = originalFioName;
+            }
         }
     } catch (e) { /* ignore */ }
 }
@@ -1533,19 +1577,28 @@ let nameReplacementStarted = false;
 
 // И измени startNameReplacement:
 function startNameReplacement() {
-    if (!currentDisplayName) return;
+    if (!storedBuyName) return;
+    if (!isBuyPage()) return;  // Из storage применяем ТОЛЬКО на BUY страницах
     if (nameReplacementStarted) return; // защита от повторного запуска
     nameReplacementStarted = true;
-    
+    currentDisplayName = storedBuyName;  // Активируем для текущей страницы
+
+    // BUY: заменяем в user-list И в блоке ФИО реквизитов контрагента
     replaceNameInUserList(currentDisplayName);
-    
+    replaceFioInPaymentDetails(currentDisplayName);
+
     let attempts = 0;
     const maxAttempts = 20;
-    
+
+    // Polling только до первого успеха или таймаута.
+    // После этого поддержку берёт на себя MutationObserver.
     const nameInterval = setInterval(() => {
         attempts++;
-        const replaced = replaceNameInUserList(currentDisplayName);
-        if (replaced || attempts >= maxAttempts) {
+        const r1 = replaceNameInUserList(currentDisplayName);
+        const r2 = replaceFioInPaymentDetails(currentDisplayName);
+        if (attempts >= maxAttempts) {
+            clearInterval(nameInterval);
+        } else if (r1 && r2) {
             clearInterval(nameInterval);
         }
     }, 300);
@@ -1597,14 +1650,39 @@ if (document.readyState === 'loading') {
     setTimeout(tryInitialize, 500);
 }
 
+// Обработчик сообщений от popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'resetBuyName') {
+        currentDisplayName = '';
+        nameReplacementStarted = false;
+        originalBuyName = '';
+        originalFioName = '';
+        restoreOriginalName();
+        chrome.storage.sync.set({ displayName: '' }).catch(() => {});
+        sendResponse({ success: true });
+    } else if (message.action === 'applySellName') {
+        const name = message.name || '';
+        currentDisplayName = name;
+        nameReplacementStarted = false;
+        if (name) {
+            replaceNameInUserList(name);
+            nameReplacementStarted = true;
+        }
+        sendResponse({ success: true });
+    }
+    return true;
+});
+
 let lastUrl = location.href;
 new MutationObserver(() => {
     const url = location.href;
     if (url !== lastUrl) {
         lastUrl = url;
         initRetryCount = 0;
-        nameReplacementStarted = false; // ← добавить
-        originalBuyName = '';           // ← добавить, чтобы имя сохранялось заново
+        nameReplacementStarted = false;
+        currentDisplayName = '';
+        originalBuyName = '';
+        originalFioName = '';
         if (observer) {
             observer.disconnect();
             observer = null;

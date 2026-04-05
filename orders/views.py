@@ -1656,71 +1656,130 @@ def admin_orders_editor(request):
     Редактор ордеров в админке.
     """
     order = None
-    all_banks = None
     search_query = request.GET.get('order_id_search')
-    
+    all_banks = BankDetail.objects.filter(is_deleted=False).order_by('name')
+
+    # Последний пользователь, для которого создавался ордер (из сессии)
+    last_user_id = request.session.get('admin_last_order_user_id')
+    last_user = None
+    if last_user_id:
+        last_user = User.objects.filter(id=last_user_id).first()
+
     # 1. Логика поиска ордера
     if search_query:
         search_query = search_query.strip()
-        
-        # ИСПРАВЛЕНИЕ: используем external_id вместо order_id
         order = Order.objects.filter(external_id__iexact=search_query).first()
-        
-        # Если не нашли по внешнему ID, пробуем по внутреннему ID (PK)
         if not order and search_query.isdigit():
             order = Order.objects.filter(id=int(search_query)).first()
-            
-        if order:
-            all_banks = BankDetail.objects.filter(is_deleted=False).order_by('name')
-        else:
+        if not order:
             messages.error(request, f"Ордер '{search_query}' не найден.")
 
-    # 2. Логика сохранения изменений
+    # 2. Логика создания ордера администратором
+    if request.method == 'POST' and 'create_order_admin' in request.POST:
+        target_user_id = request.POST.get('target_user_id', '').strip()
+        target_user = None
+        if target_user_id:
+            target_user = User.objects.filter(id=target_user_id).first()
+
+        if not target_user:
+            messages.error(request, "Пользователь не найден. Выберите пользователя из поиска.")
+        else:
+            external_id = request.POST.get('external_id', '').strip()
+            if not external_id:
+                messages.error(request, 'Номер ордера обязателен.')
+            else:
+                exchange_val = request.POST.get('exchange', '').strip()
+                already_exists = Order.objects.filter(
+                    user=target_user,
+                    external_id=external_id,
+                    exchange_type=exchange_val,
+                ).exists()
+
+                if already_exists:
+                    messages.error(request, f'Ордер {external_id} ({exchange_val}) уже существует у пользователя {target_user.username}.')
+                else:
+                    raw_date = request.POST.get('created_at')
+                    if raw_date:
+                        naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
+                        order_date = timezone.make_aware(naive_date)
+                    else:
+                        order_date = timezone.now()
+
+                    bank_id = request.POST.get('details')
+                    bank_instance = BankDetail.objects.filter(id=bank_id, is_deleted=False).first() if bank_id else None
+
+                    price_val      = safe_decimal(request.POST.get('price'))
+                    amount_val     = safe_decimal(request.POST.get('amount'))
+                    cost_val       = safe_decimal(request.POST.get('cost'))
+                    commission_val = safe_decimal(request.POST.get('commission_value'))
+
+                    exchange_name = exchange_val.lower()
+                    user_comm_rate = 0.0
+                    if 'bybit' in exchange_name:
+                        user_comm_rate = target_user.bybit_commission
+                    elif 'htx' in exchange_name or 'huobi' in exchange_name:
+                        user_comm_rate = target_user.htx_commission
+                    elif 'mexc' in exchange_name:
+                        user_comm_rate = target_user.mexc_commission
+                    elif 'bitget' in exchange_name:
+                        user_comm_rate = target_user.bitget_commission
+                    elif 'telegram' in exchange_name:
+                        user_comm_rate = target_user.telegram_commission
+
+                    Order.objects.create(
+                        user=target_user,
+                        external_id=external_id,
+                        price=price_val,
+                        amount=amount_val,
+                        cost=cost_val,
+                        commission=commission_val,
+                        operation_type=request.POST.get('operation_type'),
+                        exchange_type=exchange_val,
+                        bank_detail=bank_instance,
+                        commission_type=request.POST.get('commission_type'),
+                        exchange_commission_rate=user_comm_rate,
+                        created_at=order_date
+                    )
+
+                    # Запоминаем последнего пользователя
+                    request.session['admin_last_order_user_id'] = target_user.id
+
+                    messages.success(request, f'Ордер {external_id} успешно создан для пользователя {target_user.username}.')
+                    return redirect('admin_orders_editor')
+
+    # 3. Логика сохранения изменений
     if request.method == 'POST' and 'save_order' in request.POST:
         target_pk = request.POST.get('target_order_pk')
         try:
             current_order = Order.objects.get(pk=target_pk)
-            
-            # --- Обновляем поля ---
-            # ИСПРАВЛЕНИЕ: сохраняем в external_id
-            current_order.external_id = request.POST.get('external_id') 
-            
-            
+
+            current_order.external_id = request.POST.get('external_id')
             current_order.operation_type = request.POST.get('operation_type')
-            
-            # Банк
+
             bank_id = request.POST.get('bank_detail_id')
             if bank_id:
                 current_order.bank_detail_id = bank_id
-            
-            # Числовые поля
+
             def to_decimal(val):
                 if not val: return Decimal('0')
                 return Decimal(str(val).replace(',', '.'))
 
             current_order.price = to_decimal(request.POST.get('price'))
             current_order.amount = to_decimal(request.POST.get('amount'))
-            
-            # Проверка имени поля для стоимости (cost или total_amount)
-            # Судя по ошибке Django, у тебя есть поле 'cost', используем его
             current_order.cost = to_decimal(request.POST.get('cost'))
-
             current_order.commission = to_decimal(request.POST.get('commission'))
             current_order.commission_type = request.POST.get('commission_type')
-            
-            # Дата
+
             date_raw = request.POST.get('created_at')
             if date_raw:
                 dt = parse_datetime(date_raw)
                 if dt:
                     current_order.created_at = dt
-            
+
             current_order.save()
             messages.success(request, f"Ордер #{current_order.id} успешно обновлен.")
-            
-            # Редирект с использованием правильного поля
             return redirect(f'/p2p-admin/orders/?order_id_search={current_order.external_id}')
-            
+
         except Order.DoesNotExist:
             messages.error(request, "Ошибка: Ордер не найден в базе при сохранении.")
         except Exception as e:
@@ -1729,9 +1788,10 @@ def admin_orders_editor(request):
     return render(request, 'custom_admin/orders_editor.html', {
         'order': order,
         'all_banks': all_banks,
-        'search_query': search_query
+        'search_query': search_query,
+        'last_user': last_user,
+        'current_time': timezone.now().strftime('%Y-%m-%dT%H:%M'),
     })
-
 
 
 
