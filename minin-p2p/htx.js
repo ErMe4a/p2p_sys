@@ -1467,12 +1467,11 @@ function initializeMutationObserver() {
             }
 
             // Повторная замена имени после любой перерисовки SPA
+            // currentDisplayName содержит правильное имя для каждого типа страницы:
+            // BUY — имя контрагента (из storage), SELL — своё имя (из popup)
             if (currentDisplayName) {
                 replaceNameInUserList(currentDisplayName);
-                // ФИО в реквизитах — только на BUY (на SELL там своё имя)
-                if (isBuyPage()) {
-                    replaceFioInPaymentDetails(currentDisplayName);
-                }
+                replaceFioInPaymentDetails(currentDisplayName);
             }
         }, 100);
     });
@@ -1666,6 +1665,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         nameReplacementStarted = false;
         if (name) {
             replaceNameInUserList(name);
+            replaceFioInPaymentDetails(name);
             nameReplacementStarted = true;
         }
         sendResponse({ success: true });
