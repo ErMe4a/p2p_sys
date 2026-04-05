@@ -20,6 +20,7 @@ let isInitializing = false;
 let currentDisplayName = '';  // Активное имя для текущей страницы (BUY или SELL)
 let storedBuyName = '';       // Из storage — применяется ТОЛЬКО на BUY страницах
 let originalBuyName = '';
+let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
 
 // ============================================
 // Timezone and Date Helpers (MSK)
@@ -1468,6 +1469,10 @@ function initializeMutationObserver() {
             // Повторная замена имени после любой перерисовки SPA
             if (currentDisplayName) {
                 replaceNameInUserList(currentDisplayName);
+                // ФИО в реквизитах — только на BUY (на SELL там своё имя)
+                if (isBuyPage()) {
+                    replaceFioInPaymentDetails(currentDisplayName);
+                }
             }
         }, 100);
     });
@@ -1515,16 +1520,50 @@ function replaceNameInUserList(name) {
     }
 }
 
-function restoreOriginalName() {
-    if (!originalBuyName) return;
-    
+// Замена ФИО в блоке реквизитов контрагента (только на BUY страницах)
+function replaceFioInPaymentDetails(name) {
+    if (!name) return false;
     try {
-        const userList = document.querySelector('.user-list');
-        if (!userList) return;
-        
-        const firstLi = userList.querySelector('ul li:first-child');
-        if (firstLi) {
-            firstLi.textContent = `· ${originalBuyName}`;
+        const wrappers = document.querySelectorAll('.info-item-wrapper');
+        let replaced = false;
+        for (const wrapper of wrappers) {
+            const label = wrapper.querySelector('.label');
+            if (!label) continue;
+            if (label.textContent.trim().toUpperCase() !== 'ФИО') continue;
+            const span = wrapper.querySelector('.detail span');
+            if (!span) continue;
+            if (!originalFioName && span.textContent.trim()) {
+                originalFioName = span.textContent.trim();
+            }
+            if (span.textContent.trim() === name) {
+                replaced = true;
+                continue;
+            }
+            span.textContent = name;
+            replaced = true;
+        }
+        return replaced;
+    } catch (e) {
+        console.warn('P2P Analytics HTX: replaceFioInPaymentDetails error:', e);
+        return false;
+    }
+}
+
+function restoreOriginalName() {
+    try {
+        if (originalBuyName) {
+            const userList = document.querySelector('.user-list');
+            const firstLi = userList?.querySelector('ul li:first-child');
+            if (firstLi) firstLi.textContent = `· ${originalBuyName}`;
+        }
+        if (originalFioName) {
+            const wrappers = document.querySelectorAll('.info-item-wrapper');
+            for (const wrapper of wrappers) {
+                const label = wrapper.querySelector('.label');
+                if (label?.textContent.trim().toUpperCase() !== 'ФИО') continue;
+                const span = wrapper.querySelector('.detail span');
+                if (span) span.textContent = originalFioName;
+            }
         }
     } catch (e) { /* ignore */ }
 }
@@ -1544,19 +1583,22 @@ function startNameReplacement() {
     nameReplacementStarted = true;
     currentDisplayName = storedBuyName;  // Активируем для текущей страницы
 
+    // BUY: заменяем в user-list И в блоке ФИО реквизитов контрагента
     replaceNameInUserList(currentDisplayName);
+    replaceFioInPaymentDetails(currentDisplayName);
 
     let attempts = 0;
     const maxAttempts = 20;
 
     // Polling только до первого успеха или таймаута.
-    // После этого поддержку берёт на себя MutationObserver в initializeMutationObserver.
+    // После этого поддержку берёт на себя MutationObserver.
     const nameInterval = setInterval(() => {
         attempts++;
-        const replaced = replaceNameInUserList(currentDisplayName);
+        const r1 = replaceNameInUserList(currentDisplayName);
+        const r2 = replaceFioInPaymentDetails(currentDisplayName);
         if (attempts >= maxAttempts) {
             clearInterval(nameInterval);
-        } else if (replaced) {
+        } else if (r1 && r2) {
             clearInterval(nameInterval);
         }
     }, 300);
@@ -1614,6 +1656,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentDisplayName = '';
         nameReplacementStarted = false;
         originalBuyName = '';
+        originalFioName = '';
         restoreOriginalName();
         chrome.storage.sync.set({ displayName: '' }).catch(() => {});
         sendResponse({ success: true });
@@ -1637,8 +1680,9 @@ new MutationObserver(() => {
         lastUrl = url;
         initRetryCount = 0;
         nameReplacementStarted = false;
-        currentDisplayName = '';   // Сбрасываем активное имя при смене страницы
+        currentDisplayName = '';
         originalBuyName = '';
+        originalFioName = '';
         if (observer) {
             observer.disconnect();
             observer = null;
