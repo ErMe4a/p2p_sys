@@ -1634,6 +1634,8 @@ def admin_profit_view(request):
         {'num': '11', 'name': 'Нояб'}, {'num': '12', 'name': 'Дек'},
     ]
 
+    current_month_name = next((m['name'] for m in months_list if m['num'] == month_str), month_str)
+
     default_banks = BankDetail.objects.all()
 
     return render(request, 'custom_admin/profit_list.html', {
@@ -1641,6 +1643,7 @@ def admin_profit_view(request):
         'summary':           summary,
         'current_year':      year,
         'current_month':     month_str,
+        'current_month_name':  current_month_name,
         'months_list':       months_list,
         'selected_exchange': exchange_filter,
         'selected_bank':     bank_filter_id,
