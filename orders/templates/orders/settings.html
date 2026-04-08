@@ -2,19 +2,21 @@
 {% block content %}
 <style>
     .settings-container {
+        /* ИЗМЕНЕНО: Было 900px, ставим 100%, чтобы заполнить весь контейнер из base.html */
         max-width: 100%; 
         margin: 20px auto;
-        background: var(--bg-card);
-        border: 1px solid var(--border-color);
+        background: var(--bg-card); /* Переменная темы */
+        border: 1px solid var(--border-color); /* Переменная темы */
         border-radius: 12px;
         padding: 30px;
     }
 
+    /* Декоративные заголовки разделов с линиями */
     .section-divider {
         display: flex;
         align-items: center;
         text-align: center;
-        color: var(--text-muted);
+        color: var(--text-muted); /* Переменная темы */
         font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -23,14 +25,14 @@
     .section-divider::before, .section-divider::after {
         content: '';
         flex: 1;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--border-color); /* Переменная темы */
     }
     .section-divider:not(:empty)::before { margin-right: 15px; }
     .section-divider:not(:empty)::after { margin-left: 15px; }
 
     .field-label {
         font-size: 0.8rem;
-        color: var(--text-muted);
+        color: var(--text-muted); /* БЫЛО #fff -> СТАЛО var(--text-muted) для поддержки светлой темы */
         margin-bottom: 6px;
         display: block;
     }
@@ -39,9 +41,9 @@
         height: 42px;
         font-size: 0.9rem;
         margin-bottom: 15px;
-        background-color: var(--bg-input) !important;
-        border: 1px solid var(--border-color) !important;
-        color: var(--text-main) !important;
+        background-color: var(--bg-input) !important; /* Переменная темы */
+        border: 1px solid var(--border-color) !important; /* Переменная темы */
+        color: var(--text-main) !important; /* Переменная темы */
     }
 
     .form-control:focus, .form-select:focus {
@@ -49,6 +51,7 @@
         box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
     }
 
+    /* Стили для заблокированного поля Telegram, чтобы оно выглядело органично */
     .form-control:disabled, .form-control[readonly] {
         background-color: var(--bg-card) !important;
         opacity: 0.7;
@@ -56,7 +59,7 @@
     }
 
     .btn-save {
-        background: var(--bg-input);
+        background: var(--bg-input); /* Фон кнопки подстраивается под тему */
         border: 1px solid var(--accent-blue);
         color: var(--text-main);
         padding: 8px 25px;
@@ -65,72 +68,21 @@
         transition: 0.3s;
         font-weight: 500;
     }
+    /* В светлой теме делаем текст кнопки синим для акцента */
     [data-bs-theme="light"] .btn-save {
         color: var(--accent-blue);
     }
+    
     .btn-save:hover { 
         background: var(--accent-blue); 
-        color: #fff !important;
+        color: #fff !important; /* При наведении текст всегда белый */
     }
     
     .footer-link {
         text-align: center;
         font-size: 0.75rem;
-        color: var(--text-muted);
+        color: var(--text-muted); /* Переменная темы */
         margin-top: 20px;
-    }
-
-    /* ── Индикатор статуса ключа ── */
-    .api-section-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .key-status {
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        font-size: 0.7rem;
-        font-weight: 500;
-        padding: 2px 10px;
-        border-radius: 20px;
-        letter-spacing: 0.3px;
-    }
-
-    .key-status.valid {
-        background: rgba(25, 195, 125, 0.12);
-        color: #19c37d;
-        border: 1px solid rgba(25, 195, 125, 0.3);
-    }
-
-    .key-status.invalid {
-        background: rgba(248, 73, 96, 0.12);
-        color: #f84960;
-        border: 1px solid rgba(248, 73, 96, 0.3);
-    }
-
-    .key-status::before {
-        content: '';
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        display: inline-block;
-    }
-
-    .key-status.valid::before {
-        background: #19c37d;
-        box-shadow: 0 0 4px rgba(25, 195, 125, 0.6);
-    }
-
-    .key-status.invalid::before {
-        background: #f84960;
-        box-shadow: 0 0 4px rgba(248, 73, 96, 0.6);
-    }
-
-    /* Подсветка инпутов при невалидном ключе */
-    .input-invalid .form-control {
-        border-color: rgba(248, 73, 96, 0.4) !important;
     }
 </style>
 
@@ -156,11 +108,17 @@
                 <label class="field-label">Email</label>
                 <input type="email" name="email" class="form-control" value="{{ user.email|default:'' }}">
             </div>
+            <!-- <div class="col-12">
+                <label class="field-label">Место расчетов</label>
+                <input type="text" name="payment_address" class="form-control" value="{{ user.payment_address|default:'' }}">
+            </div> -->
             <div class="col-md-6">
                 <label class="field-label">Тип налогообложения</label>
                 <select name="tax_type" class="form-select">
                     <option value="OCH" {% if user.tax_type == 'OCH' %}selected{% endif %}>OCH</option>
+                    
                     <option value="OSNO" {% if user.tax_type == 'OSNO' %}selected{% endif %}>ОСНО</option>
+                    
                     <option value="USN_INCOME" {% if user.tax_type == 'USN_INCOME' %}selected{% endif %}>УСН доход</option>
                     <option value="USN_INCOME_OUTCOME" {% if user.tax_type == 'USN_INCOME_OUTCOME' %}selected{% endif %}>УСН доход-расход</option>
                     <option value="PATENT" {% if user.tax_type == 'PATENT' %}selected{% endif %}>Патент</option>
@@ -184,20 +142,8 @@
             </div>
         </div>
 
-        {# ── MEXC API с индикатором ── #}
-        <div class="section-divider">
-            <div class="api-section-header">
-                MEXC API
-                {% if user.mexc_api_key %}
-                    {% if user.mexc_key_valid %}
-                        <span class="key-status valid">Активен</span>
-                    {% else %}
-                        <span class="key-status invalid">Недействителен</span>
-                    {% endif %}
-                {% endif %}
-            </div>
-        </div>
-        <div class="row {% if user.mexc_api_key and not user.mexc_key_valid %}input-invalid{% endif %}">
+        <div class="section-divider">MEXC API</div>
+        <div class="row">
             <div class="col-md-6">
                 <label class="field-label">MEXC API Key</label>
                 <input type="text" name="mexc_key" class="form-control" value="{{ user.mexc_api_key|default:'' }}">
@@ -206,29 +152,10 @@
                 <label class="field-label">MEXC API Secret</label>
                 <input type="text" name="mexc_secret" class="form-control" value="{{ user.mexc_api_secret|default:'' }}">
             </div>
-            {% if user.mexc_api_key and not user.mexc_key_valid %}
-            <div class="col-12">
-                <small style="color: #f84960; font-size: 0.75rem;">
-                    ⚠ Ключ недействителен — обновите API ключ в личном кабинете MEXC и вставьте новый.
-                </small>
-            </div>
-            {% endif %}
         </div>
 
-        {# ── Bybit API с индикатором ── #}
-        <div class="section-divider">
-            <div class="api-section-header">
-                Bybit API
-                {% if user.bybit_api_key %}
-                    {% if user.bybit_key_valid %}
-                        <span class="key-status valid">Активен</span>
-                    {% else %}
-                        <span class="key-status invalid">Недействителен</span>
-                    {% endif %}
-                {% endif %}
-            </div>
-        </div>
-        <div class="row {% if user.bybit_api_key and not user.bybit_key_valid %}input-invalid{% endif %}">
+        <div class="section-divider">Bybit API</div>
+        <div class="row">
             <div class="col-md-6">
                 <label class="field-label">Bybit API Key</label>
                 <input type="text" name="bybit_key" class="form-control" value="{{ user.bybit_api_key|default:'' }}">
@@ -237,25 +164,23 @@
                 <label class="field-label">Bybit API Secret</label>
                 <input type="text" name="bybit_secret" class="form-control" value="{{ user.bybit_api_secret|default:'' }}">
             </div>
-            {% if user.bybit_api_key and not user.bybit_key_valid %}
-            <div class="col-12">
-                <small style="color: #f84960; font-size: 0.75rem;">
-                    ⚠ Ключ недействителен — обновите API ключ в личном кабинете Bybit и вставьте новый.
-                </small>
-            </div>
-            {% endif %}
         </div>
 
         <div class="section-divider">Комиссии бирж (%)</div>
         <div class="row">
+            
             <div class="col-6 col-md">
                 <label class="field-label">Bybit</label>
                 <select name="bybit_commission" class="form-select">
                     <option value="0.3" {% if user.bybit_commission|floatformat:"4" == "0.3000" or not user.bybit_commission %}selected{% endif %}>Мейкер (0.3%)</option>
+                    
                     <option value="0.275" {% if user.bybit_commission|floatformat:"4" == "0.2750" %}selected{% endif %}>Проверенный мерчант (0.275%)</option>
+                    
                     <option value="0.25" {% if user.bybit_commission|floatformat:"4" == "0.2500" %}selected{% endif %}>Блочный мерчант (0.25%)</option>
                 </select>
             </div>
+            
+            
             <div class="col-6 col-md">
                 <label class="field-label">HTX</label>
                 <input type="number" step="0.0001" name="htx_commission" class="form-control" placeholder="0" value="{{ user.htx_commission|default:'0' }}">
@@ -268,9 +193,11 @@
                 <label class="field-label">Bitget</label>
                 <input type="number" step="0.0001" name="bitget_commission" class="form-control" placeholder="0" value="{{ user.bitget_commission|default:'0' }}">
             </div>
+            
             <div class="col-6 col-md">
                 <label class="field-label">Telegram</label>
                 <input type="text" class="form-control" value="0.9" disabled readonly title="Фиксированная комиссия">
+                
                 <input type="hidden" name="telegram_commission" value="0.9">
             </div>
         </div>
