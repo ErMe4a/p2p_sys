@@ -290,52 +290,63 @@ def upload_screenshot(request, order_id):
         
     return redirect('my_orders')
 
+
+
 @login_required
 def profile_settings(request):
     user = request.user
 
     if request.method == 'POST':
         # 1. Сохраняем основные данные
-        user.evotor_login = request.POST.get('evotor_login')
+        user.evotor_login   = request.POST.get('evotor_login')
         user.evotor_password = request.POST.get('evotor_password')
-        user.kkt_id = request.POST.get('kkt_id')
-        user.email = request.POST.get('email')
+        user.kkt_id         = request.POST.get('kkt_id')
+        user.email          = request.POST.get('email')
         user.payment_address = request.POST.get('payment_address')
-        user.tax_type = request.POST.get('tax_type')
-        user.inn = request.POST.get('inn')
+        user.tax_type       = request.POST.get('tax_type')
+        user.inn            = request.POST.get('inn')
 
         # 2. Сохраняем ключи API
-        user.htx_access_key = request.POST.get('htx_key')
+        user.htx_access_key  = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
-        user.mexc_api_key = request.POST.get('mexc_key')
-        user.mexc_api_secret = request.POST.get('mexc_secret')
-        user.bybit_api_key = request.POST.get('bybit_key')
-        user.bybit_api_secret = request.POST.get('bybit_secret')
+
+        # MEXC: если ключ изменился — сбрасываем флаг невалидности
+        new_mexc_key    = request.POST.get('mexc_key')
+        new_mexc_secret = request.POST.get('mexc_secret')
+        if new_mexc_key and new_mexc_key != user.mexc_api_key:
+            user.mexc_key_valid = True
+        user.mexc_api_key    = new_mexc_key
+        user.mexc_api_secret = new_mexc_secret
+
+        # Bybit: если ключ изменился — сбрасываем флаг невалидности
+        new_bybit_key    = request.POST.get('bybit_key')
+        new_bybit_secret = request.POST.get('bybit_secret')
+        if new_bybit_key and new_bybit_key != user.bybit_api_key:
+            user.bybit_key_valid = True
+        user.bybit_api_key    = new_bybit_key
+        user.bybit_api_secret = new_bybit_secret
 
         # 3. Сохраняем комиссии бирж
-        user.bybit_commission = float(request.POST.get('bybit_commission') or 0.3)
-        user.htx_commission = float(request.POST.get('htx_commission') or 0)
-        user.mexc_commission = float(request.POST.get('mexc_commission') or 0)
-        user.bitget_commission = float(request.POST.get('bitget_commission') or 0)
+        user.bybit_commission    = float(request.POST.get('bybit_commission') or 0.3)
+        user.htx_commission      = float(request.POST.get('htx_commission') or 0)
+        user.mexc_commission     = float(request.POST.get('mexc_commission') or 0)
+        user.bitget_commission   = float(request.POST.get('bitget_commission') or 0)
         user.telegram_commission = float(request.POST.get('telegram_commission') or 0.9)
 
-        # 3. ЛОГИКА СМЕНЫ ПАРОЛЯ
+        # 4. Логика смены пароля
         new_password = request.POST.get('new_password')
         if new_password and new_password.strip():
             user.set_password(new_password)
             user.save()
-            update_session_auth_hash(request, user) # Важно: чтобы не разлогинило
+            update_session_auth_hash(request, user)
             messages.success(request, "Пароль успешно изменен!")
         else:
             user.save()
             messages.success(request, "Настройки сохранены.")
-            
-        return redirect('settings') # Возврат для POST запроса
 
-    # ВАЖНО: Эта строка должна быть ВНЕ блока if
-    # Она срабатывает, когда ты просто заходишь на страницу (GET запрос)
+        return redirect('settings')
+
     return render(request, 'orders/settings.html', {'user': user})
-
 
 @login_required
 def unprocessed_orders_list(request):
@@ -861,14 +872,27 @@ def admin_users_list(request):
             if new_password:
                 user_to_edit.set_password(new_password)
 
-            user_to_edit.bybit_api_key    = request.POST.get('bybit_key')
-            user_to_edit.bybit_api_secret = request.POST.get('bybit_secret')
-            user_to_edit.htx_access_key   = request.POST.get('htx_key')
-            user_to_edit.htx_private_key  = request.POST.get('htx_secret')
-            user_to_edit.mexc_api_key     = request.POST.get('mexc_key')
-            user_to_edit.mexc_api_secret  = request.POST.get('mexc_secret')
-            user_to_edit.evotor_login     = request.POST.get('evotor_login')
-            user_to_edit.evotor_password  = request.POST.get('evotor_password')
+            user_to_edit.htx_access_key  = request.POST.get('htx_key')
+            user_to_edit.htx_private_key = request.POST.get('htx_secret')
+
+            # Bybit: если ключ изменился — сбрасываем флаг невалидности
+            new_bybit_key    = request.POST.get('bybit_key')
+            new_bybit_secret = request.POST.get('bybit_secret')
+            if new_bybit_key and new_bybit_key != user_to_edit.bybit_api_key:
+                user_to_edit.bybit_key_valid = True
+            user_to_edit.bybit_api_key    = new_bybit_key
+            user_to_edit.bybit_api_secret = new_bybit_secret
+
+            # MEXC: если ключ изменился — сбрасываем флаг невалидности
+            new_mexc_key    = request.POST.get('mexc_key')
+            new_mexc_secret = request.POST.get('mexc_secret')
+            if new_mexc_key and new_mexc_key != user_to_edit.mexc_api_key:
+                user_to_edit.mexc_key_valid = True
+            user_to_edit.mexc_api_key    = new_mexc_key
+            user_to_edit.mexc_api_secret = new_mexc_secret
+
+            user_to_edit.evotor_login    = request.POST.get('evotor_login')
+            user_to_edit.evotor_password = request.POST.get('evotor_password')
 
             user_to_edit.save()
             messages.success(request, f"Пользователь {user_to_edit.username} успешно обновлен.")
