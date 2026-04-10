@@ -175,7 +175,9 @@ def my_orders_list(request):
             contact_email = request.POST.get('receipt_contact', '').strip()
             if not contact_email:
                 contact_email = request.user.email
-
+            currency = request.POST.get('currency', 'USDT').strip().upper()
+            if currency not in ('USDT', 'TON'):
+                currency = 'USDT'
             # Эвотор не принимает больше 3 знаков после запятой.
             # ОБРЕЗАЕМ (не округляем) только для чека — в БД данные полные.
             receipt_data = {
@@ -183,6 +185,7 @@ def my_orders_list(request):
                 "sum":    truncate(order.cost,   3),
                 "price":  truncate(order.price,  3),
                 "amount": truncate(order.amount, 3),
+                "purpose": f"Цифровая валюта {currency}",
             }
 
             create_or_update_and_send_receipt(order, receipt_data)
@@ -212,6 +215,7 @@ def my_orders_list(request):
         'current_time':  current_time,
         'saved_data':    saved_data
     })
+
 
 @login_required
 def edit_order(request, order_id):
