@@ -90,12 +90,6 @@
                 <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
             </div>
             <div class="col-md-2">
-                <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
-            </div>
-            <div class="col-md-2">
-                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
-            </div>
-            <div class="col-md-2">
                 <div class="commission-group">
                     <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
                     <select class="form-select commission-select" name="currency" id="main_currency" style="width:80px;">
@@ -104,6 +98,10 @@
                     </select>
                 </div>
             </div>
+            <div class="col-md-2">
+                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
+            </div>
+            
             <div class="col-md-3">
                 <select class="form-select" name="operation_type">
                     <option value="BUY" {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
