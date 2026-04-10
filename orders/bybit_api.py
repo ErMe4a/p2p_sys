@@ -10,22 +10,27 @@ logger = logging.getLogger(__name__)
 # Тянем ордера только начиная с этой даты
 DATE_FROM_MS = int(datetime(2026, 2, 24).timestamp() * 1000)
 
+# Все коды Bybit которые означают проблему с ключом
+# 33004 — api key has expired
+# 10003 — api key is invalid
+# 10004 — error sign / signature (неверный секрет)
+BYBIT_INVALID_KEY_CODES = {33004, 10003, 10004}
+
+
+def _mark_invalid(user, code, source="ret_code"):
+    """Помечает ключ невалидным и логирует."""
+    user.bybit_key_valid = False
+    user.save(update_fields=["bybit_key_valid"])
+    logger.warning(
+        "Bybit [%s]: ключ невалиден (%s=%s) — помечен, следующие циклы будут пропущены.",
+        user.username, source, code,
+    )
+
 
 def sync_bybit_orders(user):
     """
     Синхронизация ЗАВЕРШЁННЫХ P2P ордеров Bybit (status=50).
-
-    Алгоритм:
-      1. Проверяем ключи — если нет или помечены невалидными, выходим.
-      2. Собираем все ID уже существующих ордеров — чтобы не дублировать.
-      3. Постранично тянем завершённые ордера (status=50, по 30 штук).
-         Останавливаемся когда:
-           - страница неполная (последняя)
-           - или дошли до ордеров старше 24.02.2026
-      4. Парсим каждый ордер, пропускаем уже известные и старые.
-      5. Массово сохраняем новые в UnprocessedOrder.
-
-    Возвращает: количество добавленных ордеров (int).
+    Возвращает количество добавленных ордеров (int).
     """
 
     # ── 1. Проверка ключей ────────────────────────────────────────────────────
@@ -33,12 +38,8 @@ def sync_bybit_orders(user):
         logger.debug("User %s: Bybit keys not set, skipping.", user.username)
         return 0
 
-    # ── НОВОЕ: пропускаем юзеров с помеченными невалидными ключами ───────────
     if not user.bybit_key_valid:
-        logger.debug(
-            "Bybit [%s]: ключ помечен невалидным — пропускаем.",
-            user.username,
-        )
+        logger.debug("Bybit [%s]: ключ помечен невалидным — пропускаем.", user.username)
         return 0
 
     # ── 2. Инициализация клиента ──────────────────────────────────────────────
@@ -78,24 +79,20 @@ def sync_bybit_orders(user):
             response = api.get_orders(
                 page=page,
                 size=30,
-                status=50,  # 50 = завершённые (COMPLETED)
+                status=50,
             )
         except Exception as e:
             err_str = str(e)
-            # Библиотека bybit_p2p выбрасывает exception при 33004
-            # раньше чем мы успеваем проверить ret_code — ловим здесь
-            if "33004" in err_str or "api key has expired" in err_str.lower():
-                user.bybit_key_valid = False
-                user.save(update_fields=["bybit_key_valid"])
-                logger.warning(
-                    "Bybit [%s]: ключ протух (ErrCode 33004) — "
-                    "помечен невалидным, следующие циклы будут пропущены.",
-                    user.username,
-                )
-                return 0  # выходим сразу
-            logger.error(
-                "Bybit get_orders page=%d for %s: %s", page, user.username, e
+            # Библиотека bybit_p2p кидает exception раньше чем мы видим ret_code
+            # Проверяем все известные коды невалидных ключей в тексте ошибки
+            matched_code = next(
+                (code for code in BYBIT_INVALID_KEY_CODES if str(code) in err_str),
+                None
             )
+            if matched_code or "api key" in err_str.lower() or "sign" in err_str.lower():
+                _mark_invalid(user, matched_code or "exception", source="exception")
+                return 0
+            logger.error("Bybit get_orders page=%d for %s: %s", page, user.username, e)
             break
 
         ret_code = response.get("ret_code")
@@ -105,22 +102,20 @@ def sync_bybit_orders(user):
         if ret_code != 0:
             ret_msg = response.get("ret_msg") or response.get("retMsg") or ""
 
-            # ── НОВОЕ: ловим протухший ключ (33004) ──────────────────────────
-            if ret_code == 33004 or "api key has expired" in str(ret_msg).lower():
-                user.bybit_key_valid = False
-                user.save(update_fields=["bybit_key_valid"])
-                logger.warning(
-                    "Bybit [%s]: ключ протух (код 33004) — "
-                    "помечен невалидным, следующие циклы будут пропущены.",
-                    user.username,
-                )
-                return 0  # выходим сразу, не тратим время на следующие страницы
+            # Проверяем числовой код
+            if ret_code in BYBIT_INVALID_KEY_CODES:
+                _mark_invalid(user, ret_code)
+                return 0
+
+            # Дополнительная проверка по тексту ошибки
+            ret_msg_lower = str(ret_msg).lower()
+            if any(kw in ret_msg_lower for kw in ["api key", "invalid key", "sign", "expired"]):
+                _mark_invalid(user, ret_code, source="ret_msg")
+                return 0
 
             logger.warning(
                 "Bybit API error for %s (code %s): %s",
-                user.username,
-                ret_code,
-                ret_msg,
+                user.username, ret_code, ret_msg,
             )
             break
 
@@ -134,9 +129,7 @@ def sync_bybit_orders(user):
             break
 
         raw_items.extend(items)
-        logger.debug(
-            "Bybit [%s] page %d: got %d items", user.username, page, len(items)
-        )
+        logger.debug("Bybit [%s] page %d: got %d items", user.username, page, len(items))
 
         last_item_ms = int(
             items[-1].get("createDate") or items[-1].get("createTime") or 0
@@ -205,9 +198,7 @@ def sync_bybit_orders(user):
     # ── 6. Массовое сохранение ────────────────────────────────────────────────
     if new_orders:
         UnprocessedOrder.objects.bulk_create(new_orders, ignore_conflicts=True)
-        logger.info(
-            "Bybit [%s]: saved %d new orders.", user.username, len(new_orders)
-        )
+        logger.info("Bybit [%s]: saved %d new orders.", user.username, len(new_orders))
 
     return len(new_orders)
 
