@@ -184,6 +184,7 @@ def order(request):
         user=request.user,
         order_id=external_id,
         exchange_name=exchange_name,
+        order_date=created_at,  # дата ордера на бирже — для точного поиска в MEXC
     )
 
     if api_data:
