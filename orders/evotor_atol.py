@@ -120,7 +120,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     total_sum = _truncate(raw_total_sum, 3)   # сумма в руб:  9999.999
 
     # Цена = сумма / кол-во, тоже усекаем до 3
-    price = _truncate(total_sum / quantity, 3)
+    price = _truncate(total_sum / quantity, 2)
 
     # 6. Позиции
     currency_name = getattr(order, "currency", "USDT")
