@@ -3,6 +3,7 @@ import uuid
 import logging
 import json
 import re
+import math
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -29,13 +30,24 @@ def evotor_get_token(login: str, password: str) -> str:
         raise EvotorAtolError(f"Token Error: {str(e)}")
 
 
+def _truncate(value: float, decimals: int) -> float:
+    """
+    Усечение до N знаков после запятой БЕЗ округления.
+    125.12345678 → _truncate(125.12345678, 3) → 125.123
+    79.9259999   → _truncate(79.9259999, 3)   → 79.925
+    """
+    factor = 10 ** decimals
+    return math.floor(float(value) * factor) / factor
+
+
 def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -> dict:
     """
-    Сборка тела запроса v5. 
+    Сборка тела запроса v5.
     Место расчетов берется по бирже ордера (Bybit, HTX, MEXC, Bitget, Telegram).
     Время корректируется на +3 часа (МСК).
+    Все числовые поля усекаются до 3 знаков после запятой без округления.
     """
-    
+
     # 1. Исправление времени (МСК +3)
     msk_time = datetime.now() + timedelta(hours=3)
     timestamp_str = msk_time.strftime("%d.%m.%Y %H:%M:%S")
@@ -54,47 +66,61 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
             clean_phone = "+" + clean_phone
         client_obj["phone"] = clean_phone
 
-    # 4. Данные компании и ЖЕСТКИЙ МАППИНГ МЕСТА РАСЧЕТОВ
+    # 4. Данные компании и маппинг места расчетов
     raw_tax_from_db = str(getattr(user, "tax_type", "")).strip().lower()
-    tax_map = {"osn": "osn", "usn_income": "usn_income", "usn_income_outcome": "usn_income_outcome", "patent": "patent"}
+    tax_map = {
+        "osn": "osn",
+        "usn_income": "usn_income",
+        "usn_income_outcome": "usn_income_outcome",
+        "patent": "patent"
+    }
     sno_value = tax_map.get(raw_tax_from_db, "osn")
 
-    # === ЛОГИКА АДРЕСА БИРЖИ ===
     exchange_type = str(getattr(order, "exchange_type", "Bybit")).strip().lower()
-    
+
     if "htx" in exchange_type or "huobi" in exchange_type:
         payment_address = "https://www.htx.com/"
     elif "mexc" in exchange_type:
         payment_address = "https://www.mexc.com/"
-    elif "bitget" in exchange_type:       # <-- Добавлено
+    elif "bitget" in exchange_type:
         payment_address = "https://www.bitget.com/"
-    elif "telegram" in exchange_type:     # <-- Добавлено
+    elif "telegram" in exchange_type:
         payment_address = "https://telegram.org/"
     elif "gate" in exchange_type:
         payment_address = "https://www.gate.com/"
     else:
-        # По умолчанию Bybit
         payment_address = "https://www.bybit.com/"
 
     company_obj = {
         "email": user.email or "noreply@evotor.ru",
         "sno": sno_value,
         "inn": getattr(user, "inn", "") or "000000000000",
-        "payment_address": payment_address # Уйдет в "Место расчетов"
+        "payment_address": payment_address
     }
 
-    # 5. Цифры
+    # 5. Цифры — усекаем до 3 знаков БЕЗ округления
     def to_float(val):
-        try: return float(str(val).replace(",", ".").strip())
-        except: return 0.0
+        try:
+            return float(str(val).replace(",", ".").strip())
+        except:
+            return 0.0
 
-    quantity = to_float(receipt_data.get("amount") or getattr(order, "amount", 0))
-    total_sum = to_float(receipt_data.get("sum") or getattr(order, "cost", 0))
-    
-    if total_sum <= 0: total_sum = 1.0
-    if quantity <= 0: quantity = 1.0
+    # Сырые значения
+    raw_quantity  = to_float(receipt_data.get("amount") or getattr(order, "amount", 0))
+    raw_total_sum = to_float(receipt_data.get("sum")    or getattr(order, "cost",   0))
 
-    price = round(total_sum / quantity, 2)
+    # Защита от нулей
+    if raw_total_sum <= 0:
+        raw_total_sum = 1.0
+    if raw_quantity <= 0:
+        raw_quantity = 1.0
+
+    # Усекаем до 3 знаков
+    quantity  = _truncate(raw_quantity,  3)   # кол-во USDT:  125.123
+    total_sum = _truncate(raw_total_sum, 3)   # сумма в руб:  9999.999
+
+    # Цена = сумма / кол-во, тоже усекаем до 3
+    price = _truncate(total_sum / quantity, 3)
 
     # 6. Позиции
     currency_name = getattr(order, "currency", "USDT")
@@ -107,7 +133,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         "measure": 0,
         "sum": total_sum,
         "payment_method": "full_payment",
-        "payment_object": 1, 
+        "payment_object": 1,
         "vat": {"type": "none"}
     }]
 
@@ -132,7 +158,6 @@ def evotor_register_receipt(token: str, group_code: str, operation: str, payload
         "Token": token
     }
 
-    # === ОТЛАДКА ===
     print("\n--- EVOTOR REQUEST DEBUG ---")
     print(f"URL: {url}")
     print(f"PAYLOAD: {json.dumps(payload, indent=2, ensure_ascii=False)}")
@@ -140,7 +165,7 @@ def evotor_register_receipt(token: str, group_code: str, operation: str, payload
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=30)
-        
+
         try:
             data = response.json()
         except:

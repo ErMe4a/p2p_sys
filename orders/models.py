@@ -9,7 +9,7 @@ class User(AbstractUser):
     evotor_password = models.CharField(max_length=255, blank=True, null=True, verbose_name="Пароль Эвотора")
     payment_address = models.TextField(blank=True, null=True, verbose_name="Место расчетов")
     tax_type = models.CharField(max_length=50, blank=True, null=True, verbose_name="Тип налогообложения")
-    
+
     htx_access_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="HTX Access Key")
     htx_private_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="HTX Private Key")
     bybit_api_key = models.CharField(max_length=255, blank=True, null=True, verbose_name="Bybit API Key")
@@ -26,30 +26,19 @@ class User(AbstractUser):
     initial_crypto_balance = models.DecimalField(max_digits=20, decimal_places=8, default=0, verbose_name="Начальный остаток USDT")
     profit_shares = models.JSONField(default=dict, blank=True, null=True)
 
-
-    bybit_key_valid = models.BooleanField(
-        default=True, 
-        verbose_name="Bybit ключ валиден"
-    )
-    mexc_key_valid = models.BooleanField(
-        default=True, 
-        verbose_name="MEXC ключ валиден"
-    )
+    bybit_key_valid = models.BooleanField(default=True, verbose_name="Bybit ключ валиден")
+    mexc_key_valid = models.BooleanField(default=True, verbose_name="MEXC ключ валиден")
 
     def __str__(self):
         return self.username
 
+
 class BankDetail(models.Model):
-    # Убрали поле user. Теперь этот список общий для всей системы.
     name = models.CharField(max_length=255, verbose_name="Название банка")
-    
-    # Можно оставить is_deleted на случай, если какой-то банк закроется, 
-    # чтобы не удалять его из старых ордеров, а просто скрыть.
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
 
     def __str__(self):
         return self.name
-    
 
 
 class Order(models.Model):
@@ -64,29 +53,33 @@ class Order(models.Model):
     operation_type = models.CharField(max_length=4, choices=OPERATION_CHOICES, default='BUY')
     exchange_type = models.CharField(max_length=50, default="Bybit")
     receipt = models.JSONField(
-        verbose_name="Данные чека", 
-        null=True, 
-        blank=True, 
+        verbose_name="Данные чека",
+        null=True,
+        blank=True,
         default=dict
     )
-    # Исправленное поле: добавили null=True, blank=True
     bank_detail = models.ForeignKey(
-    BankDetail,
-    on_delete=models.SET_NULL,
-    null=True,
-    blank=True,
-    verbose_name="Реквизиты/Банк")
-    
-    
+        BankDetail,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Реквизиты/Банк"
+    )
     commission = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commission_type = models.CharField(max_length=10, choices=COMMISSION_CHOICES, default='PERCENT')
     screenshot = models.ImageField(upload_to='orders/screenshots/', null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     exchange_commission_rate = models.DecimalField(
-        max_digits=6, 
-        decimal_places=4, 
-        default=0.0000, 
+        max_digits=6,
+        decimal_places=4,
+        default=0.0000,
         verbose_name="Зафиксированный % биржи"
+    )
+    # True  = price/cost/amount/type получены из API биржи
+    # False = данные ещё не верифицированы, чек ждёт verify_and_receipt_later
+    is_verified = models.BooleanField(
+        default=False,
+        verbose_name="Данные верифицированы через API"
     )
 
     def __str__(self):
@@ -98,10 +91,11 @@ class OrderScreenshot(models.Model):
     image = models.ImageField(upload_to='screenshots/%Y/%m/%d/', verbose_name="Скриншот")
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+
 class UnprocessedOrder(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     order_id = models.CharField(max_length=255, verbose_name="ID ордера на бирже")
-    operation_type = models.CharField(max_length=10, verbose_name="Тип") # BUY/SELL
+    operation_type = models.CharField(max_length=10, verbose_name="Тип")  # BUY/SELL
     price = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="Цена")
     amount = models.DecimalField(max_digits=20, decimal_places=8, verbose_name="Кол-во")
     cost = models.DecimalField(max_digits=20, decimal_places=2, verbose_name="Стоимость", default=0)
@@ -109,38 +103,34 @@ class UnprocessedOrder(models.Model):
     exchange_type = models.CharField(max_length=20, default='BYBIT')
 
     class Meta:
-        # Эта настройка гарантирует, что у одного юзера не будет двух ордеров с одним ID
-        unique_together = ('user', 'order_id') 
+        unique_together = ('user', 'order_id')
         verbose_name = "Необработанный ордер"
         verbose_name_plural = "Необработанные ордера"
 
     def __str__(self):
         return f"Unprocessed {self.order_id}"
-    
+
+
 class IgnoredOrder(models.Model):
-    """
-    Ордера, которые пользователь не хочет видеть в необработанных.
-    Синхронизация с биржи будет навсегда пропускать эти order_id.
-    """
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     order_id = models.CharField(max_length=255, verbose_name="ID ордера на бирже")
     exchange_type = models.CharField(max_length=20, default='BYBIT', verbose_name="Биржа")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Дата игнора")
- 
+
     class Meta:
         unique_together = ('user', 'order_id')
         verbose_name = "Игнорируемый ордер"
         verbose_name_plural = "Игнорируемые ордера"
- 
+
     def __str__(self):
-        return f"Ignored {self.order_id} ({self.exchange_type})"    
-    
+        return f"Ignored {self.order_id} ({self.exchange_type})"
+
 
 class UserExpense(models.Model):
-    user       = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
-    name       = models.CharField(max_length=255, verbose_name="Наименование")
-    amount     = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма (₽)")
-    month      = models.CharField(max_length=7, verbose_name="Месяц")  # '2026-03'
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
+    name = models.CharField(max_length=255, verbose_name="Наименование")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Сумма (₽)")
+    month = models.CharField(max_length=7, verbose_name="Месяц")  # '2026-03'
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -150,5 +140,3 @@ class UserExpense(models.Model):
 
     def __str__(self):
         return f"{self.name} — {self.amount} ₽ ({self.month})"
-    
-    
