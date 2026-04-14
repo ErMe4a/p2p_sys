@@ -7,6 +7,7 @@
     :root { 
         --bg: #0f1115; --card: #151923; --text: #e6e8ee; --muted: #99a1b3; 
         --accent: #6c8cff; --danger: #ff6c6c; --ok: #58d68d; --border: #242a36; --warn: #ffc107; 
+        --ton: #3d9af5;
     }
     
     .profit-container { margin-top: 20px; font-family: 'Inter', sans-serif; }
@@ -24,6 +25,18 @@
     .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
     .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); font-weight: 500;}
 
+    /* Переключатель валюты */
+    .currency-switcher { display:flex; gap:6px; align-items:center; }
+    .currency-btn { 
+        padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; 
+        cursor: pointer; border: 1px solid var(--border); background: transparent;
+        transition: all .15s ease; color: var(--muted);
+    }
+    .currency-btn:hover { color: var(--text); }
+    .currency-btn.active-all  { background: rgba(108,140,255,.15); border-color: rgba(108,140,255,.4); color: var(--accent); }
+    .currency-btn.active-usdt { background: rgba(88,214,141,.12); border-color: rgba(88,214,141,.35); color: var(--ok); }
+    .currency-btn.active-ton  { background: rgba(61,154,245,.12); border-color: rgba(61,154,245,.35); color: var(--ton); }
+
     /* Кнопка "Добавить расход" */
     .btn-add-expense { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;}
     .btn-add-expense:hover { background: #5a78e6; }
@@ -33,11 +46,13 @@
     
     .summary-card { background:#111520; border-radius:10px; padding:20px; border:1px solid var(--border); position:relative; overflow:hidden; }
     .summary-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; }
-    .summary-card.buy::before { background:linear-gradient(90deg, var(--ok), #3cb371); }
-    .summary-card.sell::before { background:linear-gradient(90deg, #ff8c66, var(--danger)); }
+    .summary-card.buy::before   { background:linear-gradient(90deg, var(--ok), #3cb371); }
+    .summary-card.sell::before  { background:linear-gradient(90deg, #ff8c66, var(--danger)); }
     .summary-card.gross::before { background:linear-gradient(90deg, var(--warn), #ffb347); }
-    .summary-card.net::before { background:linear-gradient(90deg, #a855f7, #ec4899); } 
-    .summary-card.balance::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
+    .summary-card.net::before   { background:linear-gradient(90deg, #a855f7, #ec4899); } 
+    .summary-card.balance-usdt::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
+    .summary-card.balance-ton::before  { background:linear-gradient(90deg, #3d9af5, #1a5fb4); }
+    .summary-card.balance-all::before  { background:linear-gradient(90deg, #6c8cff, #a855f7); }
     
     .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
     .summary-value { font-size:1.4rem; font-weight:600; margin-bottom:4px; color: var(--text);}
@@ -58,6 +73,10 @@
     .buy-amount { color:var(--ok); }
     .sell-amount { color:var(--danger); }
     .expense-amount { color: var(--warn); }
+
+    .badge-currency { display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; margin-left:4px; vertical-align:middle; }
+    .badge-usdt { background:rgba(88,214,141,.15); color:var(--ok); }
+    .badge-ton  { background:rgba(61,154,245,.15); color:var(--ton); }
     
     .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
     .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; font-weight: 500;}
@@ -122,6 +141,16 @@
                 </select>
             </div>
         </div>
+
+        <!-- ПЕРЕКЛЮЧАТЕЛЬ ВАЛЮТЫ — показывается только на вкладке Сегодня -->
+        <div id="currencySwitcherRow" class="hidden" style="margin-top:16px; display:flex; align-items:center; gap:12px;">
+            <span style="font-size:12px; color:var(--muted); font-weight:500;">Остаток:</span>
+            <div class="currency-switcher">
+                <button class="currency-btn active-all" id="btnCurrAll"  onclick="setCurrency('all')">Все</button>
+                <button class="currency-btn"            id="btnCurrUsdt" onclick="setCurrency('usdt')">USDT</button>
+                <button class="currency-btn"            id="btnCurrTon"  onclick="setCurrency('ton')">TON</button>
+            </div>
+        </div>
     </div>
 
     <div id="resultsSection" class="hidden">
@@ -150,11 +179,12 @@
                 <div class="summary-count" id="netProfitDeductions">НДФЛ: 0₽ | Доля: 0₽</div>
             </div>
             
-            <div class="summary-card balance">
-                <div class="summary-title">Текущий остаток (USDT)</div>
+            <!-- Карточка остатка — меняется в зависимости от выбранной валюты -->
+            <div class="summary-card balance-all" id="balanceCard">
+                <div class="summary-title" id="balanceCardTitle">Текущий остаток</div>
                 <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">0.00</div>
-                <div class="summary-count" id="cryptoDelta" style="font-weight: 500;">0.00 за период</div>
-                <div style="font-size: 10px; color: var(--muted); margin-top: 4px;">Глобальный остаток крипты</div>
+                <div class="summary-count" id="balanceCardSub" style="font-weight:500;"></div>
+                <div style="font-size: 10px; color: var(--muted); margin-top: 4px;" id="balanceCardHint">Глобальный остаток крипты</div>
             </div>
         </div>
 
@@ -166,7 +196,7 @@
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
-                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th><th>Комиссия</th></tr></thead>
+                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>Кол-во</th><th>Сумма (RUB)</th><th>Комиссия</th></tr></thead>
                         <tbody id="buyOrdersTable"></tbody>
                     </table>
                 </div>
@@ -179,7 +209,7 @@
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
-                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>USDT</th><th>Сумма (RUB)</th><th>Комиссия</th></tr></thead>
+                        <thead><tr><th>ID / Биржа / Банк</th><th>Курс</th><th>Кол-во</th><th>Сумма (RUB)</th><th>Комиссия</th></tr></thead>
                         <tbody id="sellOrdersTable"></tbody>
                     </table>
                 </div>
@@ -259,7 +289,9 @@
 <script>
     let currentStart = '';
     let currentEnd = '';
-    let currentView = 'today'; 
+    let currentView = 'today';
+    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton'
+    let lastData = null; // кэш последнего ответа сервера
 
     function getCookie(name) {
         const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
@@ -281,12 +313,82 @@
     function updateMskTime() {
         const now = new Date();
         const options = { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-        document.getElementById('timezoneInfo').textContent = `🕐 МСК: ${new Intl.DateTimeFormat('ru-RU', options).format(now)}`;
+        document.getElementById('timezoneInfo').textContent = '🕐 МСК: ' + new Intl.DateTimeFormat('ru-RU', options).format(now);
     }
     setInterval(updateMskTime, 1000);
 
     document.getElementById('expDate').valueAsDate = new Date();
 
+    // =====================================================================
+    // ПЕРЕКЛЮЧАТЕЛЬ ВАЛЮТЫ
+    // =====================================================================
+    function setCurrency(val) {
+        currentCurrency = val;
+
+        document.getElementById('btnCurrAll').className  = 'currency-btn' + (val === 'all'  ? ' active-all'  : '');
+        document.getElementById('btnCurrUsdt').className = 'currency-btn' + (val === 'usdt' ? ' active-usdt' : '');
+        document.getElementById('btnCurrTon').className  = 'currency-btn' + (val === 'ton'  ? ' active-ton'  : '');
+
+        if (lastData) {
+            updateBalanceCard(lastData);
+            renderDetailedTable('buyOrdersTable',  lastData.buy_orders,  'buy');
+            renderDetailedTable('sellOrdersTable', lastData.sell_orders, 'sell');
+        }
+    }
+
+    function updateBalanceCard(data) {
+        const usdt  = safeFloat(data.usdt_balance);
+        const ton   = safeFloat(data.ton_balance);
+        const total = safeFloat(data.crypto_balance);
+
+        const card    = document.getElementById('balanceCard');
+        const title   = document.getElementById('balanceCardTitle');
+        const value   = document.getElementById('cryptoBalance');
+        const sub     = document.getElementById('balanceCardSub');
+        const hint    = document.getElementById('balanceCardHint');
+
+        // Убираем все классы баланса
+        card.className = 'summary-card';
+
+        if (currentCurrency === 'usdt') {
+            card.classList.add('balance-usdt');
+            title.textContent = 'Остаток USDT';
+            value.style.color = 'var(--ok)';
+            value.textContent = usdt.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT';
+            sub.textContent   = '';
+            hint.textContent  = 'Глобальный остаток USDT';
+
+        } else if (currentCurrency === 'ton') {
+            card.classList.add('balance-ton');
+            title.textContent = 'Остаток TON';
+            value.style.color = 'var(--ton)';
+            value.textContent = ton.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TON';
+            sub.textContent   = '';
+            hint.textContent  = 'Глобальный остаток TON';
+
+        } else {
+            card.classList.add('balance-all');
+            title.textContent = 'Текущий остаток';
+            value.style.color = '#6c8cff';
+            value.textContent = total.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+            sub.innerHTML     = '<span style="color:var(--ok);">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</span>'
+                              + ' + <span style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</span>';
+            hint.textContent  = 'Глобальный остаток крипты';
+        }
+
+        // delta
+        const cryptoDelta = safeFloat(data.crypto_delta);
+        const deltaEl = document.getElementById('cryptoDelta');
+        if (deltaEl) {
+            const deltaSign = cryptoDelta > 0 ? '+' : '';
+            deltaEl.textContent = deltaSign + cryptoDelta.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' за период';
+            deltaEl.style.color = cryptoDelta > 0 ? 'var(--ok)' : (cryptoDelta < 0 ? 'var(--danger)' : 'var(--muted)');
+        }
+    }
+
+    // =====================================================================
+    // ПЕРЕКЛЮЧЕНИЕ ВКЛАДОК
+    // =====================================================================
     function setView(viewName) {
         currentView = viewName;
         
@@ -297,12 +399,14 @@
         document.getElementById('resultsSection').classList.add('hidden');
         document.getElementById('expensesView').classList.add('hidden');
         document.getElementById('filtersRow').classList.remove('hidden');
+        document.getElementById('currencySwitcherRow').classList.add('hidden');
 
         if (viewName === 'today') {
             const today = new Date().toISOString().split('T')[0];
             currentStart = today;
             currentEnd = today;
             document.getElementById('btnToday').classList.add('active');
+            document.getElementById('currencySwitcherRow').classList.remove('hidden');
             loadTurnover();
         } else if (viewName === 'month') {
             currentStart = '';
@@ -325,49 +429,43 @@
         }
     }
 
-    // --- ЛОГИКА РАСХОДОВ ---
+    // =====================================================================
+    // РАСХОДЫ
+    // =====================================================================
     function applyPreset() {
         const val = document.getElementById('expPreset').value;
         if (!val) return;
-        
-        const [name, amount] = val.split('|');
-        document.getElementById('expName').value   = name;
-        document.getElementById('expAmount').value = amount;
-        
+        const parts = val.split('|');
+        document.getElementById('expName').value   = parts[0];
+        document.getElementById('expAmount').value = parts[1];
         document.getElementById('expPreset').value = '';
     }
 
     async function loadExpenses() {
         try {
-            const res = await fetch(`${window.location.pathname}?action=get_expenses`);
+            const res = await fetch(window.location.pathname + '?action=get_expenses');
             if (!res.ok) throw new Error('Network response was not ok');
             const data = await res.json();
             renderExpenses(data.expenses || []);
         } catch (e) {
-            console.error('Ошибка при загрузке расходов:', e);
             document.getElementById('expensesListContainer').innerHTML = '<div class="no-data" style="color:var(--danger)">Не удалось загрузить расходы</div>';
         }
     }
 
     async function addExpense() {
-        const name   = document.getElementById('expName').value.trim();
-        const amount = safeFloat(document.getElementById('expAmount').value);
-        const date   = document.getElementById('expDate').value;
+        var name   = document.getElementById('expName').value.trim();
+        var amount = safeFloat(document.getElementById('expAmount').value);
+        var date   = document.getElementById('expDate').value;
         
         if (!name || amount <= 0 || !date) { alert('Пожалуйста, заполните все поля корректно.'); return; }
-        
-        const month = date.substring(0, 7); 
+        var month = date.substring(0, 7);
 
         try {
-            await fetch(`${window.location.pathname}?action=add_expense`, {
+            await fetch(window.location.pathname + '?action=add_expense', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json', 
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: JSON.stringify({ name, amount, month })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                body: JSON.stringify({ name: name, amount: amount, month: month })
             });
-            
             document.getElementById('expName').value = '';
             document.getElementById('expAmount').value = '';
             loadExpenses();
@@ -378,15 +476,11 @@
 
     async function deleteExpense(id) {
         if (!confirm('Удалить этот расход?')) return;
-        
         try {
-            await fetch(`${window.location.pathname}?action=delete_expense`, {
+            await fetch(window.location.pathname + '?action=delete_expense', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json', 
-                    'X-CSRFToken': getCookie('csrftoken')
-                },
-                body: JSON.stringify({ id })
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+                body: JSON.stringify({ id: id })
             });
             loadExpenses(); 
         } catch (e) {
@@ -394,28 +488,23 @@
         }
     }
 
-    function renderExpenses(expenses = []) {
-        const container = document.getElementById('expensesListContainer');
-        
+    function renderExpenses(expenses) {
+        var container = document.getElementById('expensesListContainer');
         if (expenses.length === 0) {
-            container.innerHTML = `<div class="no-data">У вас пока нет добавленных расходов</div>`;
+            container.innerHTML = '<div class="no-data">У вас пока нет добавленных расходов</div>';
             return;
         }
 
-        const grouped = {};
-        const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+        var monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+        var grouped = {};
 
-        expenses.forEach(exp => {
-            const monthKey = exp.month; 
-            let monthLabel = monthKey;
-
-            const parts = monthKey.split('-');
-            if(parts.length === 2) {
-                const year = parts[0];
-                const monthIdx = parseInt(parts[1], 10) - 1;
-                monthLabel = `${monthNames[monthIdx]} ${year}`;
+        expenses.forEach(function(exp) {
+            var monthKey = exp.month;
+            var monthLabel = monthKey;
+            var parts = monthKey.split('-');
+            if (parts.length === 2) {
+                monthLabel = monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
             }
-
             if (!grouped[monthKey]) {
                 grouped[monthKey] = { label: monthLabel, total: 0, items: [] };
             }
@@ -423,41 +512,23 @@
             grouped[monthKey].total += safeFloat(exp.amount);
         });
 
-        const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
-
-        let html = '';
-        sortedKeys.forEach(key => {
-            const data = grouped[key];
-            html += `
-                <div class="expense-month-header">
-                    <span>🗓️ ${data.label}</span>
-                    <span style="color: var(--warn);">Итого: ${formatMoney(data.total)} ₽</span>
-                </div>
-            `;
-            
-            data.items.forEach(exp => {
-                html += `
-                    <div class="expense-row">
-                        <div class="expense-info">
-                            <span class="expense-name">${exp.name}</span>
-                            <span class="expense-date">${data.label}</span>
-                        </div>
-                        <div style="display: flex; align-items: center; gap: 16px;">
-                            <span class="amount-cell expense-amount">${formatMoney(exp.amount)} ₽</span>
-                            <button class="btn-delete-expense" onclick="deleteExpense(${exp.id})">✖</button>
-                        </div>
-                    </div>
-                `;
+        var sortedKeys = Object.keys(grouped).sort(function(a, b) { return b.localeCompare(a); });
+        var html = '';
+        sortedKeys.forEach(function(key) {
+            var d = grouped[key];
+            html += '<div class="expense-month-header"><span>🗓️ ' + d.label + '</span><span style="color:var(--warn);">Итого: ' + formatMoney(d.total) + ' ₽</span></div>';
+            d.items.forEach(function(exp) {
+                html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">' + exp.name + '</span><span class="expense-date">' + d.label + '</span></div><div style="display:flex;align-items:center;gap:16px;"><span class="amount-cell expense-amount">' + formatMoney(exp.amount) + ' ₽</span><button class="btn-delete-expense" onclick="deleteExpense(' + exp.id + ')">✖</button></div></div>';
             });
         });
-
         container.innerHTML = html;
     }
 
-
-    // --- НОВАЯ ЛОГИКА ЗАГРУЗКИ ПО МЕСЯЦАМ ---
+    // =====================================================================
+    // МЕСЯЦЫ
+    // =====================================================================
     async function loadMonths() {
-        const periodInfo = document.getElementById('periodInfo');
+        var periodInfo = document.getElementById('periodInfo');
         periodInfo.textContent = '⏳ Выполняется расчет...';
         
         document.getElementById('resultsSection').classList.remove('hidden');
@@ -466,13 +537,11 @@
         document.getElementById('monthView').classList.remove('hidden');
 
         try {
-            const exchange = document.getElementById('exchangeSelect').value;
-            const bank = document.getElementById('bankSelect').value;
-            
-            const res = await fetch(`${window.location.pathname}?action=get_months&exchange=${exchange}&bank=${bank}`);
-            const data = await res.json();
-            
-            periodInfo.textContent = `📅 Сводка по месяцам | Месяцев: ${data.months.length}`;
+            var exchange = document.getElementById('exchangeSelect').value;
+            var bank     = document.getElementById('bankSelect').value;
+            var res      = await fetch(window.location.pathname + '?action=get_months&exchange=' + exchange + '&bank=' + bank);
+            var data     = await res.json();
+            periodInfo.textContent = '📅 Сводка по месяцам | Месяцев: ' + data.months.length;
             renderMonthsFromServer(data.months);
         } catch(e) {
             periodInfo.textContent = '❌ Ошибка загрузки.';
@@ -480,79 +549,53 @@
     }
 
     function renderMonthsFromServer(months) {
-        const monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь",
-                            "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
+        var monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
         if (!months || months.length === 0) {
-            document.getElementById('monthlySummaryTable').innerHTML =
-                `<tr><td colspan="8" class="no-data">Нет данных</td></tr>`;
+            document.getElementById('monthlySummaryTable').innerHTML = '<tr><td colspan="8" class="no-data">Нет данных</td></tr>';
             return;
         }
 
-        const sorted = [...months].sort((a, b) => b.key.localeCompare(a.key));
+        var sorted = months.slice().sort(function(a, b) { return b.key.localeCompare(a.key); });
 
-        document.getElementById('monthlySummaryTable').innerHTML = sorted.map(m => {
-            const label      = `${monthNames[m.month - 1]} ${m.year}`;
-            const grossColor = m.gross >= 0 ? 'var(--ok)' : 'var(--danger)';
-            const netColor   = m.net_profit >= 0 ? '#e879f9' : 'var(--danger)';
+        document.getElementById('monthlySummaryTable').innerHTML = sorted.map(function(m) {
+            var label      = monthNames[m.month - 1] + ' ' + m.year;
+            var grossColor = m.gross >= 0 ? 'var(--ok)' : 'var(--danger)';
+            var netColor   = m.net_profit >= 0 ? '#e879f9' : 'var(--danger)';
+            var remColor   = m.remainder_qty >= 0 ? '#6c8cff' : 'var(--danger)';
 
-            return `<tr>
-                <td style="font-weight:600;color:var(--text);">${label}</td>
-                
-                <td style="font-weight:600; color:${m.remainder_qty >= 0 ? '#6c8cff' : 'var(--danger)'};">
-                    ${m.remainder_qty.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})} USDT
-                    <div style="font-size:10px;color:var(--muted);">На конец месяца</div>
-                </td>
-                
-                <td style="font-weight:500;">
-                    <div style="color:var(--ok);font-size:11px;">Sell: ${formatMoney(m.sell_cost)} ₽</div>
-                    <div style="color:var(--danger);font-size:11px;">Buy: ${formatMoney(m.buy_cost)} ₽</div>
-                </td>
-                
-                <td style="font-size:12px;">
-                    <div style="color:var(--muted);">Банк: <b>${formatMoney(m.buy_comm + m.sell_comm)} ₽</b></div>
-                    <div style="color:var(--muted);">Биржа: <b>${formatMoney(m.exch_usdt)} USDT</b></div>
-                </td>
-                
-                <td style="color:${grossColor};font-weight:600;">
-                    ${m.gross >= 0 ? '+' : ''}${formatMoney(m.gross)} ₽
-                </td>
-                
-                <td style="color:var(--warn);">${formatMoney(m.ndfl)} ₽</td>
-                
-                <td style="color:var(--accent);">
-                    ${m.share_percent}%
-                    <span style="color:var(--muted);font-size:11px;">(${formatMoney(m.share_amount)} ₽)</span>
-                    ${m.month_expenses > 0 ? `<div style="color:var(--warn);font-size:11px;margin-top:2px;">Расходы: ${formatMoney(m.month_expenses)} ₽</div>` : ''}
-                </td>
-                
-                <td class="amount-cell" style="color:${netColor};font-size:14px;">
-                    ${m.net_profit >= 0 ? '+' : ''}${formatMoney(m.net_profit)} ₽
-                </td>
-            </tr>`;
+            return '<tr>'
+                + '<td style="font-weight:600;color:var(--text);">' + label + '</td>'
+                + '<td style="font-weight:600;color:' + remColor + ';">' + m.remainder_qty.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT<div style="font-size:10px;color:var(--muted);">На конец месяца</div></td>'
+                + '<td style="font-weight:500;"><div style="color:var(--ok);font-size:11px;">Sell: ' + formatMoney(m.sell_cost) + ' ₽</div><div style="color:var(--danger);font-size:11px;">Buy: ' + formatMoney(m.buy_cost) + ' ₽</div></td>'
+                + '<td style="font-size:12px;"><div style="color:var(--muted);">Банк: <b>' + formatMoney(m.buy_comm + m.sell_comm) + ' ₽</b></div><div style="color:var(--muted);">Биржа: <b>' + formatMoney(m.exch_usdt) + ' USDT</b></div></td>'
+                + '<td style="color:' + grossColor + ';font-weight:600;">' + (m.gross >= 0 ? '+' : '') + formatMoney(m.gross) + ' ₽</td>'
+                + '<td style="color:var(--warn);">' + formatMoney(m.ndfl) + ' ₽</td>'
+                + '<td style="color:var(--accent);">' + m.share_percent + '%<span style="color:var(--muted);font-size:11px;">(' + formatMoney(m.share_amount) + ' ₽)</span>' + (m.month_expenses > 0 ? '<div style="color:var(--warn);font-size:11px;margin-top:2px;">Расходы: ' + formatMoney(m.month_expenses) + ' ₽</div>' : '') + '</td>'
+                + '<td class="amount-cell" style="color:' + netColor + ';font-size:14px;">' + (m.net_profit >= 0 ? '+' : '') + formatMoney(m.net_profit) + ' ₽</td>'
+                + '</tr>';
         }).join('');
     }
 
-    // --- ОСНОВ ЛОГИКА ДЛЯ "СЕГОДНЯ" ---
+    // =====================================================================
+    // СЕГОДНЯ
+    // =====================================================================
     async function loadTurnover() {
-        const exchange = document.getElementById('exchangeSelect').value;
-        const bank = document.getElementById('bankSelect').value; 
-        
-        const periodInfo = document.getElementById('periodInfo');
+        var exchange   = document.getElementById('exchangeSelect').value;
+        var bank       = document.getElementById('bankSelect').value; 
+        var periodInfo = document.getElementById('periodInfo');
+
         periodInfo.textContent = '⏳ Выполняется расчет, подождите...';
         periodInfo.style.color = 'var(--warn)';
         
         document.getElementById('resultsSection').classList.remove('hidden');
 
         try {
-            const currentUrl = window.location.pathname;
-            const url = `${currentUrl}?action=get_turnover&start=${currentStart}&end=${currentEnd}&exchange=${exchange}&bank=${bank}`;
-            
-            const response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
+            var url = window.location.pathname + '?action=get_turnover&start=' + currentStart + '&end=' + currentEnd + '&exchange=' + exchange + '&bank=' + bank;
+            var response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
             if (!response.ok) throw new Error('Ошибка связи с сервером');
-            
-            const data = await response.json();
+            var data = await response.json();
+            lastData = data; // кэшируем
             renderData(data);
-            
         } catch (e) {
             periodInfo.textContent = '❌ Ошибка загрузки данных. Попробуйте обновить страницу.';
             periodInfo.style.color = 'var(--danger)';
@@ -560,91 +603,95 @@
     }
 
     function renderData(data) {
-        const totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
-        const periodInfo = document.getElementById('periodInfo');
+        var totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
+        var periodInfo = document.getElementById('periodInfo');
         
         periodInfo.style.color = 'var(--warn)';
-        periodInfo.textContent = `📅 Отчетный период: СЕГОДНЯ | Всего сделок: ${totalCount}`;
+        periodInfo.textContent = '📅 Отчетный период: СЕГОДНЯ | Всего сделок: ' + totalCount;
         
         document.getElementById('summaryCards').classList.remove('hidden');
         document.getElementById('monthView').classList.add('hidden');
         document.getElementById('todayView').classList.remove('hidden');
         
-        document.getElementById('buyTotal').textContent = formatMoney(data.buy_sum) + ' ₽';
-        document.getElementById('buyCount').textContent = data.buy_count;
+        document.getElementById('buyTotal').textContent  = formatMoney(data.buy_sum)  + ' ₽';
+        document.getElementById('buyCount').textContent  = data.buy_count;
         document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
         
-        const grossProfit  = safeFloat(data.gross);
-        const ndfl         = safeFloat(data.ndfl);
-        const shareAmount  = safeFloat(data.share_amount);
-        const netProfit    = safeFloat(data.net_profit);
-        const sharePercent = safeFloat(data.share_percent);
+        var grossProfit  = safeFloat(data.gross);
+        var ndfl         = safeFloat(data.ndfl);
+        var shareAmount  = safeFloat(data.share_amount);
+        var netProfit    = safeFloat(data.net_profit);
+        var sharePercent = safeFloat(data.share_percent);
         
-        const grossEl = document.getElementById('grossProfitValue');
+        var grossEl = document.getElementById('grossProfitValue');
         grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
         grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-        const netEl = document.getElementById('netProfitValue');
+        var netEl = document.getElementById('netProfitValue');
         netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
         netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
         
-        document.getElementById('netProfitDeductions').innerHTML = `НДФЛ: <b style="color:var(--warn)">${formatMoney(ndfl)}₽</b> | Доля (${sharePercent}%): <b style="color:var(--accent)">${formatMoney(shareAmount)}₽</b>`;
+        document.getElementById('netProfitDeductions').innerHTML = 'НДФЛ: <b style="color:var(--warn)">' + formatMoney(ndfl) + '₽</b> | Доля (' + sharePercent + '%): <b style="color:var(--accent)">' + formatMoney(shareAmount) + '₽</b>';
 
-        document.getElementById('cryptoBalance').textContent = safeFloat(data.crypto_balance).toLocaleString('ru-RU', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-        }) + ' USDT';
+        // Карточка баланса с учётом выбранной валюты
+        updateBalanceCard(data);
 
-        const cryptoDelta = safeFloat(data.crypto_delta);
-        const deltaEl = document.getElementById('cryptoDelta');
-        const deltaSign = cryptoDelta > 0 ? '+' : '';
-        deltaEl.textContent = `${deltaSign}${cryptoDelta.toLocaleString('ru-RU', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-        })} USDT за сегодня`;
-        
-        if (cryptoDelta > 0) deltaEl.style.color = 'var(--ok)';
-        else if (cryptoDelta < 0) deltaEl.style.color = 'var(--danger)';
-        else deltaEl.style.color = 'var(--muted)';
-
-        renderDetailedTable('buyOrdersTable', data.buy_orders, 'buy');
+        renderDetailedTable('buyOrdersTable',  data.buy_orders,  'buy');
         renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
-        document.getElementById('buyTableCount').textContent = `${data.buy_count} записей`;
-        document.getElementById('sellTableCount').textContent = `${data.sell_count} записей`;
+        document.getElementById('buyTableCount').textContent  = data.buy_count  + ' записей';
+        document.getElementById('sellTableCount').textContent = data.sell_count + ' записей';
     }
 
     function renderDetailedTable(elementId, orders, type) {
-        const tbody = document.getElementById(elementId);
+        var tbody = document.getElementById(elementId);
         if (!orders || orders.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="5" class="no-data">Сделок не найдено</td></tr>`;
+            tbody.innerHTML = '<tr><td colspan="5" class="no-data">Сделок не найдено</td></tr>';
             return;
         }
-        const amountClass = type === 'buy' ? 'buy-amount' : 'sell-amount';
-        tbody.innerHTML = orders.map(o => {
-            let rate = safeFloat(o.price);
+
+        // Фильтруем по валюте если нужно
+        var filtered = orders;
+        if (currentCurrency === 'usdt') {
+            filtered = orders.filter(function(o) { return (o.currency || 'USDT') === 'USDT'; });
+        } else if (currentCurrency === 'ton') {
+            filtered = orders.filter(function(o) { return (o.currency || 'USDT') === 'TON'; });
+        }
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="no-data">Нет сделок по выбранной валюте</td></tr>';
+            return;
+        }
+
+        var amountClass = type === 'buy' ? 'buy-amount' : 'sell-amount';
+        tbody.innerHTML = filtered.map(function(o) {
+            var rate = safeFloat(o.price);
             if (rate === 0 && safeFloat(o.amount) > 0) rate = safeFloat(o.cost) / safeFloat(o.amount);
             
-            const ex = o.exchange ? o.exchange.toUpperCase() : 'БИРЖА';
-            const bk = o.bank ? o.bank.toUpperCase() : 'БАНК';
-            
-            const totalComm = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
-            const commText = totalComm > 0 ? `${formatMoney(totalComm)} ₽` : '0.00 ₽';
-            
-            return `
-            <tr>
-                <td>
-                    <div style="font-family:monospace; font-size:12px; color:var(--text);">${o.external_id}</div>
-                    <div style="font-size:10px; color:var(--accent); font-weight:600; margin-top:2px;">${ex} • ${bk}</div>
-                    <div style="font-size:10px; color:var(--muted);">${o.date}</div>
-                </td>
-                <td style="font-weight:500;">${rate.toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
-                <td style="font-weight:500;">${safeFloat(o.amount).toLocaleString('ru-RU', {maximumFractionDigits: 2})}</td>
-                <td class="amount-cell ${amountClass}">${safeFloat(o.cost).toLocaleString('ru-RU', {minimumFractionDigits: 2})} ₽</td>
-                <td style="color:var(--muted); font-size:12px;">${commText}</td>
-            </tr>`;
+            var ex = o.exchange ? o.exchange.toUpperCase() : 'БИРЖА';
+            var bk = o.bank ? o.bank.toUpperCase() : 'БАНК';
+            var totalComm = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
+            var commText  = totalComm > 0 ? formatMoney(totalComm) + ' ₽' : '0.00 ₽';
+
+            var currency = o.currency || 'USDT';
+            var badgeClass = currency === 'TON' ? 'badge-ton' : 'badge-usdt';
+            var amountLabel = currency === 'TON' ? 'TON' : 'USDT';
+
+            return '<tr>'
+                + '<td>'
+                + '<div style="font-family:monospace;font-size:12px;color:var(--text);">' + o.external_id + '</div>'
+                + '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:2px;">' + ex + ' • ' + bk + '</div>'
+                + '<div style="font-size:10px;color:var(--muted);">' + o.date + '</div>'
+                + '</td>'
+                + '<td style="font-weight:500;">' + rate.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
+                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU', {maximumFractionDigits:4}) + ' <span class="badge-currency ' + badgeClass + '">' + amountLabel + '</span></td>'
+                + '<td class="amount-cell ' + amountClass + '">' + safeFloat(o.cost).toLocaleString('ru-RU', {minimumFractionDigits:2}) + ' ₽</td>'
+                + '<td style="color:var(--muted);font-size:12px;">' + commText + '</td>'
+                + '</tr>';
         }).join('');
     }
 
-    window.onload = () => {
+    window.onload = function() {
         updateMskTime();
         setView('today');
     };

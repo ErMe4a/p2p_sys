@@ -417,7 +417,6 @@ def delete_unprocessed_order(request, pk):
 
 
 
-
 def _calc_month_profit_for_user(user, month_start, month_end):
     """
     Та же функция что у админа — гарантирует совпадение цифр.
@@ -602,7 +601,6 @@ def _calc_today_profit(user, period_start, period_end):
         gross = 0.0
     else:
         gross = sell_cost - eq_buy_cost - buy_comm - sell_comm - exch_comm_rub
-        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm - exch_comm_rub
 
     return {
         'prev_balance_qty':      prev_balance_qty,
@@ -781,17 +779,47 @@ def user_profit_view(request):
 
         net_profit = after_ndfl - share_amount
 
-        # Глобальный остаток крипты
-        all_orders_sell = Order.objects.filter(
-            user=user, created_at__gte=SYSTEM_START, operation_type='SELL'
+        # =====================================================================
+        # Глобальный остаток крипты — РАЗДЕЛЬНО по USDT и TON
+        # =====================================================================
+
+        # --- USDT ---
+        usdt_sell_qs = Order.objects.filter(
+            user=user, created_at__gte=SYSTEM_START,
+            operation_type='SELL', currency='USDT'
         )
-        all_buy  = float(Order.objects.filter(user=user, created_at__gte=SYSTEM_START, operation_type='BUY').aggregate(Sum('amount'))['amount__sum'] or 0)
-        all_sell = float(all_orders_sell.aggregate(Sum('amount'))['amount__sum'] or 0)
-        all_exch_comm = sum(
+        usdt_buy_amt  = float(
+            Order.objects.filter(
+                user=user, created_at__gte=SYSTEM_START,
+                operation_type='BUY', currency='USDT'
+            ).aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        usdt_sell_amt = float(usdt_sell_qs.aggregate(Sum('amount'))['amount__sum'] or 0)
+        usdt_exch_comm = sum(
             float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
-            for o in all_orders_sell
+            for o in usdt_sell_qs
         )
-        crypto_balance = all_buy - all_sell - all_exch_comm
+        usdt_balance = usdt_buy_amt - usdt_sell_amt - usdt_exch_comm
+
+        # --- TON ---
+        ton_buy_amt  = float(
+            Order.objects.filter(
+                user=user, created_at__gte=SYSTEM_START,
+                operation_type='BUY', currency='TON'
+            ).aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        ton_sell_amt = float(
+            Order.objects.filter(
+                user=user, created_at__gte=SYSTEM_START,
+                operation_type='SELL', currency='TON'
+            ).aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+        ton_balance = ton_buy_amt - ton_sell_amt
+
+        # Общий (для обратной совместимости)
+        crypto_balance = usdt_balance + ton_balance
+
+        # =====================================================================
 
         period_orders = Order.objects.filter(
             user=user,
@@ -831,6 +859,7 @@ def user_profit_view(request):
                     'bank':          str(o.bank_detail) if o.bank_detail else '',
                     'bank_comm':     round(bank_comm, 2),
                     'exchange_comm': round(exch_comm, 2),
+                    'currency':      getattr(o, 'currency', 'USDT'),
                 })
             return res
 
@@ -853,7 +882,9 @@ def user_profit_view(request):
             'share_amount':       round(share_amount,  2),
             'month_expenses':     round(month_expenses, 2),
             'net_profit':         round(net_profit,    2),
-            'crypto_balance':     round(crypto_balance, 2),
+            'crypto_balance':     round(crypto_balance, 2),   # общий (обратная совместимость)
+            'usdt_balance':       round(usdt_balance,   2),   # НОВОЕ
+            'ton_balance':        round(ton_balance,    2),   # НОВОЕ
             'crypto_delta':       round(crypto_delta,   2),
             'buy_orders':         serialize(buy_orders,  is_sell=False),
             'sell_orders':        serialize(sell_orders, is_sell=True),
@@ -862,8 +893,6 @@ def user_profit_view(request):
 
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
-
-
 
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
