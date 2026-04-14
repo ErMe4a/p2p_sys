@@ -98,7 +98,8 @@ def my_orders_list(request):
             'details':          request.POST.get('details'),
             'commission_value': request.POST.get('commission_value'),
             'commission_type':  request.POST.get('commission_type'),
-            'created_at':       raw_date
+            'created_at':       raw_date,
+            'currency':         request.POST.get('currency')
         }
 
         # ЗАЩИТА 1: external_id обязателен
