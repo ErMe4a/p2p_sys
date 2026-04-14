@@ -218,51 +218,46 @@ def my_orders_list(request):
         'saved_data':    saved_data
     })
 
-
 @login_required
 def edit_order(request, order_id):
     order = get_object_or_404(Order, id=order_id, user=request.user)
-    
+
     if request.method == 'POST':
-        # 1. Обработка банка (ищем по ID, как и при создании)
-        # 1. Обработка банка
+
+        # 1. Обработка банка (ищем по ID или по названию)
         bank_id_or_name = request.POST.get('details')
         if bank_id_or_name:
             if bank_id_or_name.isdigit():
-                # Если пришло число (ID)
                 bank_instance = BankDetail.objects.filter(id=bank_id_or_name, is_deleted=False).first()
             else:
-                # Если пришла строка (Название)
                 bank_instance = BankDetail.objects.filter(name=bank_id_or_name, is_deleted=False).first()
-            
+
             if bank_instance:
                 order.bank_detail = bank_instance
 
-        order.external_id = request.POST.get('external_id')
-        
-        # 2. Обязательно используем safe_decimal для чисел!
-        order.price = safe_decimal(request.POST.get('price'))
-        order.amount = safe_decimal(request.POST.get('amount'))
-        order.cost = safe_decimal(request.POST.get('cost'))
-        order.commission = safe_decimal(request.POST.get('commission_value'))
-        
+        # 2. Основные поля
+        order.external_id    = request.POST.get('external_id')
+        order.price          = safe_decimal(request.POST.get('price'))
+        order.amount         = safe_decimal(request.POST.get('amount'))
+        order.cost           = safe_decimal(request.POST.get('cost'))
+        order.commission     = safe_decimal(request.POST.get('commission_value'))
         order.operation_type = request.POST.get('operation_type')
-        order.exchange_type = request.POST.get('exchange')
+        order.exchange_type  = request.POST.get('exchange')
         order.commission_type = request.POST.get('commission_type')
-        
-        # 3. ИСПРАВЛЕНИЕ ОШИБОК ДАТЫ (AttributeError и RuntimeWarning)
+
+        # 3. Валюта (USDT / TON)
+        currency = request.POST.get('currency', '').strip().upper()
+        if currency in ('USDT', 'TON'):
+            order.currency = currency
+
+        # 4. Дата
         raw_date = request.POST.get('created_at')
         if raw_date:
-            # Убрано лишнее .datetime
             naive_date = datetime.strptime(raw_date, '%Y-%m-%dT%H:%M')
-            # Добавлена привязка к таймзоне
             order.created_at = timezone.make_aware(naive_date)
 
         order.save()
         return redirect('my_orders')
-
-    # Если есть логика для GET запроса (рендер страницы редактирования), она остается тут
-    
 
 @login_required
 def delete_order(request, order_id):
