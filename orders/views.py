@@ -159,7 +159,9 @@ def my_orders_list(request):
             commission_type=request.POST.get('commission_type'),
             exchange_commission_rate=user_comm_rate,
             screenshot=request.FILES.get('screenshot'),
-            created_at=order_date
+            created_at=order_date,
+            currency=request.POST.get('currency', 'USDT').strip().upper(),
+
         )
 
         # 5. Удаляем из необработанных
@@ -369,10 +371,23 @@ def unprocessed_orders_list(request):
         .order_by('-created_at')
     )
 
+    # Считаем когда следующий запуск sync задачи
+    next_sync_ts = None
+    try:
+        from django_celery_beat.models import PeriodicTask
+        task = PeriodicTask.objects.filter(name='sync-bybit-orders').first()
+        if task and task.last_run_at:
+            interval_seconds = 30 * 60  # 30 минут
+            next_run = task.last_run_at.timestamp() + interval_seconds
+            next_sync_ts = int(next_run * 1000)  # в миллисекундах для JS
+    except Exception:
+        pass
+
     context = {
         'unprocessed_orders': unprocessed_orders,
         'bybit_configured':   bybit_ok,
         'mexc_configured':    mexc_ok,
+        'next_sync_ts':       next_sync_ts,
     }
     return render(request, 'orders/unprocessed.html', context)
 
@@ -1080,7 +1095,6 @@ def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"][n - 1]
 
-
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def export_excel_report(request):
@@ -1106,6 +1120,7 @@ def export_excel_report(request):
     end_date   = request.GET.get('end')
     bank_id    = request.GET.get('bank_id')
     op_type    = request.GET.get('type')
+    currency   = request.GET.get('currency', '').strip().upper()  # '' | 'USDT' | 'TON'
 
     SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
@@ -1119,18 +1134,28 @@ def export_excel_report(request):
     if bank_id and bank_id.isdigit(): orders = orders.filter(bank_detail_id=bank_id)
     if op_type:    orders = orders.filter(operation_type=op_type)
 
+    # === ФИЛЬТР ПО ВАЛЮТЕ ===
+    # TON-ордера — только те, у кого в receipt.purpose есть слово "TON"
+    # USDT-ордера — все остальные (включая ордера без чека — они исторически USDT)
+    if currency == 'TON':
+        orders = orders.filter(receipt__purpose__icontains='TON')
+    elif currency == 'USDT':
+        orders = orders.exclude(receipt__purpose__icontains='TON')
+    # если currency == '' — не фильтруем, берём всё
+
     orders_list = list(orders)
 
-    # Исторический ордер — всегда первый
-    init_order = Order.objects.filter(
-        user_id=user_id,
-        exchange_type="Остаток (до 1 фев)"
-    ).first()
+    # Исторический ордер — всегда первый (кроме случая фильтра TON — у него нет чека)
+    if currency != 'TON':
+        init_order = Order.objects.filter(
+            user_id=user_id,
+            exchange_type="Остаток (до 1 фев)"
+        ).first()
 
-    if init_order:
-        existing_ids = {o.id for o in orders_list}
-        if init_order.id not in existing_ids:
-            orders_list = [init_order] + orders_list
+        if init_order:
+            existing_ids = {o.id for o in orders_list}
+            if init_order.id not in existing_ids:
+                orders_list = [init_order] + orders_list
 
     # Группировка по месяцам в МСК — совпадает с логикой админки
     months_in_period = set()
@@ -1144,7 +1169,13 @@ def export_excel_report(request):
     # =====================================================================
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Отчет"
+
+    if currency == 'TON':
+        ws.title = "Отчет TON"
+    elif currency == 'USDT':
+        ws.title = "Отчет USDT"
+    else:
+        ws.title = "Отчет"
 
     thin_border  = Border(left=Side(style='thin'), right=Side(style='thin'),
                           top=Side(style='thin'),  bottom=Side(style='thin'))
@@ -1152,8 +1183,9 @@ def export_excel_report(request):
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
     left_align   = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
+    cv_label = f" ({currency})" if currency else ""
     ws.merge_cells('A1:M1')
-    ws['A1'] = "Учет приобретенной и проданной цифровой валюты (ЦВ)"
+    ws['A1'] = f"Учет приобретенной и проданной цифровой валюты (ЦВ){cv_label}"
     ws['A1'].font      = Font(size=14, bold=True)
     ws['A1'].alignment = Alignment(horizontal='center')
 
@@ -1179,6 +1211,16 @@ def export_excel_report(request):
     # =====================================================================
     # Запись строки ордера
     # =====================================================================
+    def _get_cv_name(o):
+        """Определяет валюту ордера из receipt.purpose. По умолчанию USDT."""
+        receipt = o.receipt
+        if not receipt or not isinstance(receipt, dict):
+            return 'USDT'
+        purpose = str(receipt.get('purpose', '')).upper()
+        if 'TON' in purpose:
+            return 'TON'
+        return 'USDT'
+
     def write_order_row(o, idx, is_historical=False):
         row_num    = ws.max_row + 1
         comm_val   = float(o.commission or 0)
@@ -1187,7 +1229,6 @@ def export_excel_report(request):
         price_f    = float(o.price  or 0)
         exch_rate  = float(o.exchange_commission_rate or 0)
 
-        # Дата в МСК — совпадает с группировкой по месяцам
         if is_historical:
             label = "-"
         elif o.created_at:
@@ -1195,15 +1236,15 @@ def export_excel_report(request):
         else:
             label = ""
 
-        num = 0 if is_historical else idx
+        num     = 0 if is_historical else idx
+        cv_name = _get_cv_name(o)
 
         is_telegram = 'telegram' in str(getattr(o, 'exchange_type', '') or '').lower()
 
         if o.operation_type == 'BUY':
-            # Для Telegram берём реальный cost, для остальных формулой =E*F
             buy_cost_val = float(o.cost or 0) if is_telegram else f"=E{row_num}*F{row_num}"
             ws.append([
-                num, label, o.external_id, "USDT",
+                num, label, o.external_id, cv_name,
                 amount_f,
                 price_f,
                 buy_cost_val,
@@ -1212,10 +1253,9 @@ def export_excel_report(request):
             ])
         else:
             exch_comm_usdt = amount_f * exch_rate / 100
-            # Для Telegram берём реальный cost, для остальных формулой =I*J
             sell_cost_val = float(o.cost or 0) if is_telegram else f"=I{row_num}*J{row_num}"
             ws.append([
-                num, label, o.external_id, "USDT",
+                num, label, o.external_id, cv_name,
                 0, 0, 0, 0,
                 amount_f,
                 price_f,
@@ -1276,7 +1316,7 @@ def export_excel_report(request):
             f"=G{tr}-G{ost}",
             "",
             f"=I{tr}",
-            last_sell_price,   # последний курс SELL — для расчёта комсы биржи в рублях
+            last_sell_price,
             f"=K{tr}",
             "", ""
         ])
@@ -1295,12 +1335,11 @@ def export_excel_report(request):
     # =====================================================================
     # Обход ордеров — группировка по МСК месяцам
     # =====================================================================
-    idx            = 0
+    idx             = 0
     last_buy_price  = 0.0
     last_sell_price = 0.0
     prev_ost_row    = None
 
-    # Ключ группировки — по МСК времени
     def get_month_key(o):
         dt_msk = o.created_at.astimezone(MSK)
         return (dt_msk.year, dt_msk.month)
@@ -1311,7 +1350,6 @@ def export_excel_report(request):
         for (yr, mo), month_orders in _groupby(orders_list, key=get_month_key):
             month_list = list(month_orders)
 
-            # data_start фиксируем ДО строки переноса
             data_start = ws.max_row + 1
 
             if not is_first_month and prev_ost_row is not None:
@@ -1383,7 +1421,8 @@ def export_excel_report(request):
     for k, v in col_widths.items():
         ws.column_dimensions[k].width = v
 
-    filename = f"report_{user_id}.xlsx"
+    currency_suffix = f"_{currency}" if currency else ""
+    filename = f"report_{user_id}{currency_suffix}.xlsx"
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )

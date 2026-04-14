@@ -194,6 +194,17 @@
                     <option value="SELL">Продажа (SELL)</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label>Валюта</label>
+                <select class="form-control" id="reportsCurrency">
+                    <option value="">Все (USDT + TON)</option>
+                    <option value="USDT">USDT</option>
+                    <option value="TON">TON</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row mb-3">
             <div class="form-group"><label>Год (для УСН)</label><input class="form-control" type="number" id="reportsYear" value="2026" min="2020" max="2030"></div>
         </div>
 
@@ -410,7 +421,8 @@
         const end = document.getElementById('reportsEndDate').value;
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-        window.location.href = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
+        const currency = document.getElementById('reportsCurrency').value;  // НОВОЕ
+        window.location.href = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}&currency=${currency}`;
     }
 
     function downloadUsn() {
@@ -423,11 +435,11 @@
         const userId = document.getElementById('reportsUserId').value;
         const start = document.getElementById('reportsStartDate').value;
         const end = document.getElementById('reportsEndDate').value;
-        const bank = document.getElementById('reportsUserDetails').value; 
+        const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-
+        const currency = document.getElementById('reportsCurrency').value;  // НОВОЕ
         if (!userId) { alert("Ошибка: Не выбран пользователь"); return; }
-        window.location.href = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}`;
+        window.location.href = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}&currency=${currency}`;
     }
     
     // ИЗМЕНЕНО: Добавил closeShareModal в закрытие по клику вне модалки
