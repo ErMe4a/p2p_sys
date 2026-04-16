@@ -117,7 +117,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
 
     # Усекаем до 3 знаков
     quantity  = _truncate(raw_quantity,  3)   # кол-во USDT:  125.123
-    total_sum = _truncate(raw_total_sum, 3)   # сумма в руб:  9999.999
+    total_sum = _truncate(raw_total_sum, 2)   # сумма в руб:  9999.999
 
     # Цена = сумма / кол-во, тоже усекаем до 3
     price = _truncate(total_sum / quantity, 2)
