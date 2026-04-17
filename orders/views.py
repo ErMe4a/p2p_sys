@@ -803,19 +803,23 @@ def user_profit_view(request):
         usdt_balance = usdt_buy_amt - usdt_sell_amt - usdt_exch_comm
 
         # --- TON ---
+        ton_sell_qs = Order.objects.filter(
+            user=user, created_at__gte=SYSTEM_START,
+            operation_type='SELL', currency='TON'
+        )
         ton_buy_amt  = float(
             Order.objects.filter(
                 user=user, created_at__gte=SYSTEM_START,
                 operation_type='BUY', currency='TON'
             ).aggregate(Sum('amount'))['amount__sum'] or 0
         )
-        ton_sell_amt = float(
-            Order.objects.filter(
-                user=user, created_at__gte=SYSTEM_START,
-                operation_type='SELL', currency='TON'
-            ).aggregate(Sum('amount'))['amount__sum'] or 0
+        ton_sell_amt  = float(ton_sell_qs.aggregate(Sum('amount'))['amount__sum'] or 0)
+        ton_exch_comm = sum(
+            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+            for o in ton_sell_qs
         )
-        ton_balance = ton_buy_amt - ton_sell_amt
+        ton_balance = ton_buy_amt - ton_sell_amt - ton_exch_comm
+        
 
         # Общий (для обратной совместимости)
         crypto_balance = usdt_balance + ton_balance
