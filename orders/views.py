@@ -415,16 +415,15 @@ def delete_unprocessed_order(request, pk):
 
 def _calc_month_profit_for_user(user, month_start, month_end):
     """
-    Та же функция что у админа — гарантирует совпадение цифр.
-
-    prev_balance_qty    — может быть отрицательным (долг переносится)
-    remainder_qty_display — для показа (может быть отрицательным)
-    remainder_qty_calc    — для расчётов (>= 0)
+    Расчёт прибыли за месяц.
+    Считает ТОЛЬКО USDT ордера — TON исключён из расчёта прибыли
+    (TON считается отдельно только как остаток).
     """
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
-        created_at__lt=month_start
+        created_at__lt=month_start,
+        currency='USDT'                          # ТОЛЬКО USDT
     ).order_by('created_at')
 
     prev_buy_qty    = 0.0
@@ -450,15 +449,16 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     month_orders = Order.objects.filter(
         user=user,
         created_at__gte=month_start,
-        created_at__lt=month_end
+        created_at__lt=month_end,
+        currency='USDT'                          # ТОЛЬКО USDT
     ).order_by('created_at')
 
-    month_buy_qty    = 0.0; month_buy_cost   = 0.0
-    month_buy_comm   = 0.0
-    month_sell_qty   = 0.0; month_sell_cost  = 0.0
-    month_sell_comm  = 0.0
-    month_exch_usdt  = 0.0
-    month_last_price = prev_last_price
+    month_buy_qty         = 0.0; month_buy_cost       = 0.0
+    month_buy_comm        = 0.0
+    month_sell_qty        = 0.0; month_sell_cost      = 0.0
+    month_sell_comm       = 0.0
+    month_exch_usdt       = 0.0
+    month_last_price      = prev_last_price
     month_last_sell_price = 0.0
 
     for o in month_orders:
@@ -475,11 +475,11 @@ def _calc_month_profit_for_user(user, month_start, month_end):
             month_last_price  = price
         else:
             exch_rate = float(o.exchange_commission_rate or 0)
-            month_sell_qty   += amt
-            month_sell_cost  += cost
-            month_sell_comm  += total_comm
-            month_exch_usdt  += amt * exch_rate / 100
-            month_last_sell_price = price
+            month_sell_qty        += amt
+            month_sell_cost       += cost
+            month_sell_comm       += total_comm
+            month_exch_usdt       += amt * exch_rate / 100
+            month_last_sell_price  = price
 
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
@@ -489,7 +489,7 @@ def _calc_month_profit_for_user(user, month_start, month_end):
     remainder_cost        = remainder_qty_calc * month_last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
-    # Комиссия биржи в рублях = кол-во USDT * последний курс SELL
+    # Комиссия биржи в рублях = кол-во USDT * последний курс SELL USDT
     exch_comm_rub = month_exch_usdt * month_last_sell_price
 
     if month_sell_qty == 0:
@@ -518,7 +518,10 @@ def _calc_month_profit_for_user(user, month_start, month_end):
 
 
 def _calc_today_profit(user, period_start, period_end):
-    """Расчёт за произвольный период (для вкладки 'Сегодня')."""
+    """
+    Расчёт за произвольный период (для вкладки 'Сегодня').
+    Считает ТОЛЬКО USDT ордера — TON исключён из расчёта прибыли.
+    """
     from zoneinfo import ZoneInfo
     MSK = ZoneInfo('Europe/Moscow')
     month_start = datetime(period_start.year, period_start.month, 1, tzinfo=MSK)
@@ -526,7 +529,8 @@ def _calc_today_profit(user, period_start, period_end):
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
-        created_at__lt=month_start
+        created_at__lt=month_start,
+        currency='USDT'                          # ТОЛЬКО USDT
     ).order_by('created_at')
 
     prev_buy_qty    = 0.0
@@ -552,12 +556,13 @@ def _calc_today_profit(user, period_start, period_end):
     period_orders = Order.objects.filter(
         user=user,
         created_at__gte=month_start,
-        created_at__lt=period_end
+        created_at__lt=period_end,
+        currency='USDT'                          # ТОЛЬКО USDT
     ).order_by('created_at')
 
-    buy_qty    = 0.0; buy_cost   = 0.0; buy_comm   = 0.0
-    sell_qty   = 0.0; sell_cost  = 0.0; sell_comm  = 0.0
-    exch_usdt  = 0.0
+    buy_qty   = 0.0; buy_cost  = 0.0; buy_comm  = 0.0
+    sell_qty  = 0.0; sell_cost = 0.0; sell_comm = 0.0
+    exch_usdt = 0.0
     last_price = prev_last_price
 
     for o in period_orders:
@@ -587,6 +592,7 @@ def _calc_today_profit(user, period_start, period_end):
     remainder_cost        = remainder_qty_calc * last_price
     eq_buy_cost           = total_buy_cost - remainder_cost
 
+    # last_sell_price — только среди USDT продаж, чтобы не подхватить курс TON
     last_sell_price = 0.0
     for o2 in period_orders:
         if o2.operation_type == 'SELL' and float(o2.price or 0) > 0:
@@ -616,7 +622,6 @@ def _calc_today_profit(user, period_start, period_end):
         'eq_buy_cost':           eq_buy_cost,
         'gross':                 gross,
     }
-
 
 @login_required
 def user_profit_view(request):
