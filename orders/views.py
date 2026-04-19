@@ -185,8 +185,8 @@ def my_orders_list(request):
             # ОБРЕЗАЕМ (не округляем) только для чека — в БД данные полные.
             receipt_data = {
                 "contact": contact_email,
-                "sum":    truncate(order.cost,   3),
-                "price":  truncate(order.price,  3),
+                "sum":    truncate(order.cost,   2),
+                "price":  truncate(order.price,  2),
                 "amount": truncate(order.amount, 3),
                 "purpose": f"Цифровая валюта {currency}",
             }
@@ -1124,7 +1124,6 @@ def admin_users_list(request):
     return render(request, 'custom_admin/users_list.html', {'users': users})
 
 
-
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
             "Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"][n - 1]
@@ -1140,14 +1139,12 @@ def export_excel_report(request):
       чтобы SUM диапазон захватывал строку переноса.
 
     Остаток = =E{tr}-I{tr}-M{tr}
-      (BUY включая перенос) - (SELL) - (комса биржи USDT)
-
+    Средневзвешенный курс остатка = =IFERROR(G{tr}/E{tr},0)
     Себестоимость остатка = =E{ost}*F{ost}
     Реализованный = G{tr} - G{ost}
     Прибыль = K{rr} - G{rr} - H{tr} - L{tr}
 
-    Все даты и группировка по месяцам — в МСК (Europe/Moscow),
-    чтобы совпадать с логикой админки и пользовательской страницы прибыли.
+    Все даты и группировка по месяцам — в МСК (Europe/Moscow).
     """
     user_id    = request.GET.get('user_id')
     start_date = request.GET.get('start')
@@ -1169,17 +1166,14 @@ def export_excel_report(request):
     if op_type:    orders = orders.filter(operation_type=op_type)
 
     # === ФИЛЬТР ПО ВАЛЮТЕ ===
-    # TON-ордера — только те, у кого в receipt.purpose есть слово "TON"
-    # USDT-ордера — все остальные (включая ордера без чека — они исторически USDT)
     if currency == 'TON':
         orders = orders.filter(receipt__purpose__icontains='TON')
     elif currency == 'USDT':
         orders = orders.exclude(receipt__purpose__icontains='TON')
-    # если currency == '' — не фильтруем, берём всё
 
     orders_list = list(orders)
 
-    # Исторический ордер — всегда первый (кроме случая фильтра TON — у него нет чека)
+    # Исторический ордер — всегда первый (кроме TON)
     if currency != 'TON':
         init_order = Order.objects.filter(
             user_id=user_id,
@@ -1191,7 +1185,7 @@ def export_excel_report(request):
             if init_order.id not in existing_ids:
                 orders_list = [init_order] + orders_list
 
-    # Группировка по месяцам в МСК — совпадает с логикой админки
+    # Группировка по месяцам в МСК
     months_in_period = set()
     for o in orders_list:
         dt_msk = o.created_at.astimezone(MSK)
@@ -1246,7 +1240,6 @@ def export_excel_report(request):
     # Запись строки ордера
     # =====================================================================
     def _get_cv_name(o):
-        """Определяет валюту ордера из receipt.purpose. По умолчанию USDT."""
         receipt = o.receipt
         if not receipt or not isinstance(receipt, dict):
             return 'USDT'
@@ -1305,7 +1298,7 @@ def export_excel_report(request):
         ws.append([
             0, "-", label, "USDT",
             f"=E{prev_ost_row}",
-            f"=F{prev_ost_row}",
+            f"=F{prev_ost_row}",   # переносим средневзвешенный курс из предыдущего остатка
             f"=G{prev_ost_row}",
             0,
             0, 0, 0, 0, 0
@@ -1314,15 +1307,15 @@ def export_excel_report(request):
     # =====================================================================
     # Итоговые строки после блока ордеров
     # =====================================================================
-    def write_summary(label_suffix, data_start, data_end, last_buy_price, last_sell_price=0.0):
+    def write_summary(label_suffix, data_start, data_end, last_sell_price=0.0):
         ws.append([])  # разделитель
 
         tr = ws.max_row + 1
         ws.append([
             f"Торговый результат{label_suffix}:", "", "", "",
-            f"=SUM(E{data_start}:E{data_end})",
+            f"=SUM(E{data_start}:E{data_end})",   # E{tr} — суммарный BUY кол-во
             "",
-            f"=SUM(G{data_start}:G{data_end})",
+            f"=SUM(G{data_start}:G{data_end})",   # G{tr} — суммарный BUY стоимость
             f"=SUM(H{data_start}:H{data_end})",
             f"=SUM(I{data_start}:I{data_end})",
             "",
@@ -1335,9 +1328,9 @@ def export_excel_report(request):
         ost = ws.max_row + 1
         ws.append([
             f"Остаток (нереализованная ЦВ){label_suffix}:", "", "", "",
-            f"=E{tr}-I{tr}-M{tr}",
-            last_buy_price,
-            f"=E{ost}*F{ost}",
+            f"=E{tr}-I{tr}-M{tr}",              # кол-во остатка
+            f"=IFERROR(G{tr}/E{tr},0)",          # ← СРЕДНЕВЗВЕШЕННЫЙ КУРС = сумма BUY / кол-во BUY
+            f"=E{ost}*F{ost}",                   # себестоимость остатка
             0, "", "", "", "", ""
         ])
         ost = ws.max_row
@@ -1370,7 +1363,6 @@ def export_excel_report(request):
     # Обход ордеров — группировка по МСК месяцам
     # =====================================================================
     idx             = 0
-    last_buy_price  = 0.0
     last_sell_price = 0.0
     prev_ost_row    = None
 
@@ -1399,16 +1391,14 @@ def export_excel_report(request):
 
                 write_order_row(o, idx if not is_hist else 0, is_historical=is_hist)
 
-                if o.operation_type == 'BUY':
-                    last_buy_price = price_f
-                else:
+                if o.operation_type == 'SELL' and price_f > 0:
                     last_sell_price = price_f
 
             data_end     = ws.max_row
             prev_ost_row = write_summary(
                 f" за {_month_name(mo)} {yr}",
                 data_start, data_end,
-                last_buy_price, last_sell_price
+                last_sell_price
             )
             is_first_month = False
 
@@ -1424,13 +1414,11 @@ def export_excel_report(request):
 
             write_order_row(o, idx if not is_hist else 0, is_historical=is_hist)
 
-            if o.operation_type == 'BUY':
-                last_buy_price = price_f
-            else:
+            if o.operation_type == 'SELL' and price_f > 0:
                 last_sell_price = price_f
 
         data_end = ws.max_row
-        write_summary("", data_start, data_end, last_buy_price, last_sell_price)
+        write_summary("", data_start, data_end, last_sell_price)
 
     # =====================================================================
     # Оформление
@@ -1463,6 +1451,7 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
+
 
 def admin_login(request):
     """Вход в админку"""

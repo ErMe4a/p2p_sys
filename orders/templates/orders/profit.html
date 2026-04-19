@@ -371,8 +371,8 @@
             title.textContent = 'Текущий остаток';
             value.style.color = '#6c8cff';
             value.textContent = total.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
-            sub.innerHTML     = '<span style="color:var(--ok);">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</span>'
-                              + ' + <span style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</span>';
+            sub.innerHTML     = '<div style="color:var(--ok); line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</div>'
+                            + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</div>';
             hint.textContent  = 'Глобальный остаток крипты';
         }
 
