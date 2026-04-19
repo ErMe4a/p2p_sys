@@ -370,7 +370,9 @@
             card.classList.add('balance-all');
             title.textContent = 'Текущий остаток';
             value.style.color = '#6c8cff';
-            value.textContent = total.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2});
+            // УБРАТЬ эту строку с суммой:
+            // value.textContent = total.toLocaleString(...);
+            value.textContent = '';  // пусто — сумму не показываем
             sub.innerHTML     = '<div style="color:var(--ok); line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</div>'
                             + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</div>';
             hint.textContent  = 'Глобальный остаток крипты';
