@@ -1496,49 +1496,48 @@ def admin_logout(request):
 
 
 
-
-def _calc_month_profit_filtered(user, month_start, month_end,
-                                 exchange_filter='', bank_filter_id=''):
+def _calc_currency(user, month_start, month_end,
+                   currency='USDT',
+                   exchange_filter='', bank_filter_id=''):
     """
-    Считает прибыль за месяц по логике Excel с учётом фильтров.
-
-    prev_balance_qty    — может быть отрицательным (долг переносится)
-    remainder_qty_display — для отображения (может быть отрицательным)
-    remainder_qty_calc    — для расчётов (>= 0, иначе прибыль искажается)
+    Расчёт прибыли за месяц по одной валюте (USDT или TON).
+    Средневзвешенный курс остатка.
+    Переходящий остаток — всегда без фильтра биржи/банка.
     """
-    # --- Переходящий остаток — всегда без фильтра ---
+    # --- Переходящий остаток — без фильтра, только по валюте ---
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
-        created_at__lt=month_start
+        created_at__lt=month_start,
+        currency=currency
     ).order_by('created_at')
 
-    prev_buy_qty    = 0.0
-    prev_buy_cost   = 0.0
-    prev_sell_qty   = 0.0
-    prev_exch_usdt  = 0.0
-    prev_last_price = 0.0
+    prev_buy_qty   = 0.0
+    prev_buy_cost  = 0.0
+    prev_sell_qty  = 0.0
+    prev_exch_comm = 0.0
 
     for o in prev_orders:
         amt = float(o.amount or 0)
         if o.operation_type == 'BUY':
-            prev_buy_qty    += amt
-            prev_buy_cost   += float(o.cost or 0)
-            prev_last_price  = float(o.price or 0)
+            prev_buy_qty  += amt
+            prev_buy_cost += float(o.cost or 0)
         else:
             exch_rate = float(o.exchange_commission_rate or 0)
-            prev_sell_qty   += amt
-            prev_exch_usdt  += amt * exch_rate / 100
+            prev_sell_qty  += amt
+            prev_exch_comm += amt * exch_rate / 100
 
-    # Может быть отрицательным — долг переносится в следующий месяц
-    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
-    prev_balance_cost = prev_balance_qty * prev_last_price
+    prev_balance_qty = prev_buy_qty - prev_sell_qty - prev_exch_comm
+    # Средневзвешенный курс предыдущих покупок
+    prev_avg_price    = (prev_buy_cost / prev_buy_qty) if prev_buy_qty > 0 else 0.0
+    prev_balance_cost = prev_balance_qty * prev_avg_price
 
-    # --- Ордера текущего месяца С фильтрами ---
+    # --- Ордера текущего месяца по валюте + фильтры ---
     month_orders = Order.objects.filter(
         user=user,
         created_at__gte=month_start,
-        created_at__lt=month_end
+        created_at__lt=month_end,
+        currency=currency
     )
     if exchange_filter:
         month_orders = month_orders.filter(exchange_type__icontains=exchange_filter)
@@ -1547,14 +1546,13 @@ def _calc_month_profit_filtered(user, month_start, month_end,
 
     month_orders = month_orders.order_by('created_at')
 
-    month_buy_qty    = 0.0; month_buy_cost   = 0.0
-    month_buy_comm   = 0.0
-    month_sell_qty   = 0.0; month_sell_cost  = 0.0
-    month_sell_comm  = 0.0
-    month_exch_usdt  = 0.0
-    month_last_price = prev_last_price
-
+    month_buy_qty         = 0.0; month_buy_cost       = 0.0
+    month_buy_comm        = 0.0
+    month_sell_qty        = 0.0; month_sell_cost      = 0.0
+    month_sell_comm       = 0.0
+    month_exch_comm       = 0.0
     month_last_sell_price = 0.0
+
     for o in month_orders:
         amt        = float(o.amount or 0)
         cost       = float(o.cost   or 0)
@@ -1563,52 +1561,98 @@ def _calc_month_profit_filtered(user, month_start, month_end,
         total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
 
         if o.operation_type == 'BUY':
-            month_buy_qty    += amt
-            month_buy_cost   += cost
-            month_buy_comm   += total_comm
-            month_last_price  = price
+            month_buy_qty  += amt
+            month_buy_cost += cost
+            month_buy_comm += total_comm
         else:
             exch_rate = float(o.exchange_commission_rate or 0)
-            month_sell_qty   += amt
-            month_sell_cost  += cost
-            month_sell_comm  += total_comm
-            month_exch_usdt  += amt * exch_rate / 100
+            month_sell_qty        += amt
+            month_sell_cost       += cost
+            month_sell_comm       += total_comm
+            month_exch_comm       += amt * exch_rate / 100
+            month_last_sell_price  = price
 
-            month_last_sell_price = price
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
 
-    remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    remainder_qty_calc    = remainder_qty_display
-    remainder_cost        = remainder_qty_calc * month_last_price
+    remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_comm
 
-    eq_buy_cost = total_buy_cost - remainder_cost
+    # Средневзвешенный курс = суммарная стоимость покупок / суммарное кол-во
+    avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
+    remainder_cost = remainder_qty_display * avg_price
+    eq_buy_cost    = total_buy_cost - remainder_cost
 
-    exch_comm_rub = month_exch_usdt * month_last_sell_price
+    # Комиссия биржи в рублях = кол-во * последний курс SELL
+    exch_comm_rub = month_exch_comm * month_last_sell_price
+
     if month_sell_qty == 0:
         gross = 0.0
     else:
-        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm
         gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm - exch_comm_rub
+
     return {
+        'currency':              currency,
         'prev_balance_qty':      prev_balance_qty,
         'prev_balance_cost':     prev_balance_cost,
+        'prev_avg_price':        round(prev_avg_price, 4),
         'month_buy_qty':         month_buy_qty,
         'month_buy_cost':        month_buy_cost,
         'month_buy_comm':        month_buy_comm,
         'month_sell_qty':        month_sell_qty,
         'month_sell_cost':       month_sell_cost,
         'month_sell_comm':       month_sell_comm,
-        'month_exch_usdt':       month_exch_usdt,
+        'month_exch_comm':       month_exch_comm,
         'total_buy_qty':         total_buy_qty,
         'total_buy_cost':        total_buy_cost,
         'remainder_qty_display': remainder_qty_display,
-        'remainder_qty_calc':    remainder_qty_calc,
         'remainder_cost':        remainder_cost,
+        'avg_price':             round(avg_price, 4),
         'eq_buy_cost':           eq_buy_cost,
         'gross':                 gross,
     }
 
+
+def _calc_month_profit_filtered(user, month_start, month_end,
+                                exchange_filter='', bank_filter_id=''):
+    """
+    Считает прибыль за месяц раздельно по USDT и TON,
+    затем объединяет в общий результат.
+    """
+    usdt = _calc_currency(user, month_start, month_end,
+                          currency='USDT',
+                          exchange_filter=exchange_filter,
+                          bank_filter_id=bank_filter_id)
+
+    ton  = _calc_currency(user, month_start, month_end,
+                          currency='TON',
+                          exchange_filter=exchange_filter,
+                          bank_filter_id=bank_filter_id)
+
+    # Суммарная прибыль = USDT + TON
+    gross = usdt['gross'] + ton['gross']
+
+    return {
+        # --- Общие поля (для обратной совместимости с admin_profit_view) ---
+        'prev_balance_qty':      usdt['prev_balance_qty'],
+        'prev_balance_cost':     usdt['prev_balance_cost'],
+        'month_buy_qty':         usdt['month_buy_qty']   + ton['month_buy_qty'],
+        'month_buy_cost':        usdt['month_buy_cost']  + ton['month_buy_cost'],
+        'month_buy_comm':        usdt['month_buy_comm']  + ton['month_buy_comm'],
+        'month_sell_qty':        usdt['month_sell_qty']  + ton['month_sell_qty'],
+        'month_sell_cost':       usdt['month_sell_cost'] + ton['month_sell_cost'],
+        'month_sell_comm':       usdt['month_sell_comm'] + ton['month_sell_comm'],
+        'month_exch_usdt':       usdt['month_exch_comm'],  # для отображения в таблице
+        'total_buy_qty':         usdt['total_buy_qty'],
+        'total_buy_cost':        usdt['total_buy_cost'],
+        'remainder_qty_display': usdt['remainder_qty_display'],
+        'remainder_cost':        usdt['remainder_cost'],
+        'eq_buy_cost':           usdt['eq_buy_cost'],
+        'gross':                 gross,
+
+        # --- Детализация по валютам ---
+        'usdt': usdt,
+        'ton':  ton,
+    }
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -1690,7 +1734,7 @@ def admin_profit_view(request):
 
         user_stats.append({
             'user':                  u,
-            'crypto_balance':        crypto_balance,
+            'crypto_balance':        calc['remainder_qty_display'],  # USDT остаток (общий)
             'prev_balance_qty':      calc['prev_balance_qty'],
             'prev_balance_cost':     calc['prev_balance_cost'],
             'month_buy_qty':         calc['month_buy_qty'],
@@ -1712,6 +1756,9 @@ def admin_profit_view(request):
             'net_profit':            net_profit,
             'net_profit_positive':   net_profit >= 0,
             'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
+            # НОВОЕ — детализация по валютам
+            'usdt':                  calc['usdt'],
+            'ton':                   calc['ton'],
         })
 
     summary = {
