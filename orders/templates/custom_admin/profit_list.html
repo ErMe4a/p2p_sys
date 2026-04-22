@@ -21,7 +21,6 @@
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
 
-    /* Переключатель валюты */
     .currency-switcher { display: flex; gap: 4px; }
     .currency-btn {
         padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
@@ -76,7 +75,6 @@
     .tooltip-row:last-child { border-bottom: none; }
     .tooltip-total { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0 0 0; font-weight: 700; color: #ffc107; }
 
-    /* Бейдж валюты в заголовке */
     .currency-badge {
         display: inline-block; padding: 3px 12px; border-radius: 20px;
         font-size: 13px; font-weight: 700; margin-left: 10px; vertical-align: middle;
@@ -90,15 +88,12 @@
 {% block content %}
 <div class="card-custom">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-
-        <!-- Заголовок с бейджем валюты -->
         <h5 class="m-0 me-auto">
             ПРИБЫЛЬ ПАРТНЕРОВ — {{ current_month_name }} {{ current_year }}
             <span class="currency-badge currency-badge-all" id="currencyBadge">ВСЕ</span>
         </h5>
 
         <div class="filters-row">
-            <!-- Переключатель USDT / TON / Все -->
             <div class="currency-switcher">
                 <button class="currency-btn active-all" id="btnAll"  onclick="setCurrency('all')">Все</button>
                 <button class="currency-btn"            id="btnUsdt" onclick="setCurrency('usdt')">USDT</button>
@@ -134,14 +129,13 @@
 
     <div class="month-tabs">
         {% for m in months_list %}
-            <a href="?year={{ current_year }}&month={{ m.num }}&exchange={{ selected_exchange }}&bank={{ selected_bank }}" 
+            <a href="?year={{ current_year }}&month={{ m.num }}&exchange={{ selected_exchange }}&bank={{ selected_bank }}"
                class="month-tab {% if current_month == m.num %}active{% endif %}">
                 {{ m.name }}
             </a>
         {% endfor %}
     </div>
 
-    <!-- Сводные карточки -->
     <div class="summary-cards">
         <div class="summary-card c-sell">
             <div class="label">🟢 Продажи</div>
@@ -169,7 +163,6 @@
         </div>
     </div>
 
-    <!-- Таблица -->
     <div class="table-responsive">
         <table class="table table-hover align-middle" style="color: var(--text-main); border-color: var(--border-color);">
             <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02);">
@@ -197,18 +190,30 @@
                     data-all-sell="{{ stat.month_sell_cost }}"
                     data-all-buy="{{ stat.month_buy_cost }}"
 
-                    data-usdt-gross="{{ stat.usdt.gross }}"
-                    data-ton-gross="{{ stat.ton.gross }}"
+                    data-usdt-gross="{{ stat.usdt_gross }}"
+                    data-ton-gross="{{ stat.ton_gross }}"
                     data-all-gross="{{ stat.gross }}"
 
                     data-usdt-exch="{{ stat.usdt.month_exch_comm }}"
                     data-ton-exch="{{ stat.ton.month_exch_comm }}"
                     data-all-exch="{{ stat.exchange_comm_rub }}"
 
+                    data-usdt-bank="{{ stat.usdt.month_buy_comm|add:stat.usdt.month_sell_comm }}"
+                    data-ton-bank="{{ stat.ton.month_buy_comm|add:stat.ton.month_sell_comm }}"
+                    data-all-bank="{{ stat.bank_comm_rub }}"
+
                     data-all-ndfl="{{ stat.ndfl }}"
                     data-all-share="{{ stat.share_amount }}"
                     data-all-net="{{ stat.net_profit }}"
                     data-share-percent="{{ stat.share_percent }}"
+
+                    data-usdt-ndfl="{{ stat.usdt_ndfl }}"
+                    data-usdt-share="{{ stat.usdt_share }}"
+                    data-usdt-net="{{ stat.usdt_net }}"
+
+                    data-ton-ndfl="{{ stat.ton_ndfl }}"
+                    data-ton-share="{{ stat.ton_share }}"
+                    data-ton-net="{{ stat.ton_net }}"
                 >
                     <td>
                         <div class="fw-bold" style="font-size: 0.95rem;">{{ stat.user.username }}</div>
@@ -233,7 +238,7 @@
 
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money">{{ stat.bank_comm_rub }}</span></div>
+                            <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
                             <div><span class="val-label">Биржа:</span> <span class="val-money text-muted"><span class="money row-exch">{{ stat.exchange_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">USDT</span></span></div>
                         </div>
                     </td>
@@ -299,12 +304,10 @@
     function setCurrency(val) {
         currentCurrency = val;
 
-        // Кнопки
         document.getElementById('btnAll').className  = 'currency-btn' + (val === 'all'  ? ' active-all'  : '');
         document.getElementById('btnUsdt').className = 'currency-btn' + (val === 'usdt' ? ' active-usdt' : '');
         document.getElementById('btnTon').className  = 'currency-btn' + (val === 'ton'  ? ' active-ton'  : '');
 
-        // Бейдж в заголовке
         var badge = document.getElementById('currencyBadge');
         if (val === 'usdt') {
             badge.className = 'currency-badge currency-badge-usdt';
@@ -317,82 +320,69 @@
             badge.textContent = 'ВСЕ';
         }
 
-        // Заголовок колонки остатка
-        var thBalance = document.getElementById('thBalance');
-        if (val === 'ton') {
-            thBalance.textContent = 'Остаток (TON)';
-        } else {
-            thBalance.textContent = 'Остаток (USDT)';
-        }
+        document.getElementById('thBalance').textContent = val === 'ton' ? 'Остаток (TON)' : 'Остаток (USDT)';
 
-        // Карточки summary
         var d = summaryData[val];
         document.getElementById('sum-sell').textContent   = fmt(d.sell);
         document.getElementById('sum-buy').textContent    = fmt(d.buy);
         document.getElementById('sum-volume').textContent = fmt(d.sell + d.buy);
         document.getElementById('sum-gross').textContent  = fmt(d.gross);
-        // share и net пересчитываем только для 'all' (для валют не делим НДФЛ)
-        if (val === 'all') {
-            document.getElementById('sum-share').textContent = fmt(summaryData.all.share);
-            document.getElementById('sum-net').textContent   = fmt(summaryData.all.net);
-        } else {
-            document.getElementById('sum-share').textContent = '—';
-            document.getElementById('sum-net').textContent   = '—';
-        }
+        document.getElementById('sum-share').textContent  = fmt(d.share);
+        document.getElementById('sum-net').textContent    = fmt(d.net);
 
-        // Строки таблицы
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
 
             // Остаток
             var balanceVal, balanceLabel;
             if (val === 'ton') {
-                balanceVal   = parseFloat(d.tonBalance || 0);
-                balanceLabel = 'TON';
+                balanceVal = parseFloat(d.tonBalance || 0); balanceLabel = 'TON';
             } else if (val === 'usdt') {
-                balanceVal   = parseFloat(d.usdtBalance || 0);
-                balanceLabel = 'USDT';
+                balanceVal = parseFloat(d.usdtBalance || 0); balanceLabel = 'USDT';
             } else {
-                balanceVal   = parseFloat(d.allBalance || 0);
-                balanceLabel = 'USDT+TON';
+                balanceVal = parseFloat(d.allBalance || 0); balanceLabel = 'USDT+TON';
             }
-            var balanceEl = row.querySelector('.row-balance');
-            balanceEl.textContent = fmt(balanceVal) + ' ' + balanceLabel;
-            balanceEl.className   = 'fw-bold row-balance ' + (balanceVal >= 0 ? 'balance-positive' : 'balance-negative');
+            var balEl = row.querySelector('.row-balance');
+            balEl.textContent = fmt(balanceVal) + ' ' + balanceLabel;
+            balEl.className   = 'fw-bold row-balance ' + (balanceVal >= 0 ? 'balance-positive' : 'balance-negative');
 
             // Sell / Buy
-            var sell = parseFloat(val === 'ton' ? d.tonSell : val === 'usdt' ? d.usdtSell : d.allSell) || 0;
-            var buy  = parseFloat(val === 'ton' ? d.tonBuy  : val === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0;
-            row.querySelector('.row-sell').textContent = fmt(sell);
-            row.querySelector('.row-buy').textContent  = fmt(buy);
+            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
+            row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy   : val === 'usdt' ? d.usdtBuy   : d.allBuy)   || 0);
 
-            // Биржевая комиссия
-            var exch = parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0;
-            row.querySelector('.row-exch').textContent = fmt(exch);
+            // Комиссия банка (раздельно по валюте)
+            row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
 
-            // Прибыль
+            // Комиссия биржи
+            row.querySelector('.row-exch').textContent = fmt(parseFloat(val === 'ton' ? d.tonExch  : val === 'usdt' ? d.usdtExch  : d.allExch)  || 0);
+
+            // Прибыль до вычета
             var gross = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
             var grossEl = row.querySelector('.row-gross');
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
-            // НДФЛ, Доля, Итог — только для 'all' (считаются от общей прибыли)
-            if (val === 'all') {
-                row.querySelector('.row-ndfl').textContent  = fmt(parseFloat(d.allNdfl  || 0));
-                row.querySelector('.row-share').textContent = fmt(parseFloat(d.allShare || 0));
-                var net    = parseFloat(d.allNet || 0);
-                var netEl  = row.querySelector('.row-net');
-                netEl.innerHTML = fmt(net) + ' ₽';
-                netEl.className = 'fw-bold row-net ' + (net >= 0 ? 'text-net-profit' : 'text-danger');
-                row.querySelector('.row-share-pct').textContent = (d.sharePercent || '20') + '%:';
+            // НДФЛ / Доля / Итог — раздельно для каждой валюты
+            var ndflVal, shareVal, netVal;
+            if (val === 'ton') {
+                ndflVal  = parseFloat(d.tonNdfl  || 0);
+                shareVal = parseFloat(d.tonShare || 0);
+                netVal   = parseFloat(d.tonNet   || 0);
+            } else if (val === 'usdt') {
+                ndflVal  = parseFloat(d.usdtNdfl  || 0);
+                shareVal = parseFloat(d.usdtShare || 0);
+                netVal   = parseFloat(d.usdtNet   || 0);
             } else {
-                row.querySelector('.row-ndfl').textContent  = '—';
-                row.querySelector('.row-share').textContent = '—';
-                var netEl = row.querySelector('.row-net');
-                netEl.innerHTML = '—';
-                netEl.className = 'fw-bold row-net';
-                row.querySelector('.row-share-pct').textContent = '—';
+                ndflVal  = parseFloat(d.allNdfl  || 0);
+                shareVal = parseFloat(d.allShare || 0);
+                netVal   = parseFloat(d.allNet   || 0);
             }
+            row.querySelector('.row-ndfl').textContent  = fmt(ndflVal);
+            row.querySelector('.row-share').textContent = fmt(shareVal);
+            row.querySelector('.row-share-pct').textContent = (d.sharePercent || '20') + '%:';
+            var netEl = row.querySelector('.row-net');
+            netEl.innerHTML = fmt(netVal) + ' ₽';
+            netEl.className = 'fw-bold row-net ' + (netVal >= 0 ? 'text-net-profit' : 'text-danger');
         });
     }
 
@@ -400,26 +390,21 @@
         var year     = document.getElementById('filterYear').value;
         var exchange = document.getElementById('filterExchange').value;
         var bank     = document.getElementById('filterBank').value;
-
         var currentUrl  = new URL(window.location.href);
         var oldExchange = currentUrl.searchParams.get('exchange') || '';
-
         if (exchange !== oldExchange) {
             bank = '';
             document.getElementById('filterBank').value = '';
         }
-
         currentUrl.searchParams.set('year', year);
         if (exchange) currentUrl.searchParams.set('exchange', exchange);
         else currentUrl.searchParams.delete('exchange');
         if (bank) currentUrl.searchParams.set('bank', bank);
         else currentUrl.searchParams.delete('bank');
-
         window.location.href = currentUrl.toString();
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-        // Форматируем деньги
         document.querySelectorAll('.money').forEach(function(el) {
             var val = parseFloat(el.innerText.replace(',', '.'));
             if (!isNaN(val)) {
@@ -427,19 +412,22 @@
             }
         });
 
-        // Пересчитываем суммы после форматирования
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
-            summaryData.usdt.sell  += parseFloat(row.dataset.usdtSell  || 0);
-            summaryData.usdt.buy   += parseFloat(row.dataset.usdtBuy   || 0);
-            summaryData.usdt.gross += parseFloat(row.dataset.usdtGross || 0);
-            summaryData.ton.sell   += parseFloat(row.dataset.tonSell   || 0);
-            summaryData.ton.buy    += parseFloat(row.dataset.tonBuy    || 0);
-            summaryData.ton.gross  += parseFloat(row.dataset.tonGross  || 0);
             summaryData.all.sell   += parseFloat(row.dataset.allSell   || 0);
             summaryData.all.buy    += parseFloat(row.dataset.allBuy    || 0);
             summaryData.all.gross  += parseFloat(row.dataset.allGross  || 0);
             summaryData.all.share  += parseFloat(row.dataset.allShare  || 0);
             summaryData.all.net    += parseFloat(row.dataset.allNet    || 0);
+            summaryData.usdt.sell  += parseFloat(row.dataset.usdtSell  || 0);
+            summaryData.usdt.buy   += parseFloat(row.dataset.usdtBuy   || 0);
+            summaryData.usdt.gross += parseFloat(row.dataset.usdtGross || 0);
+            summaryData.usdt.share += parseFloat(row.dataset.usdtShare || 0);
+            summaryData.usdt.net   += parseFloat(row.dataset.usdtNet   || 0);
+            summaryData.ton.sell   += parseFloat(row.dataset.tonSell   || 0);
+            summaryData.ton.buy    += parseFloat(row.dataset.tonBuy    || 0);
+            summaryData.ton.gross  += parseFloat(row.dataset.tonGross  || 0);
+            summaryData.ton.share  += parseFloat(row.dataset.tonShare  || 0);
+            summaryData.ton.net    += parseFloat(row.dataset.tonNet    || 0);
         });
     });
 </script>

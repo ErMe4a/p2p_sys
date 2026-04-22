@@ -1494,8 +1494,6 @@ def admin_logout(request):
     return redirect('admin_login')
 
 
-
-
 def _calc_currency(user, month_start, month_end,
                    currency='USDT',
                    exchange_filter='', bank_filter_id=''):
@@ -1504,7 +1502,6 @@ def _calc_currency(user, month_start, month_end,
     Средневзвешенный курс остатка.
     Переходящий остаток — всегда без фильтра биржи/банка.
     """
-    # --- Переходящий остаток — без фильтра, только по валюте ---
     prev_orders = Order.objects.filter(
         user=user,
         created_at__gte=SYSTEM_START,
@@ -1527,12 +1524,10 @@ def _calc_currency(user, month_start, month_end,
             prev_sell_qty  += amt
             prev_exch_comm += amt * exch_rate / 100
 
-    prev_balance_qty = prev_buy_qty - prev_sell_qty - prev_exch_comm
-    # Средневзвешенный курс предыдущих покупок
+    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_comm
     prev_avg_price    = (prev_buy_cost / prev_buy_qty) if prev_buy_qty > 0 else 0.0
     prev_balance_cost = prev_balance_qty * prev_avg_price
 
-    # --- Ордера текущего месяца по валюте + фильтры ---
     month_orders = Order.objects.filter(
         user=user,
         created_at__gte=month_start,
@@ -1577,13 +1572,10 @@ def _calc_currency(user, month_start, month_end,
 
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_comm
 
-    # Средневзвешенный курс = суммарная стоимость покупок / суммарное кол-во
     avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
     remainder_cost = remainder_qty_display * avg_price
     eq_buy_cost    = total_buy_cost - remainder_cost
-
-    # Комиссия биржи в рублях = кол-во * последний курс SELL
-    exch_comm_rub = month_exch_comm * month_last_sell_price
+    exch_comm_rub  = month_exch_comm * month_last_sell_price
 
     if month_sell_qty == 0:
         gross = 0.0
@@ -1628,11 +1620,9 @@ def _calc_month_profit_filtered(user, month_start, month_end,
                           exchange_filter=exchange_filter,
                           bank_filter_id=bank_filter_id)
 
-    # Суммарная прибыль = USDT + TON
     gross = usdt['gross'] + ton['gross']
 
     return {
-        # --- Общие поля (для обратной совместимости с admin_profit_view) ---
         'prev_balance_qty':      usdt['prev_balance_qty'],
         'prev_balance_cost':     usdt['prev_balance_cost'],
         'month_buy_qty':         usdt['month_buy_qty']   + ton['month_buy_qty'],
@@ -1641,32 +1631,24 @@ def _calc_month_profit_filtered(user, month_start, month_end,
         'month_sell_qty':        usdt['month_sell_qty']  + ton['month_sell_qty'],
         'month_sell_cost':       usdt['month_sell_cost'] + ton['month_sell_cost'],
         'month_sell_comm':       usdt['month_sell_comm'] + ton['month_sell_comm'],
-        'month_exch_usdt':       usdt['month_exch_comm'],  # для отображения в таблице
+        'month_exch_usdt':       usdt['month_exch_comm'] + ton['month_exch_comm'],
         'total_buy_qty':         usdt['total_buy_qty'],
         'total_buy_cost':        usdt['total_buy_cost'],
         'remainder_qty_display': usdt['remainder_qty_display'],
         'remainder_cost':        usdt['remainder_cost'],
         'eq_buy_cost':           usdt['eq_buy_cost'],
         'gross':                 gross,
-
-        # --- Детализация по валютам ---
-        'usdt': usdt,
-        'ton':  ton,
+        'usdt':                  usdt,
+        'ton':                   ton,
     }
+
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
-
-    Цепочка расчёта:
-      gross      = SELL - себестоимость - комса банка
-      taxable    = gross - расходы пользователя  (налоговая база)
-      ndfl       = taxable * 13%
-      after_ndfl = taxable - ndfl
-      share      = after_ndfl * X%
-      net_profit = after_ndfl - share
+    USDT и TON считаются раздельно, итог складывается.
     """
     now       = timezone.now()
     year_str  = request.GET.get('year',  str(now.year))
@@ -1696,45 +1678,60 @@ def admin_profit_view(request):
     user_stats = []
 
     for u in users:
-        calc  = _calc_month_profit_filtered(
+        calc = _calc_month_profit_filtered(
             u, month_start, month_end,
             exchange_filter=exchange_filter,
             bank_filter_id=bank_filter_id
         )
-        gross = calc['gross']
+
+        usdt = calc['usdt']
+        ton  = calc['ton']
+
+        # Доля пользователя за месяц
+        share_percent = 20.0
+        if u.profit_shares and isinstance(u.profit_shares, dict):
+            share_percent = float(u.profit_shares.get(share_key, 20.0))
 
         # Расходы пользователя за месяц
         month_expenses = float(
             UserExpense.objects.filter(user=u, month=share_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
-
         expenses_list = list(
             UserExpense.objects.filter(user=u, month=share_key)
             .values('name', 'amount')
         )
 
-        # НДФЛ считается после вычета расходов (правильная налоговая база)
-        taxable    = max(0.0, gross - month_expenses)
-        ndfl       = taxable * 0.13 if taxable > 0 else 0
-        after_ndfl = taxable - ndfl
+        # ── USDT ──────────────────────────────────────────────────────
+        gross_usdt   = usdt['gross']
+        taxable_usdt = max(0.0, gross_usdt)
+        ndfl_usdt    = taxable_usdt * 0.13 if taxable_usdt > 0 else 0
+        after_usdt   = taxable_usdt - ndfl_usdt
+        share_usdt   = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
+        net_usdt     = after_usdt - share_usdt
 
-        # Доля системы
-        share_percent = 20.0
-        if u.profit_shares and isinstance(u.profit_shares, dict):
-            share_percent = float(u.profit_shares.get(share_key, 20.0))
-        share_amount = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
+        # ── TON ───────────────────────────────────────────────────────
+        gross_ton   = ton['gross']
+        taxable_ton = max(0.0, gross_ton)
+        ndfl_ton    = taxable_ton * 0.13 if taxable_ton > 0 else 0
+        after_ton   = taxable_ton - ndfl_ton
+        share_ton   = after_ton * (share_percent / 100) if after_ton > 0 else 0
+        net_ton     = after_ton - share_ton
 
-        # Чистая прибыль
-        net_profit = after_ndfl - share_amount
+        # ── ИТОГО — расходы вычитаем из общей базы ───────────────────
+        gross_all   = gross_usdt + gross_ton
+        taxable_all = max(0.0, gross_all - month_expenses)
+        ndfl_all    = taxable_all * 0.13 if taxable_all > 0 else 0
+        after_all   = taxable_all - ndfl_all
+        share_all   = after_all * (share_percent / 100) if after_all > 0 else 0
+        net_all     = after_all - share_all
 
-        crypto_balance    = calc['remainder_qty_display']
         bank_comm_rub     = calc['month_buy_comm'] + calc['month_sell_comm']
         exchange_comm_rub = calc['month_exch_usdt']
 
         user_stats.append({
             'user':                  u,
-            'crypto_balance':        calc['remainder_qty_display'],  # USDT остаток (общий)
+            'crypto_balance':        calc['remainder_qty_display'],
             'prev_balance_qty':      calc['prev_balance_qty'],
             'prev_balance_cost':     calc['prev_balance_cost'],
             'month_buy_qty':         calc['month_buy_qty'],
@@ -1746,30 +1743,49 @@ def admin_profit_view(request):
             'exchange_comm_rub':     exchange_comm_rub,
             'total_comm_rub':        bank_comm_rub,
             'eq_buy_cost':           calc['eq_buy_cost'],
-            'gross':                 gross,
-            'gross_profit_positive': gross >= 0,
-            'ndfl':                  ndfl,
+            'gross':                 gross_all,
+            'gross_profit_positive': gross_all >= 0,
+            'ndfl':                  ndfl_all,
             'share_percent':         share_percent,
-            'share_amount':          share_amount,
+            'share_amount':          share_all,
             'month_expenses':        month_expenses,
             'expenses_list':         expenses_list,
-            'net_profit':            net_profit,
-            'net_profit_positive':   net_profit >= 0,
+            'net_profit':            net_all,
+            'net_profit_positive':   net_all >= 0,
             'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
-            # НОВОЕ — детализация по валютам
-            'usdt':                  calc['usdt'],
-            'ton':                   calc['ton'],
+            # Детализация USDT
+            'usdt':       usdt,
+            'usdt_gross': gross_usdt,
+            'usdt_ndfl':  ndfl_usdt,
+            'usdt_share': share_usdt,
+            'usdt_net':   net_usdt,
+            # Детализация TON
+            'ton':       ton,
+            'ton_gross': gross_ton,
+            'ton_ndfl':  ndfl_ton,
+            'ton_share': share_ton,
+            'ton_net':   net_ton,
         })
 
     summary = {
-        'buy_sum':   sum(s['month_buy_cost']  for s in user_stats),
-        'sell_sum':  sum(s['month_sell_cost'] for s in user_stats),
-        'turnover':  sum(s['month_sell_cost'] + s['month_buy_cost'] for s in user_stats),
-        'gross':     sum(s['gross']           for s in user_stats),
-        'ndfl':      sum(s['ndfl']            for s in user_stats),
-        'our_share': sum(s['share_amount']    for s in user_stats),
-        'expenses':  sum(s['month_expenses']  for s in user_stats),
-        'net':       sum(s['net_profit']      for s in user_stats),
+        'buy_sum':    sum(s['month_buy_cost']  for s in user_stats),
+        'sell_sum':   sum(s['month_sell_cost'] for s in user_stats),
+        'turnover':   sum(s['month_sell_cost'] + s['month_buy_cost'] for s in user_stats),
+        'gross':      sum(s['gross']           for s in user_stats),
+        'ndfl':       sum(s['ndfl']            for s in user_stats),
+        'our_share':  sum(s['share_amount']    for s in user_stats),
+        'expenses':   sum(s['month_expenses']  for s in user_stats),
+        'net':        sum(s['net_profit']      for s in user_stats),
+        'usdt_sell':  sum(s['usdt']['month_sell_cost'] for s in user_stats),
+        'usdt_buy':   sum(s['usdt']['month_buy_cost']  for s in user_stats),
+        'usdt_gross': sum(s['usdt_gross']              for s in user_stats),
+        'usdt_share': sum(s['usdt_share']              for s in user_stats),
+        'usdt_net':   sum(s['usdt_net']                for s in user_stats),
+        'ton_sell':   sum(s['ton']['month_sell_cost']  for s in user_stats),
+        'ton_buy':    sum(s['ton']['month_buy_cost']   for s in user_stats),
+        'ton_gross':  sum(s['ton_gross']               for s in user_stats),
+        'ton_share':  sum(s['ton_share']               for s in user_stats),
+        'ton_net':    sum(s['ton_net']                 for s in user_stats),
     }
 
     months_list = [
@@ -1786,18 +1802,16 @@ def admin_profit_view(request):
     default_banks = BankDetail.objects.all()
 
     return render(request, 'custom_admin/profit_list.html', {
-        'user_stats':        user_stats,
-        'summary':           summary,
-        'current_year':      year,
-        'current_month':     month_str,
+        'user_stats':          user_stats,
+        'summary':             summary,
+        'current_year':        year,
+        'current_month':       month_str,
         'current_month_name':  current_month_name,
-        'months_list':       months_list,
-        'selected_exchange': exchange_filter,
-        'selected_bank':     bank_filter_id,
-        'default_banks':     default_banks,
+        'months_list':         months_list,
+        'selected_exchange':   exchange_filter,
+        'selected_bank':       bank_filter_id,
+        'default_banks':       default_banks,
     })
-
-
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
