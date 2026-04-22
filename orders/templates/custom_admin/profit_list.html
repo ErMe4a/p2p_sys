@@ -90,14 +90,13 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="m-0 me-auto">
             ПРИБЫЛЬ ПАРТНЕРОВ — {{ current_month_name }} {{ current_year }}
-            <span class="currency-badge currency-badge-all" id="currencyBadge">ВСЕ</span>
+            <span class="currency-badge currency-badge-usdt" id="currencyBadge">USDT</span>
         </h5>
 
         <div class="filters-row">
             <div class="currency-switcher">
-                <button class="currency-btn active-all" id="btnAll"  onclick="setCurrency('all')">Все</button>
-                <button class="currency-btn"            id="btnUsdt" onclick="setCurrency('usdt')">USDT</button>
-                <button class="currency-btn"            id="btnTon"  onclick="setCurrency('ton')">TON</button>
+                <button class="currency-btn active-usdt" id="btnUsdt" onclick="setCurrency('usdt')">USDT</button>
+                <button class="currency-btn"             id="btnTon"  onclick="setCurrency('ton')">TON</button>
             </div>
 
             <select class="form-control form-control-sm filter-select" id="filterExchange" onchange="applyFilters()">
@@ -295,7 +294,7 @@
         ton:  { sell: 0, buy: 0, gross: 0, share: 0, net: 0 }
     };
 
-    var currentCurrency = 'all';
+    var currentCurrency = 'usdt';
 
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -304,7 +303,6 @@
     function setCurrency(val) {
         currentCurrency = val;
 
-        document.getElementById('btnAll').className  = 'currency-btn' + (val === 'all'  ? ' active-all'  : '');
         document.getElementById('btnUsdt').className = 'currency-btn' + (val === 'usdt' ? ' active-usdt' : '');
         document.getElementById('btnTon').className  = 'currency-btn' + (val === 'ton'  ? ' active-ton'  : '');
 
@@ -429,6 +427,8 @@
             summaryData.ton.share  += parseFloat(row.dataset.tonShare  || 0);
             summaryData.ton.net    += parseFloat(row.dataset.tonNet    || 0);
         });
+
+        setCurrency('usdt');
     });
 </script>
 {% endblock %}
