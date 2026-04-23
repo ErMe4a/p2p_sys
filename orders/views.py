@@ -706,15 +706,14 @@ def user_profit_view(request):
                 .aggregate(Sum('amount'))['amount__sum'] or 0
             )
 
-            # НДФЛ после вычета расходов
-            taxable    = max(0.0, gross - month_expenses)
-            ndfl       = taxable * 0.13 if taxable > 0 else 0
-            after_ndfl = taxable - ndfl
-
-            share_percent = float(user_shares.get(share_key, 20.0))
+            # 1. НДФЛ от грязной прибыли
+            ndfl         = max(0.0, gross) * 0.13 if gross > 0 else 0
+            # 2. После налога вычитаем расходы
+            after_ndfl   = max(0.0, gross - ndfl - month_expenses)
+            # 3. Доля системы от остатка
+            share_percent = float(user_shares.get(month_key, 20.0))
             share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-
-            net_profit = after_ndfl - share_amount
+            net_profit    = after_ndfl - share_amount
 
             months_data.append({
                 'key':               share_key,
@@ -780,15 +779,15 @@ def user_profit_view(request):
             .aggregate(Sum('amount'))['amount__sum'] or 0
         )
 
-        # НДФЛ после вычета расходов
-        taxable    = max(0.0, gross - month_expenses)
-        ndfl       = taxable * 0.13 if taxable > 0 else 0
-        after_ndfl = taxable - ndfl
-
-        share_percent = float(user_shares.get(month_key, 20.0))
+        # 1. НДФЛ от грязной прибыли
+        ndfl          = max(0.0, gross) * 0.13 if gross > 0 else 0
+        # 2. После налога вычитаем расходы
+        after_ndfl    = max(0.0, gross - ndfl - month_expenses)
+        # 3. Доля системы от остатка
+        share_percent = float(user_shares.get(share_key, 20.0))
         share_amount  = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-
-        net_profit = after_ndfl - share_amount
+        net_profit    = after_ndfl - share_amount
+ 
 
         # =====================================================================
         # Глобальный остаток крипты — РАЗДЕЛЬНО по USDT и TON
@@ -1493,7 +1492,6 @@ def admin_logout(request):
     logout(request)
     return redirect('admin_login')
 
-
 def _calc_currency(user, month_start, month_end,
                    currency='USDT',
                    exchange_filter='', bank_filter_id=''):
@@ -1707,8 +1705,8 @@ def admin_profit_view(request):
         gross_all  = gross_usdt + gross_ton
 
         # Пропорционально делим расходы между USDT и TON
-        pos_usdt = max(0.0, gross_usdt)
-        pos_ton  = max(0.0, gross_ton)
+        pos_usdt  = max(0.0, gross_usdt)
+        pos_ton   = max(0.0, gross_ton)
         pos_total = pos_usdt + pos_ton
 
         if pos_total > 0:
@@ -1719,23 +1717,23 @@ def admin_profit_view(request):
             ton_expense_share  = 0.0
 
         # ── USDT ──────────────────────────────────────────────────────
-        taxable_usdt = max(0.0, gross_usdt - usdt_expense_share)
-        ndfl_usdt    = taxable_usdt * 0.13 if taxable_usdt > 0 else 0
-        after_usdt   = taxable_usdt - ndfl_usdt
-        share_usdt   = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
-        net_usdt     = after_usdt - share_usdt
+        # 1. НДФЛ от грязной прибыли
+        ndfl_usdt   = max(0.0, gross_usdt) * 0.13 if gross_usdt > 0 else 0
+        # 2. После налога вычитаем расходы
+        after_usdt  = max(0.0, gross_usdt - ndfl_usdt - usdt_expense_share)
+        # 3. Доля системы от остатка
+        share_usdt  = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
+        net_usdt    = after_usdt - share_usdt
 
         # ── TON ───────────────────────────────────────────────────────
-        taxable_ton = max(0.0, gross_ton - ton_expense_share)
-        ndfl_ton    = taxable_ton * 0.13 if taxable_ton > 0 else 0
-        after_ton   = taxable_ton - ndfl_ton
+        ndfl_ton    = max(0.0, gross_ton) * 0.13 if gross_ton > 0 else 0
+        after_ton   = max(0.0, gross_ton - ndfl_ton - ton_expense_share)
         share_ton   = after_ton * (share_percent / 100) if after_ton > 0 else 0
         net_ton     = after_ton - share_ton
 
-        # ── ИТОГО — расходы уже учтены пропорционально ───────────────
-        taxable_all = max(0.0, gross_all - month_expenses)
-        ndfl_all    = taxable_all * 0.13 if taxable_all > 0 else 0
-        after_all   = taxable_all - ndfl_all
+        # ── ИТОГО: НДФЛ от грязной → расходы → доля ─────────────────
+        ndfl_all    = max(0.0, gross_all) * 0.13 if gross_all > 0 else 0
+        after_all   = max(0.0, gross_all - ndfl_all - month_expenses)
         share_all   = after_all * (share_percent / 100) if after_all > 0 else 0
         net_all     = after_all - share_all
 
@@ -1829,6 +1827,7 @@ def admin_profit_view(request):
         'selected_bank':       bank_filter_id,
         'default_banks':       default_banks,
     })
+
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

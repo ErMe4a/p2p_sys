@@ -1,10 +1,17 @@
 {
   "manifest_version": 3,
   "name": "mininp2p.ru",
-  "version": "1.0",
+  "version": "1.4",
   "description": "Adds an analytics dropdown menu to Bybit P2P order pages.",
   "permissions": ["activeTab", "storage", "downloads", "tabs", "tabCapture"],
-  "host_permissions": ["*://*.bybit.com/*", "*://*.htx.com/*", "*://*.htx.com.gt/*", "*://*.mexc.com/*", "<all_urls>"],
+  "host_permissions": [
+    "*://*.bybit.com/*",
+    "*://*.htx.com/*",
+    "*://*.htx.com.gt/*",
+    "*://*.mexc.com/*",
+    "*://*.bingx.com/*",
+    "<all_urls>"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -24,6 +31,18 @@
     {
       "matches": ["*://*.mexc.com/*"],
       "js": ["auth.js", "order_api.js", "mexc.js", "mexc_order_list.js"],
+      "css": ["style.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.bingx.com/*"],
+      "js": ["auth.js", "order_api.js", "bingx.js","bingx_order_list.js"],
+      "css": ["style.css"],
+      "run_at": "document_end"
+    },
+    {
+      "matches": ["*://*.gate.com/*", "*://*.gate.io/*"],
+      "js": ["auth.js", "order_api.js", "gate.js", "gate_order_list.js"],
       "css": ["style.css"],
       "run_at": "document_end"
     }
