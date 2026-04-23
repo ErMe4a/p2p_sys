@@ -1702,24 +1702,37 @@ def admin_profit_view(request):
             .values('name', 'amount')
         )
 
+        gross_usdt = usdt['gross']
+        gross_ton  = ton['gross']
+        gross_all  = gross_usdt + gross_ton
+
+        # Пропорционально делим расходы между USDT и TON
+        pos_usdt = max(0.0, gross_usdt)
+        pos_ton  = max(0.0, gross_ton)
+        pos_total = pos_usdt + pos_ton
+
+        if pos_total > 0:
+            usdt_expense_share = (pos_usdt / pos_total) * month_expenses
+            ton_expense_share  = (pos_ton  / pos_total) * month_expenses
+        else:
+            usdt_expense_share = 0.0
+            ton_expense_share  = 0.0
+
         # ── USDT ──────────────────────────────────────────────────────
-        gross_usdt   = usdt['gross']
-        taxable_usdt = max(0.0, gross_usdt)
+        taxable_usdt = max(0.0, gross_usdt - usdt_expense_share)
         ndfl_usdt    = taxable_usdt * 0.13 if taxable_usdt > 0 else 0
         after_usdt   = taxable_usdt - ndfl_usdt
         share_usdt   = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
         net_usdt     = after_usdt - share_usdt
 
         # ── TON ───────────────────────────────────────────────────────
-        gross_ton   = ton['gross']
-        taxable_ton = max(0.0, gross_ton)
+        taxable_ton = max(0.0, gross_ton - ton_expense_share)
         ndfl_ton    = taxable_ton * 0.13 if taxable_ton > 0 else 0
         after_ton   = taxable_ton - ndfl_ton
         share_ton   = after_ton * (share_percent / 100) if after_ton > 0 else 0
         net_ton     = after_ton - share_ton
 
-        # ── ИТОГО — расходы вычитаем из общей базы ───────────────────
-        gross_all   = gross_usdt + gross_ton
+        # ── ИТОГО — расходы уже учтены пропорционально ───────────────
         taxable_all = max(0.0, gross_all - month_expenses)
         ndfl_all    = taxable_all * 0.13 if taxable_all > 0 else 0
         after_all   = taxable_all - ndfl_all
@@ -1727,6 +1740,8 @@ def admin_profit_view(request):
         net_all     = after_all - share_all
 
         bank_comm_rub     = calc['month_buy_comm'] + calc['month_sell_comm']
+        usdt_bank_comm    = usdt['month_buy_comm'] + usdt['month_sell_comm']
+        ton_bank_comm     = ton['month_buy_comm']  + ton['month_sell_comm']
         exchange_comm_rub = calc['month_exch_usdt']
 
         user_stats.append({
@@ -1753,6 +1768,8 @@ def admin_profit_view(request):
             'net_profit':            net_all,
             'net_profit_positive':   net_all >= 0,
             'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
+            'usdt_bank_comm': usdt_bank_comm,
+            'ton_bank_comm':  ton_bank_comm,
             # Детализация USDT
             'usdt':       usdt,
             'usdt_gross': gross_usdt,

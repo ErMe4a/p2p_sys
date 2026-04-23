@@ -159,8 +159,6 @@ function replacePayerNameInDom(name, root = document) {
 }
 
 // New: SELL-specific robust replacement using gold+bold style parameter
-// New: SELL-specific robust replacement using gold+bold style parameter
-// New: SELL-specific robust replacement using gold+bold style parameter
 function replaceSellerNameInDom(name, root = document) {
     if (!name) return false;
     let replaced = false;
@@ -279,9 +277,6 @@ function replaceBuyTipsName(name, root = document) {
 }
 
 // New: Replace own name in payment method details (SELL order - your payment details)
-// New: Replace own name in payment method details (SELL order - your payment details)
-// New: Replace own name in payment method details (SELL order - your payment details)
-// New: Replace own name in payment method details (SELL order - your payment details)
 function replaceOwnNameInPaymentMethod(name, root = document) {
     if (name === null || name === undefined) return false;
     let replaced = false;
@@ -398,13 +393,6 @@ function replaceOwnNameInPaymentMethod(name, root = document) {
     return replaced;
 }
 
-// New: Replace counterparty name in payment method details (works for both BUY and SELL)
-// For BUY orders: replaces seller's name
-// For SELL orders: can also be used to replace buyer's name if needed
-// New: Replace counterparty name in payment method details (works for both BUY and SELL)
-// For BUY orders: replaces seller's name
-// For SELL orders: can also be used to replace buyer's name if needed
-// New: Replace counterparty name in payment method details (works for both BUY and SELL)
 // New: Replace counterparty name in payment method details (works for both BUY and SELL)
 function replaceCounterpartyNameInPaymentMethod(name, root = document) {
     if (!name) return false;
@@ -580,7 +568,6 @@ function applyDisplayNameIfNeeded() {
 
 // Function to extract order ID from URL
 // IMPORTANT: orderId MUST always remain a string to preserve precision for large numbers
-// Numbers like 1334714309250740224 exceed JavaScript's MAX_SAFE_INTEGER
 const getOrderIdFromUrl = () => {
     const url = window.location.href;
     console.log('P2P Analytics: Extracting order ID from URL:', url);
@@ -589,8 +576,7 @@ const getOrderIdFromUrl = () => {
     const orderIdMatch = url.match(/\/orderList\/(\d+)/);
     
     if (orderIdMatch && orderIdMatch[1]) {
-        // Ensure orderId is always returned as a string (never as a number)
-        // Regex match already returns a string, but we explicitly call String() for safety
+        // Ensure orderId is always returned as a string
         const orderId = String(orderIdMatch[1]);
         console.log('P2P Analytics: Extracted order ID:', orderId, 'Type:', typeof orderId);
         return orderId;
@@ -600,16 +586,12 @@ const getOrderIdFromUrl = () => {
     return null;
 };
 
-// fetchBankDetails is available globally from order_api.js
-
-// Wrapper for checkOrderExists with Bybit exchange type - override global
+// Wrapper for checkOrderExists with Bybit exchange type
 checkOrderExists = async (orderId) => {
     return window.P2POrderAPI.checkOrderExists(orderId, EXCHANGE_TYPE_BYBIT);
 };
 
-// saveOrder is available globally from order_api.js
-
-// Wrapper for deleteOrder with Bybit exchange type - override global
+// Wrapper for deleteOrder with Bybit exchange type
 deleteOrder = async (orderId) => {
     return window.P2POrderAPI.deleteOrder(orderId, EXCHANGE_TYPE_BYBIT);
 };
@@ -643,11 +625,8 @@ const captureScreenshot = async () => {
     }
 };
 
-
-
 const uploadScreenshotFromDataUrl = async (dataUrl, orderId) => {
     try {
-        // Check if user is authenticated
         const isAuth = await window.P2PAuth.isAuthenticated();
         if (!isAuth) {
             window.P2PAuth.showAuthError('Необходимо авторизоваться для загрузки скриншота');
@@ -657,20 +636,14 @@ const uploadScreenshotFromDataUrl = async (dataUrl, orderId) => {
             };
         }
 
-        // Convert dataUrl to blob
         const response = await fetch(dataUrl);
         const blob = await response.blob();
-
-        // Use existing uploadScreenshot function from auth.js
         const result = await window.P2PAuth.uploadScreenshot(blob, `${orderId}.png`);
         
         return result;
     } catch (error) {
         console.error('Error uploading screenshot:', error);
-        
-        // Show error to user
         window.P2PAuth.showAuthError(error.message);
-        
         return {
             success: false,
             error: error.message
@@ -704,15 +677,12 @@ const downloadScreenshot = async (dataUrl, orderId) => {
     }
 };
 
-// Added: Reset BUY display name to original default and clear storage
 // Added: Reset display name to original default and clear storage
 async function resetBuyDisplayName() {
     try {
-        // Сбрасваем в хранилище
         await chrome.storage.sync.set({ displayName: '' });
         currentDisplayName = '';
 
-        // 1. Логика для BUY страницы
         if (isBuyPage()) {
              if (!originalBuyName) {
                 originalBuyName = detectOriginalBuyName(document) || '';
@@ -723,7 +693,6 @@ async function resetBuyDisplayName() {
             }
         }
         
-        // 2. Логика для SELL страницы (восстанавливаем оригинальное имя)
         if (isSellPage() && originalOwnName) {
              replaceOwnNameInPaymentMethod(originalOwnName);
         }
@@ -750,7 +719,6 @@ function parseOrderInfo() {
     }
     
     // Тип — ищем в заголовке блока .order-detail__order-info
-    // Там есть span с классом css-mqgui4 содержащий "Покупка" / "Продажа"
     const typeSpans = document.querySelectorAll('.order-detail__order-info .moly-text');
     for (const span of typeSpans) {
         const text = normalizeText(span.textContent);
@@ -758,7 +726,6 @@ function parseOrderInfo() {
         if (/покупк|buy/i.test(text)) { orderInfo.type = 'BUY'; break; }
     }
     
-    // Fallback — через detectOrderType (старый метод через .title)
     if (!orderInfo.type) {
         orderInfo.type = detectOrderType().toUpperCase();
     }
@@ -766,15 +733,11 @@ function parseOrderInfo() {
     console.log('P2P Analytics: Parsed order info:', orderInfo);
     return orderInfo;
 }
-// parseNumberOrNull is available globally from order_api.js
 
-// Function to collect form data
 // Function to collect form data
 function collectFormData() {
     const formData = {};
     
-    // Обрезает до нужных знаков БЕЗ округления, но исправляет floating point погрешность
-    // Пример: 86.8499999999 → 86.85, но НЕ 86.85999 → 86.86
     const cleanAndParseFloat = (value, decimals = 2) => {
         if (!value && value !== 0) return null;
         if (typeof value === 'number') {
@@ -795,7 +758,6 @@ function collectFormData() {
         return Math.trunc(parseFloat(num.toFixed(10)) * factor) / factor;
     };
     
-    // ... (банк, комиссия без изменений) ...
     const bankButton = document.querySelector('.p2p-analytics-button .p2p-analytics-button-text');
     const selectedBankId = bankButton ? bankButton.getAttribute('data-bank-id') : null;
     formData.bank = bankButton ? bankButton.textContent : null;
@@ -816,12 +778,10 @@ function collectFormData() {
     const quantityInput = document.querySelector('#quantity-input');
     const costInput = document.querySelector('#cost-input');
 
-    // Инпуты: price=2 знака, quantity=3 знака, amount=2 знака
     let finalPrice    = cleanAndParseFloat(rateInput ? rateInput.value : '', 2);
     let finalQuantity = cleanAndParseFloat(quantityInput ? quantityInput.value : '', 3);
     let finalAmount   = cleanAndParseFloat(costInput ? costInput.value : '', 2);
 
-    // FALLBACK со страницы
     if (!finalPrice) {
         console.log('P2P Analytics: Price missing in input, parsing from page...');
         finalPrice = cleanAndParseFloat(parsePriceFromPage(), 2);
@@ -872,11 +832,9 @@ function collectFormData() {
 }
 
 // Function to handle form submission
-// Function to handle form submission
 async function handleFormSubmission() {
     const formData = collectFormData();
     
-    // Validate required fields
     if (!formData.bank || formData.bank === 'Выберите банк' || !formData.bankId) {
         alert('Пожалуйста, выберите банк');
         return;
@@ -892,21 +850,18 @@ async function handleFormSubmission() {
         return;
     }
     
-    // Get order ID from URL
     const orderId = getOrderIdFromUrl();
     if (!orderId) {
         alert('Не удалось получить ID заказа из URL страницы');
         return;
     }
 
-    // Check if user is authenticated
     const isAuth = await window.P2PAuth.isAuthenticated();
     if (!isAuth) {
         window.P2PAuth.showAuthError('Необходимо авторизоваться для отправки заказа');
         return;
     }
 
-    // Show loading state
     const submitButton = document.querySelector('.p2p-analytics-submit-button');
     const originalText = submitButton.textContent;
     submitButton.textContent = 'Отправка...';
@@ -915,7 +870,6 @@ async function handleFormSubmission() {
     let screenshotDataUrl = null;
     
     try {
-        // Always capture screenshot
         submitButton.textContent = 'Создание скриншота...';
         console.log('P2P Analytics: Capturing screenshot...');
         
@@ -924,10 +878,8 @@ async function handleFormSubmission() {
             console.log('P2P Analytics: Screenshot captured successfully');
         } catch (error) {
             console.error('P2P Analytics: Error capturing screenshot:', error);
-            // Non-blocking error for screenshot
         }
 
-        // Check if order already exists and has a receipt
         let existingReceipt = null;
         try {
             const existingOrderResult = await checkOrderExists(orderId);
@@ -949,8 +901,6 @@ async function handleFormSubmission() {
             console.log('P2P Analytics: No receipt will be sent (null)');
         }
         
-        // Prepare order data
-        // IMPORTANT: Keep orderId as string
         const orderData = {
             orderId: String(orderId),
             details: { id: formData.bankId },
@@ -962,15 +912,13 @@ async function handleFormSubmission() {
             type: formData.type,
             exchangeType: EXCHANGE_TYPE_BYBIT,
             
-            // --- ДОБАВЛЕНО: Отправляем основные данные всегда ---
-            price: formData.price,       // Курс
-            quantity: formData.quantity, // Крипта
-            amount: formData.amount      // Рубли
+            price: formData.price,       
+            quantity: formData.quantity, 
+            amount: formData.amount      
         };
         
         console.log('P2P Analytics: Order data prepared:', orderData);
         
-        // Save order
         submitButton.textContent = 'Сохранение заказа...';
         const result = await saveOrder(orderData);
         
@@ -982,7 +930,6 @@ async function handleFormSubmission() {
         
         console.log('Order saved successfully:', result);
         
-        // Upload screenshot
         if (screenshotDataUrl) {
             submitButton.textContent = 'Загрузка скриншота...';
             try {
@@ -995,10 +942,8 @@ async function handleFormSubmission() {
             }
         }
         
-        // Show success message
         alert(`Ордер успешно сохранен! ID: ${result.orderId}.`);
         
-        // Show delete button
         const deleteButton = document.querySelector('.p2p-analytics-delete-button');
         if (deleteButton) {
             deleteButton.style.display = 'block';
@@ -1013,30 +958,24 @@ async function handleFormSubmission() {
     }
 }
 
-// Function to reset form
 function resetForm() {
-    // Reset bank selection
     const bankButton = document.querySelector('.p2p-analytics-button .p2p-analytics-button-text');
     if (bankButton) {
         bankButton.textContent = 'Выберите банк';
         bankButton.removeAttribute('data-bank-id');
     }
     
-    // Reset commission input
     const commissionInput = document.querySelector('.p2p-analytics-commission-input');
     if (commissionInput) {
         commissionInput.value = '';
         commissionInput.placeholder = 'Введите комиссию';
     }
     
-    // Reset commission type to default
     const commissionType = document.querySelector('.p2p-analytics-suffix-text');
     if (commissionType) {
         commissionType.textContent = '%';
         commissionType.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT);
     }
-    
-    // No screenshot checkbox to reset (always on)
     
     const receiptCheckbox = document.querySelector('#check-checkbox');
     if (receiptCheckbox) {
@@ -1056,7 +995,6 @@ async function createDropdownMenu() {
     const dropdownContainer = document.createElement('div');
     dropdownContainer.className = 'p2p-analytics-dropdown-container';
 
-    // Create unified form section (all elements including submit button)
     console.log('P2P Analytics: Creating unified form section...');
     const formSection = await createUnifiedFormSection();
     dropdownContainer.appendChild(formSection);
@@ -1069,20 +1007,16 @@ async function createUnifiedFormSection() {
     const formSection = document.createElement('div');
     formSection.className = 'p2p-analytics-form-section';
 
-    // Add submit button at the very top
     formSection.appendChild(createSubmitButton());
 
-    // Add delete order button below submit
     const deleteButton = createDeleteOrderButton();
     formSection.appendChild(deleteButton);
 
-    // Add requisites title
     const requisitesTitle = document.createElement('h3');
     requisitesTitle.className = 'p2p-analytics-form-title';
     requisitesTitle.textContent = 'Реквизиты';
     formSection.appendChild(requisitesTitle);
 
-    // Create a wrapper for the button and its menu
     const buttonMenuWrapper = document.createElement('div');
     buttonMenuWrapper.style.position = 'relative';
     buttonMenuWrapper.style.width = '100%';
@@ -1092,7 +1026,7 @@ async function createUnifiedFormSection() {
     
     const buttonTextSpan = document.createElement('span');
     buttonTextSpan.className = 'p2p-analytics-button-text';
-    buttonTextSpan.textContent = 'Выберите банк'; // Сразу ставим дефолтный текст
+    buttonTextSpan.textContent = 'Выберите банк';
 
     const dropdownArrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     dropdownArrowSvg.setAttribute('width', '12');
@@ -1109,7 +1043,6 @@ async function createUnifiedFormSection() {
     dropdownMenu.className = 'p2p-analytics-menu';
     dropdownMenu.style.display = 'none';
 
-    // --- ИЗМЕНЕНИЕ: Используем фиксированный список вместо fetchBankDetails ---
     console.log('P2P Analytics: Using FIXED bank list');
     
     FIXED_BANKS.forEach(bankDetail => {
@@ -1128,20 +1061,15 @@ async function createUnifiedFormSection() {
         };
         dropdownMenu.appendChild(menuItemElement);
     });
-    // -----------------------------------------------------------------------
 
-    // Append button and menu to their dedicated wrapper
     buttonMenuWrapper.appendChild(dropdownButton);
     buttonMenuWrapper.appendChild(dropdownMenu);
 
-    // Add the bank dropdown to form section
     formSection.appendChild(buttonMenuWrapper);
 
-    // Add commission input with dropdown to form section
     const commissionInputWrapper = createCommissionInput();
     formSection.appendChild(commissionInputWrapper);
     
-    // Pre-populate details and commission if order exists
     const orderId = getOrderIdFromUrl();
     if (orderId) {
         checkOrderExists(orderId).then(orderResult => {
@@ -1149,19 +1077,14 @@ async function createUnifiedFormSection() {
                 const order = orderResult.data;
                 console.log('P2P Analytics: Order exists, pre-populating form fields:', order);
                 
-                // Pre-populate details (requisites)
                 if (order.details) {
                     const details = order.details;
-                    
-                    // --- ИЗМЕНЕНИЕ: Ищем банк в FIXED_BANKS ---
-                    // Ищем по ID, так как ID теперь надежны
                     const matchingBankDetail = FIXED_BANKS.find(bd => bd.id === details.id);
                     
                     if (matchingBankDetail) {
                         buttonTextSpan.textContent = matchingBankDetail.name;
                         buttonTextSpan.setAttribute('data-bank-id', details.id);
                     } else {
-                        // Если вдруг банк старый или удален, но есть имя в ордере
                          if (details.name) {
                              buttonTextSpan.textContent = details.name;
                          } else {
@@ -1171,7 +1094,6 @@ async function createUnifiedFormSection() {
                     }
                 }
                 
-                // Pre-populate commission value
                 if (order.commission !== null && order.commission !== undefined) {
                     const commissionInput = commissionInputWrapper.querySelector('.p2p-analytics-commission-input');
                     if (commissionInput) {
@@ -1179,7 +1101,6 @@ async function createUnifiedFormSection() {
                     }
                 }
                 
-                // Pre-populate commission type
                 if (order.commissionType) {
                     const commissionTypeButton = commissionInputWrapper.querySelector('.p2p-analytics-suffix-text');
                     const commissionInput = commissionInputWrapper.querySelector('.p2p-analytics-commission-input');
@@ -1201,15 +1122,12 @@ async function createUnifiedFormSection() {
         });
     }
 
-    // Add separator
     const separator = createSeparator();
     formSection.appendChild(separator);
 
-    // Add check content
     const checkContent = createCheckContent();
     formSection.appendChild(checkContent);
 
-    // Event listeners for dropdown visibility
     dropdownButton.addEventListener('click', (event) => {
         event.stopPropagation();
         const isHidden = dropdownMenu.style.display === 'none';
@@ -1235,7 +1153,6 @@ function createCommissionInput() {
     label.className = 'p2p-analytics-label';
     label.textContent = 'Комиссия';
 
-    // Create input group container (input with integrated dropdown)
     const inputGroup = document.createElement('div');
     inputGroup.className = 'p2p-analytics-input-group';
 
@@ -1244,7 +1161,6 @@ function createCommissionInput() {
     input.className = 'p2p-analytics-input p2p-analytics-commission-input';
     input.placeholder = 'Введите комиссию';
 
-    // Create dropdown wrapper for the suffix
     const suffixWrapper = document.createElement('div');
     suffixWrapper.className = 'p2p-analytics-input-suffix';
     suffixWrapper.style.position = 'relative';
@@ -1256,7 +1172,7 @@ function createCommissionInput() {
     const buttonTextSpan = document.createElement('span');
     buttonTextSpan.className = 'p2p-analytics-suffix-text';
     buttonTextSpan.textContent = '%';
-    buttonTextSpan.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT); // Default to percent
+    buttonTextSpan.setAttribute('data-commission-type', COMMISSION_TYPE_PERCENT); 
 
     const dropdownArrowSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     dropdownArrowSvg.setAttribute('width', '10');
@@ -1285,9 +1201,8 @@ function createCommissionInput() {
         menuItemElement.onclick = (e) => {
             e.stopPropagation();
             buttonTextSpan.textContent = type.label;
-            buttonTextSpan.setAttribute('data-commission-type', type.value); // Save API value
+            buttonTextSpan.setAttribute('data-commission-type', type.value); 
             
-            // Update input placeholder based on selection
             if (type.value === COMMISSION_TYPE_MONEY) {
                 input.placeholder = 'Введите сумму в рублях';
             } else {
@@ -1310,14 +1225,12 @@ function createCommissionInput() {
     inputWrapper.appendChild(label);
     inputWrapper.appendChild(inputGroup);
 
-    // Add event listeners for suffix dropdown
     dropdownButton.addEventListener('click', (event) => {
         event.stopPropagation();
         const isHidden = dropdownMenu.style.display === 'none';
         dropdownMenu.style.display = isHidden ? 'block' : 'none';
         dropdownButton.classList.toggle('p2p-analytics-suffix-button-active', isHidden);
         
-        // Update input group styling
         if (isHidden) {
             inputGroup.classList.add('p2p-analytics-input-group-active');
         } else {
@@ -1350,7 +1263,7 @@ function createScreenshotCheckbox() {
     checkbox.type = 'checkbox';
     checkbox.className = 'p2p-analytics-checkbox';
     checkbox.id = 'screenshot-checkbox';
-    checkbox.checked = true; // Включен по умолчанию
+    checkbox.checked = true;
 
     const label = document.createElement('label');
     label.className = 'p2p-analytics-checkbox-label';
@@ -1363,23 +1276,15 @@ function createScreenshotCheckbox() {
     return checkboxWrapper;
 }
 
-// generateRandomGmail, truncateToDecimals, extractNumber
-// are all available globally from order_api.js
-
-// Helper function to parse price from page (both buy and sell orders)
-// Multiple strategies for reliability
 function findPayInfoValue(labelText) {
     const items = document.querySelectorAll('.order-detail__pay-info-item');
     for (const item of items) {
-        // Берем все span'ы в item
         const spans = item.querySelectorAll('span.moly-text');
         if (spans.length < 2) continue;
         
         const label = spans[0].textContent.trim();
         if (labelText.test ? labelText.test(label) : label === labelText) {
-            // Значение — второй span, но в нём могут быть SVG иконки — берем только textContent напрямую
             const valueSpan = spans[1];
-            // Обрезаем текст до первого SVG (childNodes содержит и текст и svg)
             let text = '';
             for (const node of valueSpan.childNodes) {
                 if (node.nodeType === Node.TEXT_NODE) {
@@ -1393,8 +1298,6 @@ function findPayInfoValue(labelText) {
     }
     return '';
 }
-
-
 
 function parsePriceFromPage() {
     try {
@@ -1416,7 +1319,6 @@ function parseQuantityFromPage() {
     try {
         console.log('P2P Analytics: Parsing quantity from page...');
         
-        // Strategy 1: Страница продажи — .summary-item (старый DOM)
         const summaryItems = document.querySelectorAll('.summary-item');
         for (const item of summaryItems) {
             const title = item.querySelector('.summary-item-title');
@@ -1433,7 +1335,6 @@ function parseQuantityFromPage() {
             }
         }
         
-        // Strategy 2: Страница покупки — .order-detail__pay-info-item
         const payInfoItems = document.querySelectorAll('.order-detail__pay-info-item');
         for (const item of payInfoItems) {
             const spans = item.querySelectorAll('span');
@@ -1449,7 +1350,6 @@ function parseQuantityFromPage() {
             }
         }
 
-        // Strategy 3: Найти любой span с USDT/BTC внутри .order-detail__pay-info
         const payInfo = document.querySelector('.order-detail__pay-info');
         if (payInfo) {
             const allSpans = payInfo.querySelectorAll('span');
@@ -1465,7 +1365,6 @@ function parseQuantityFromPage() {
             }
         }
 
-        // Strategy 4: Старая — .summary-item-value с крипто паттерном
         const allValues = document.querySelectorAll('.summary-item-value');
         for (const value of allValues) {
             const text = value.textContent.trim();
@@ -1478,7 +1377,6 @@ function parseQuantityFromPage() {
             }
         }
         
-        // Strategy 5: По позиции
         if (summaryItems.length >= 3) {
             const thirdItem = summaryItems[2];
             const value = thirdItem.querySelector('.summary-item-value');
@@ -1515,32 +1413,24 @@ function parseAmountFromPage() {
     }
 }
 
-// checkEvotorCredentials is available globally from order_api.js
-
-// Helper function to wait for summary items to be available and fill receipt inputs
-// Returns true if all fields were filled successfully
 function waitAndFillReceiptInputs(rateInput, quantityInput, costInput, maxRetries = 10, delay = 500) {
     let retryCount = 0;
     
     function tryFill() {
-        // Check if summary items exist in DOM
         const summaryItems = document.querySelectorAll('.summary-item');
         const hasSummaryItems = summaryItems.length >= 3;
         
         console.log('P2P Analytics: Attempting to fill receipt inputs, retry:', retryCount, 'summary items found:', summaryItems.length);
         
-        // Try to parse values
         const rateValue = parsePriceFromPage();
         const quantityValue = parseQuantityFromPage();
         const costValue = parseAmountFromPage();
         
         console.log('P2P Analytics: Parsed values - rate:', rateValue, 'quantity:', quantityValue, 'cost:', costValue);
         
-        // Check if we got valid values
         const hasValidData = rateValue || quantityValue || costValue;
         
         if (hasValidData) {
-            // Fill the inputs
             if (rateInput && rateValue) {
                 rateInput.value = rateValue;
                 console.log('P2P Analytics: Rate filled:', rateValue);
@@ -1556,7 +1446,6 @@ function waitAndFillReceiptInputs(rateInput, quantityInput, costInput, maxRetrie
             return true;
         }
         
-        // If no valid data and we haven't exceeded retries, try again
         retryCount++;
         if (retryCount < maxRetries) {
             console.log('P2P Analytics: No valid data found, retrying in', delay, 'ms...');
@@ -1568,7 +1457,6 @@ function waitAndFillReceiptInputs(rateInput, quantityInput, costInput, maxRetrie
         return false;
     }
     
-    // Start the first attempt
     tryFill();
 }
 
@@ -1576,7 +1464,6 @@ function createCheckContent() {
     const checkContent = document.createElement('div');
     checkContent.className = 'p2p-analytics-check-content';
 
-    // Main checkbox
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
 
@@ -1593,24 +1480,20 @@ function createCheckContent() {
     checkboxWrapper.appendChild(checkbox);
     checkboxWrapper.appendChild(label);
 
-    // Warning message for missing evotor credentials
     const warningMessage = document.createElement('div');
     warningMessage.className = 'p2p-analytics-check-warning';
     warningMessage.style.display = 'none';
     warningMessage.textContent = 'Чтобы пробить чек, заполните анкету';
 
-    // Success message for existing receipt
     const successMessage = document.createElement('div');
     successMessage.className = 'p2p-analytics-check-success';
     successMessage.style.display = 'none';
     successMessage.textContent = 'Чек пробит';
 
-    // Conditional inputs container
     const conditionalInputs = document.createElement('div');
     conditionalInputs.className = 'p2p-analytics-conditional-inputs';
     conditionalInputs.style.display = 'none';
 
-    // Create inputs and store references
     const contactInputWrapper = createInput('Контакт', 'contact-input', 'Введите контакт');
     const contactInput = contactInputWrapper.querySelector('#contact-input');
     conditionalInputs.appendChild(contactInputWrapper);
@@ -1632,10 +1515,8 @@ function createCheckContent() {
     checkContent.appendChild(successMessage);
     checkContent.appendChild(conditionalInputs);
 
-    // Flag to track if receipt already exists
     let receiptExists = false;
 
-    // Check both order receipt and evotor credentials
     const orderId = getOrderIdFromUrl();
     const orderCheckPromise = orderId 
         ? checkOrderExists(orderId).catch(error => {
@@ -1649,44 +1530,36 @@ function createCheckContent() {
         return false;
     });
 
-    // Wait for both checks to complete
     Promise.all([orderCheckPromise, credentialsCheckPromise]).then(([orderResult, hasCredentials]) => {
-        // Check if receipt exists
         if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.receipt) {
-            // Receipt exists - mark checkbox as checked and show success message
             receiptExists = true;
             checkbox.checked = true;
-            checkbox.disabled = true; // Disable checkbox since receipt is already created
+            checkbox.disabled = true; 
             checkbox.classList.add('p2p-analytics-checkbox-disabled');
             successMessage.style.display = 'block';
             
-            // Show receipt data in readonly inputs
             conditionalInputs.style.display = 'block';
 
-            // --- ИЗМЕНЕНИЕ: Делаем блок визуально серым и неактивным ---
             conditionalInputs.style.opacity = '0.7';
-            conditionalInputs.style.pointerEvents = 'none'; // Блокируем клики
+            conditionalInputs.style.pointerEvents = 'none';
             conditionalInputs.style.filter = 'grayscale(100%)';
             
             const receipt = orderResult.data.receipt;
             
-            // --- ИЗМЕНЕНИЕ: Строгая стилизация полей (Темный фон) ---
             const lockStyle = (input) => {
                 input.style.backgroundColor = '#333'; 
                 input.style.color = '#aaa'; 
                 input.style.border = '1px solid #444';
             };
 
-            // Fill and disable contact input
             if (contactInput) {
-                contactInput.value = receipt.contact || ''; // Берем строго из базы
+                contactInput.value = receipt.contact || '';
                 contactInput.readOnly = true;
                 contactInput.disabled = true;
                 contactInput.classList.add('p2p-analytics-input-readonly');
                 lockStyle(contactInput);
             }
             
-            // Fill and disable rate input
             if (rateInput) {
                 rateInput.value = (receipt.price !== null && receipt.price !== undefined) ? receipt.price : '';
                 rateInput.readOnly = true;
@@ -1695,7 +1568,6 @@ function createCheckContent() {
                 lockStyle(rateInput);
             }
             
-            // Fill and disable quantity input
             if (quantityInput) {
                 quantityInput.value = (receipt.amount !== null && receipt.amount !== undefined) ? receipt.amount : '';
                 quantityInput.readOnly = true;
@@ -1704,7 +1576,6 @@ function createCheckContent() {
                 lockStyle(quantityInput);
             }
             
-            // Fill and disable cost input
             if (costInput) {
                 costInput.value = (receipt.sum !== null && receipt.sum !== undefined) ? receipt.sum : '';
                 costInput.readOnly = true;
@@ -1715,17 +1586,14 @@ function createCheckContent() {
             
             console.log('P2P Analytics: Receipt already exists for this order, showing readonly data');
         } else if (!hasCredentials) {
-            // No receipt and no credentials - disable and show warning
             checkbox.disabled = true;
             checkbox.classList.add('p2p-analytics-checkbox-disabled');
             warningMessage.style.display = 'block';
             console.log('P2P Analytics: Checkbox disabled - evotor credentials not filled');
         } else {
-            // No receipt but credentials present - enable checkbox and check it by default
             checkbox.checked = true;
             conditionalInputs.style.display = 'block';
             
-            // Ensure all inputs are editable (not readonly/disabled)
             if (contactInput) {
                 contactInput.readOnly = false;
                 contactInput.disabled = false;
@@ -1747,17 +1615,14 @@ function createCheckContent() {
                 costInput.classList.remove('p2p-analytics-input-readonly');
             }
             
-            // Auto-fill fields when checkbox is enabled
             console.log('P2P Analytics: Checkbox enabled and checked by default - evotor credentials are present');
             console.log('P2P Analytics: Auto-filling receipt fields...');
             
-            // Fill contact with random Gmail
             if (contactInput) {
                 contactInput.value = generateRandomGmail();
                 console.log('P2P Analytics: Contact filled:', contactInput.value);
             }
             
-            // Fill price, quantity, and cost with retry mechanism
             waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
         }
     });
@@ -1790,7 +1655,6 @@ function createSubmitButton() {
     submitButton.className = 'p2p-analytics-submit-button';
     submitButton.textContent = 'Отправить';
     
-    // Add click event listener for form submission
     submitButton.addEventListener('click', (event) => {
         event.preventDefault();
         handleFormSubmission();
@@ -1799,15 +1663,13 @@ function createSubmitButton() {
     return submitButton;
 }
 
-// Create delete order button
 function createDeleteOrderButton() {
     const deleteButton = document.createElement('button');
     deleteButton.className = 'p2p-analytics-delete-button';
     deleteButton.textContent = 'Удалить ордер';
     deleteButton.style.marginTop = '8px';
-    deleteButton.style.display = 'none'; // Initially hidden
+    deleteButton.style.display = 'none';
 
-    // Check if order exists and show button if it does
     const orderId = getOrderIdFromUrl();
     if (orderId) {
         checkOrderExists(orderId).then(result => {
@@ -1846,7 +1708,6 @@ function createDeleteOrderButton() {
             }
 
             alert('Ордер успешно удален');
-            // Reload the page to reflect the deletion
             setTimeout(() => {
                 window.location.reload();
             }, 500);
@@ -1864,9 +1725,9 @@ function createDeleteOrderButton() {
 
 // Global variables for widget
 let observer = null;
-let isInitializing = false; // Flag to prevent multiple initializations
-let currentUrl = window.location.href; // Track current URL to detect changes
-let urlWatchInterval = null; // Persistent URL watcher for SPA navigations
+let isInitializing = false;
+let currentUrl = window.location.href;
+let urlWatchInterval = null; 
 
 // Load widget collapsed state from storage
 let widgetCollapsed = false;
@@ -2019,13 +1880,12 @@ function initializeMutationObserver() {
             
             if (currentSellDisplayNameTemp) {
                 // Пытаемся заменить имя и в стандартных полях, и "золотым" методом
-                // Убрана проверка на тип страницы - пытаемся применить везде
                 try { replaceCounterpartyNameInPaymentMethod(currentSellDisplayNameTemp); } catch (_) { /* noop */ }
                 replaceSellerNameInDom(currentSellDisplayNameTemp);
             }
 
             // 2. NEW: Try to inject widget if chat appeared
-            await injectWidgetUnderChat();
+            await createFloatingWidget();
 
         }, 100); // 100ms debounce
     });
@@ -2039,67 +1899,7 @@ function initializeMutationObserver() {
     });
 }
 
-async function tryInsertWidget() {
-    console.log('P2P Analytics: Attempting to create floating widget...');
-    
-    if (await createFloatingWidget()) {
-        console.log('P2P Analytics: Floating widget created successfully!');
-    } else {
-        console.error('P2P Analytics: Failed to create floating widget');
-    }
-}
-// Функция для внедрения виджета СТРОГО ПОД ЧАТ
-// Функция для внедрения виджета СТРОГО ПОД ЧАТ (ВНЕ КОНТЕЙНЕРА ЧАТА)
-async function injectWidgetUnderChat() {
-    if (!window.P2PAuth) return;
-    const isAuth = await window.P2PAuth.isAuthenticated();
-    if (!isAuth) {
-        const w = document.querySelector('.p2p-analytics-widget');
-        if (w) w.remove();
-        return;
-    }
-
-    // Ждём пока элементы реально отрисуются
-    const headerWrapper = document.querySelector('.order-detail__header-wrapper');
-    if (!headerWrapper) return;
-
-    if (document.querySelector('.p2p-analytics-widget[data-injected="true"]')) return;
-
-    let widget = document.querySelector('.p2p-analytics-widget');
-    if (!widget) {
-        await createFloatingWidget();
-        widget = document.querySelector('.p2p-analytics-widget');
-    }
-    if (!widget) return;
-
-    // Вставляем виджет прямо в body
-    document.body.appendChild(widget);
-    widget.classList.add('sidebar-mode');
-    widget.classList.remove('embedded-mode', 'collapsed');
-    widget.dataset.injected = 'true';
-
-    function positionWidget() {
-        const rect = headerWrapper.getBoundingClientRect();
-        
-        widget.style.position = 'fixed';
-        widget.style.top = rect.top + 'px';
-        widget.style.left = (rect.right + 700) + 'px';
-        widget.style.width = '400px';
-        widget.style.zIndex = '10000';
-        widget.style.bottom = 'auto';
-        widget.style.right = 'auto';
-        widget.style.transform = 'none';
-        
-        console.log('P2P widget pos: top=', rect.top, 'left=', rect.right + 12);
-    }
-
-    positionWidget();
-
-    window.addEventListener('scroll', positionWidget, { passive: true });
-    window.addEventListener('resize', positionWidget, { passive: true });
-}
 // --- Main Execution ---
-
 async function initialize() {
     // Prevent multiple simultaneous initializations
     if (isInitializing) {
@@ -2115,7 +1915,7 @@ async function initialize() {
         
         // Check if we're on the right page
         const urlPattern = /bybit\.com.*\/orderList\/\d+/;
-        const isCorrectPage = urlPattern.test(window.location.href);
+        const isCorrectPage = urlPattern.test(window.location.href) || isMerchantAdminPage();
         
         if (!isCorrectPage) {
             console.log('P2P Analytics: Not on order page, skipping initialization');
@@ -2150,11 +1950,11 @@ async function initialize() {
         ensureOriginalBuyNameCaptured();
         applyDisplayNameIfNeeded();
         
-        // Initialize MutationObserver (он теперь будет пытаться встроить виджет при появлении чата)
+        // Initialize MutationObserver
         initializeMutationObserver();
         
-        // Immediate attempt to inject widget (если чат уже есть на странице)
-        await injectWidgetUnderChat();
+        // Immediate attempt to inject widget
+        await createFloatingWidget();
 
     } catch (error) {
         console.error('P2P Analytics: Initialization error:', error);
@@ -2237,12 +2037,21 @@ if (chrome && chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener((changes, namespace) => {
         if (namespace === 'sync') {
             if (changes.authToken) {
-                // ... (тут старый код для токена, без изменений) ...
+                console.log('P2P Analytics: Auth token changed, reinitializing...');
+                
+                // If token was removed (user logged out)
                 if (!changes.authToken.newValue && changes.authToken.oldValue) {
+                    console.log('P2P Analytics: User logged out');
                     cleanupResources();
+                    window.P2PAuth.showAuthError('Вы вышли из системы. Для работы с расширением необходимо авторизоваться заново.');
                 }
+                
+                // If token was added (user logged in)
                 if (changes.authToken.newValue && !changes.authToken.oldValue) {
-                    setTimeout(() => initialize(), 500);
+                    console.log('P2P Analytics: User logged in, reinitializing...');
+                    setTimeout(() => {
+                        initialize();
+                    }, 500);
                 }
             }
             
@@ -2272,117 +2081,11 @@ if (chrome && chrome.storage && chrome.storage.onChanged) {
     });
 }
 
-// Handle different loading states
-function handleDocumentReady() {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initialize);
-    } else {
-        // DOM is already loaded
-        initialize();
-    }
-}
-
-// Start the process
-handleDocumentReady();
-// Ensure URL watcher is running to catch SPA route changes that do not fire popstate/hashchange
-function ensureUrlWatcher() {
-    if (!urlWatchInterval) {
-        urlWatchInterval = setInterval(() => {
-            try {
-                handleUrlChange();
-            } catch (e) {
-                // noop
-            }
-        }, 300);
-    }
-}
-ensureUrlWatcher();
-// Unified handler for URL changes (SPA-friendly)
-function handleUrlChange() {
-    const newUrl = window.location.href;
-    if (newUrl !== currentUrl) {
-        console.log('P2P Analytics: URL change detected, reinitializing...');
-        currentUrl = newUrl;
-        cleanupResources();
-        setTimeout(() => initialize(), 200);
-    }
-}
-
-// Also listen for page navigation in SPAs (back/forward)
-window.addEventListener('popstate', handleUrlChange);
-
-// Listen for hash changes (common in SPAs)
-window.addEventListener('hashchange', handleUrlChange);
-
-// Detect pushState/replaceState navigations (typical SPA route changes)
-(function patchHistoryApiForUrlChanges() {
-    try {
-        const originalPushState = history.pushState;
-        const originalReplaceState = history.replaceState;
-
-        history.pushState = function() {
-            const result = originalPushState.apply(this, arguments);
-            handleUrlChange();
-            return result;
-        };
-
-        history.replaceState = function() {
-            const result = originalReplaceState.apply(this, arguments);
-            handleUrlChange();
-            return result;
-        };
-    } catch (e) {
-        console.warn('P2P Analytics: Failed to patch History API for URL changes:', e);
-    }
-})();
-
-// Clean up resources when leaving the page
-window.addEventListener('beforeunload', () => {
-    cleanupResources();
-});
-
-// Listen for auth changes and display name changes
-if (chrome && chrome.storage && chrome.storage.onChanged) {
-    chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync') {
-            if (changes.authToken) {
-                console.log('P2P Analytics: Auth token changed, reinitializing...');
-                
-                // If token was removed (user logged out)
-                if (!changes.authToken.newValue && changes.authToken.oldValue) {
-                    console.log('P2P Analytics: User logged out');
-                    cleanupResources();
-                    window.P2PAuth.showAuthError('Вы вышли из системы. Для работы с расширением необходимо авторизоваться заново.');
-                }
-                
-                // If token was added (user logged in)
-                if (changes.authToken.newValue && !changes.authToken.oldValue) {
-                    console.log('P2P Analytics: User logged in, reinitializing...');
-                    setTimeout(() => {
-                        initialize();
-                    }, 500);
-                }
-            }
-
-            if (changes.displayName) {
-                currentDisplayName = changes.displayName.newValue || '';
-                console.log('P2P Analytics: Display name changed to:', currentDisplayName);
-                applyDisplayNameIfNeeded();
-            }
-        }
-    });
-}
-
-// Listen for one-time SELL name application from popup
 // Listen for one-time SELL name application from popup
 try {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message && message.action === 'applySellName') {
             try {
-                // if (!isSellPage()) {
-                //      sendResponse({ success: false, error: 'Текущая страница не SELL' });
-                //      return; 
-                // }
                 const name = (message.name || '').trim();
                 if (!name) {
                     sendResponse({ success: false, error: 'Имя пустое' });

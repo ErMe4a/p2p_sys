@@ -82,6 +82,14 @@
     .currency-badge-all  { background: rgba(108,140,255,.2); color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
     .currency-badge-usdt { background: rgba(88,214,141,.15); color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
     .currency-badge-ton  { background: rgba(61,154,245,.15); color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
+
+    /* Сортировка */
+    .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    .sortable:hover { color: #fff; }
+    .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
+    .sortable.sort-asc .sort-icon::after  { content: ' ▲'; opacity: 1; color: #6c8cff; }
+    .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
+    .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
 </style>
 {% endblock %}
 
@@ -166,13 +174,13 @@
         <table class="table table-hover align-middle" style="color: var(--text-main); border-color: var(--border-color);">
             <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02);">
                 <tr>
-                    <th>Пользователь</th>
-                    <th id="thBalance">Остаток (USDT)</th>
-                    <th>Движение (RUB)</th>
-                    <th>Комиссии</th>
-                    <th>Прибыль и НДФЛ</th>
-                    <th>Доля</th>
-                    <th class="text-end">Итог за месяц</th>
+                    <th class="sortable" onclick="sortTable('name')">Пользователь<span class="sort-icon"></span></th>
+                    <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток (USDT)<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('comm')">Комиссии<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('gross')">Прибыль и НДФЛ<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('share')">Доля<span class="sort-icon"></span></th>
+                    <th class="sortable text-end" onclick="sortTable('net')">Итог за месяц<span class="sort-icon"></span></th>
                 </tr>
             </thead>
             <tbody id="statsTableBody">
@@ -400,6 +408,67 @@
         if (bank) currentUrl.searchParams.set('bank', bank);
         else currentUrl.searchParams.delete('bank');
         window.location.href = currentUrl.toString();
+    }
+
+    var sortState = { key: null, dir: 1 };
+
+    function sortTable(key) {
+        var tbody = document.getElementById('statsTableBody');
+        var rows  = Array.from(tbody.querySelectorAll('tr'));
+
+        // Переключаем направление
+        if (sortState.key === key) {
+            sortState.dir *= -1;
+        } else {
+            sortState.key = key;
+            sortState.dir = -1; // сначала по убыванию
+        }
+
+        // Обновляем стрелки в заголовках
+        document.querySelectorAll('.sortable').forEach(function(th) {
+            th.classList.remove('sort-asc', 'sort-desc');
+        });
+        var ths = document.querySelectorAll('.sortable');
+        var keyMap = { name: 0, balance: 1, turnover: 2, comm: 3, gross: 4, share: 5, net: 6 };
+        var idx = keyMap[key];
+        if (idx !== undefined && ths[idx]) {
+            ths[idx].classList.add(sortState.dir === -1 ? 'sort-desc' : 'sort-asc');
+        }
+
+        rows.sort(function(a, b) {
+            var d = a.dataset;
+            var e = b.dataset;
+            var cur = currentCurrency;
+            var va, vb;
+
+            if (key === 'name') {
+                va = a.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
+                vb = b.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
+                return sortState.dir * va.localeCompare(vb);
+            } else if (key === 'balance') {
+                va = parseFloat(cur === 'ton' ? d.tonBalance  : d.usdtBalance) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonBalance  : e.usdtBalance) || 0;
+            } else if (key === 'turnover') {
+                va = (parseFloat(cur === 'ton' ? d.tonSell  : d.usdtSell)  || 0) + (parseFloat(cur === 'ton' ? d.tonBuy  : d.usdtBuy)  || 0);
+                vb = (parseFloat(cur === 'ton' ? e.tonSell  : e.usdtSell)  || 0) + (parseFloat(cur === 'ton' ? e.tonBuy  : e.usdtBuy)  || 0);
+            } else if (key === 'comm') {
+                va = parseFloat(cur === 'ton' ? d.tonBank  : d.usdtBank)  || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonBank  : e.usdtBank)  || 0;
+            } else if (key === 'gross') {
+                va = parseFloat(cur === 'ton' ? d.tonGross : d.usdtGross) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonGross : e.usdtGross) || 0;
+            } else if (key === 'share') {
+                va = parseFloat(cur === 'ton' ? d.tonShare : d.usdtShare) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonShare : e.usdtShare) || 0;
+            } else if (key === 'net') {
+                va = parseFloat(cur === 'ton' ? d.tonNet   : d.usdtNet)   || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonNet   : e.usdtNet)   || 0;
+            }
+
+            return sortState.dir * (va - vb);
+        });
+
+        rows.forEach(function(r) { tbody.appendChild(r); });
     }
 
     document.addEventListener('DOMContentLoaded', function() {
