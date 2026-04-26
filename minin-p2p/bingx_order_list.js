@@ -1,6 +1,6 @@
 // Order List Content Script (BingX P2P)
 (function () {
-    const REQUIRED_HOST = /bingx\.com$/;
+    const REQUIRED_HOST = /bingx\.com$|paycat\.com$/;
 
     let listObserver = null;
     let urlWatcher = null;
@@ -196,7 +196,7 @@
         const isAuth = await P2P.isAuthenticated();
         if (!isAuth) throw new Error('Не авторизован');
         const res = await P2P.makeAuthenticatedRequest(
-            `${P2P.API_BASE_URL}/api/order?id=${encodeURIComponent(orderId)}`,
+            `${P2P.API_BASE_URL}/api/order?id=${encodeURIComponent(orderId)}&exchangeType=5`,
             { method: 'GET' }
         );
         return await res.json();

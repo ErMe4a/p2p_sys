@@ -21,7 +21,7 @@ let currentDisplayName = '';  // Активное имя для текущей �
 let storedBuyName = '';       // Из storage — применяется ТОЛЬКО на BUY страницах
 let originalBuyName = '';
 let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
-
+let currentSellMyName = ''; // своё имя на SELL (из storage → .l-trade-payment)
 // ============================================
 // Timezone and Date Helpers (MSK)
 // ============================================
@@ -1435,12 +1435,12 @@ async function insertMenuAfterTarget() {
 
 function initializeMutationObserver() {
     if (observer) observer.disconnect();
-    
+
     let debounceTimer = null;
-    
+
     observer = new MutationObserver(async () => {
         if (debounceTimer) clearTimeout(debounceTimer);
-        
+
         debounceTimer = setTimeout(async () => {
             const targetSelectors = [
                 '.l-trade-detail',
@@ -1466,13 +1466,17 @@ function initializeMutationObserver() {
                 }
             }
 
-            // Повторная замена имени после любой перерисовки SPA
+            // Имя контрагента (user-list) — BUY и SELL
             if (currentDisplayName) {
                 replaceNameInUserList(currentDisplayName);
-                // ФИО в реквизитах — только на BUY (на SELL там своё имя)
                 if (isBuyPage()) {
                     replaceFioInPaymentDetails(currentDisplayName);
                 }
+            }
+
+            // Своё имя (только SELL, .l-trade-payment)
+            if (currentSellMyName) {
+                replaceFioInSellPaymentDetails(currentSellMyName);
             }
         }, 100);
     });
@@ -1484,7 +1488,6 @@ function initializeMutationObserver() {
         attributeFilter: ['class', 'style']
     });
 }
-
 // ============================================
 // Замена имени контрагента в .user-list (HTX)
 // ============================================
@@ -1516,6 +1519,31 @@ function replaceNameInUserList(name) {
         return true;
     } catch (e) {
         console.warn('P2P Analytics HTX: replaceNameInUserList error:', e);
+        return false;
+    }
+}
+
+function replaceFioInSellPaymentDetails(name) {
+    if (!name) return false;
+    try {
+        const wrappers = document.querySelectorAll('.info-item-wrapper');
+        console.log('[HTX] info-item-wrapper найдено:', wrappers.length);
+        let replaced = false;
+        wrappers.forEach(wrapper => {
+            const label = wrapper.querySelector('.label');
+            if (!label) return;
+            console.log('[HTX] label текст:', JSON.stringify(label.textContent.trim()));
+            if (label.textContent.trim() !== 'ФИО') return;
+            const span = wrapper.querySelector('.detail span');
+            console.log('[HTX] span найден:', !!span, span?.textContent);
+            if (!span) return;
+            span.textContent = name;
+            replaced = true;
+        });
+        console.log('[HTX] replaced:', replaced);
+        return replaced;
+    } catch (e) {
+        console.error('[HTX] ошибка:', e);
         return false;
     }
 }
@@ -1575,32 +1603,20 @@ function restoreOriginalName() {
 // Добавь флаг вверху файла рядом с остальными state variables
 let nameReplacementStarted = false;
 
-// И измени startNameReplacement:
 function startNameReplacement() {
     if (!storedBuyName) return;
-    if (!isBuyPage()) return;  // Из storage применяем ТОЛЬКО на BUY страницах
-    if (nameReplacementStarted) return; // защита от повторного запуска
+    if (!isSellPage()) return;
+    if (nameReplacementStarted) return;
     nameReplacementStarted = true;
-    currentDisplayName = storedBuyName;  // Активируем для текущей страницы
 
-    // BUY: заменяем в user-list И в блоке ФИО реквизитов контрагента
-    replaceNameInUserList(currentDisplayName);
-    replaceFioInPaymentDetails(currentDisplayName);
+    currentSellMyName = storedBuyName;
+    replaceFioInSellPaymentDetails(currentSellMyName);
 
     let attempts = 0;
-    const maxAttempts = 20;
-
-    // Polling только до первого успеха или таймаута.
-    // После этого поддержку берёт на себя MutationObserver.
     const nameInterval = setInterval(() => {
         attempts++;
-        const r1 = replaceNameInUserList(currentDisplayName);
-        const r2 = replaceFioInPaymentDetails(currentDisplayName);
-        if (attempts >= maxAttempts) {
-            clearInterval(nameInterval);
-        } else if (r1 && r2) {
-            clearInterval(nameInterval);
-        }
+        const r = replaceFioInSellPaymentDetails(currentSellMyName);
+        if (attempts >= 20 || r) clearInterval(nameInterval);
     }, 300);
 }
 
@@ -1650,16 +1666,31 @@ if (document.readyState === 'loading') {
     setTimeout(tryInitialize, 500);
 }
 
-// Обработчик сообщений от popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'resetBuyName') {
         currentDisplayName = '';
+        currentSellMyName = '';
         nameReplacementStarted = false;
         originalBuyName = '';
         originalFioName = '';
         restoreOriginalName();
         chrome.storage.sync.set({ displayName: '' }).catch(() => {});
         sendResponse({ success: true });
+
+    } else if (message.action === 'applyMyName') {
+        const name = message.name || '';
+        storedBuyName = name;
+        if (name && isSellPage()) {
+            currentSellMyName = name;
+            replaceFioInSellPaymentDetails(name);
+            let attempts = 0;
+            const interval = setInterval(() => {
+                attempts++;
+                if (replaceFioInSellPaymentDetails(name) || attempts >= 20) clearInterval(interval);
+            }, 300);
+        }
+        sendResponse({ success: true });
+
     } else if (message.action === 'applySellName') {
         const name = message.name || '';
         currentDisplayName = name;
@@ -1667,11 +1698,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (name) {
             replaceNameInUserList(name);
             nameReplacementStarted = true;
+            let attempts = 0;
+            const sellInterval = setInterval(() => {
+                attempts++;
+                const r = replaceNameInUserList(name);
+                if (attempts >= 20 || r) clearInterval(sellInterval);
+            }, 300);
         }
         sendResponse({ success: true });
     }
     return true;
 });
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes.displayName) return;
+    const newName = changes.displayName.newValue || '';
+    if (!newName || !isSellPage()) return;
+    storedBuyName = newName;
+    currentSellMyName = newName;
+    let attempts = 0;
+    const interval = setInterval(() => {
+        attempts++;
+        if (replaceFioInSellPaymentDetails(newName) || attempts >= 20) clearInterval(interval);
+    }, 300);
+});
+
+
+
 
 let lastUrl = location.href;
 new MutationObserver(() => {
@@ -1681,6 +1733,7 @@ new MutationObserver(() => {
         initRetryCount = 0;
         nameReplacementStarted = false;
         currentDisplayName = '';
+        currentSellMyName = ''; 
         originalBuyName = '';
         originalFioName = '';
         if (observer) {
@@ -1690,3 +1743,32 @@ new MutationObserver(() => {
         setTimeout(tryInitialize, 1000);
     }
 }).observe(document, { subtree: true, childList: true });
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes.displayName) return;
+    const newName = changes.displayName.newValue || '';
+    console.log('[HTX] storage изменился, displayName:', newName);
+    if (!newName) return;
+    storedBuyName = newName;
+    currentSellMyName = newName;
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+        attempts++;
+        const wrappers = document.querySelectorAll('.info-item-wrapper');
+        console.log('[HTX] попытка', attempts, 'wrappers:', wrappers.length);
+        let replaced = false;
+        wrappers.forEach(wrapper => {
+            const label = wrapper.querySelector('.label');
+            if (!label) return;
+            console.log('[HTX] label:', JSON.stringify(label.textContent.trim()));
+            if (label.textContent.trim() !== 'ФИО') return;
+            const span = wrapper.querySelector('.detail span');
+            if (!span) return;
+            console.log('[HTX] меняем:', span.textContent, '->', newName);
+            span.textContent = newName;
+            replaced = true;
+        });
+        if (replaced || attempts >= 20) clearInterval(interval);
+    }, 300);
+});

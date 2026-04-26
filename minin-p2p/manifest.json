@@ -35,7 +35,7 @@
       "run_at": "document_end"
     },
     {
-      "matches": ["*://*.bingx.com/*"],
+      "matches": ["*://*.paycat.com/*"],
       "js": ["auth.js", "order_api.js", "bingx.js","bingx_order_list.js"],
       "css": ["style.css"],
       "run_at": "document_end"

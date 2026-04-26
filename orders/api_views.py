@@ -19,14 +19,17 @@ EXCHANGE_ID_TO_NAME = {
     1: "Bybit",
     2: "HTX",
     3: "MEXC",
-    4: "Gate"
+    4: "Gate",
+    5: "BingX",
 }
 
 EXCHANGE_NAME_TO_ID = {
     "Bybit": 1, "BYBIT": 1,
     "HTX": 2,
     "MEXC": 3,
-    "Gate": 4, "GATE": 4
+    "Gate": 4, "GATE": 4,
+    "BingX": 5, "BINGX": 5,
+
 }
 
 def get_exchange_id(name):

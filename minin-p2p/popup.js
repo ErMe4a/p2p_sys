@@ -222,14 +222,14 @@ function showUserInfo(authData) {
     userId.textContent = authData.userId;
     hideError();
     
-    // Inject BUY/SELL name menus (collapsible)
     try {
         injectNameMenus();
     } catch (e) {
         console.warn('Failed to inject name menus:', e);
     }
 
-    // Load saved display name
+    autoBindSaveDisplayName(); // ← ДОБАВИТЬ ЭТУ СТРОКУ
+
     getDisplayName().then((name) => {
         if (displayNameInput) {
             displayNameInput.value = name || '';
@@ -297,7 +297,6 @@ authForm.addEventListener('submit', handleLogin);
 logoutBtn.addEventListener('click', handleLogout);
 
 // New: display name save handler
-autoBindSaveDisplayName();
 function autoBindSaveDisplayName() {
     if (!saveDisplayNameBtn) return;
     saveDisplayNameBtn.addEventListener('click', async (e) => {
@@ -305,6 +304,17 @@ function autoBindSaveDisplayName() {
         const name = (displayNameInput?.value || '').trim();
         const result = await saveDisplayName(name);
         if (result.success) {
+            try {
+                if (isExtensionContextValid() && chrome.tabs) {
+                    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                    const tabId = tabs && tabs[0] ? tabs[0].id : null;
+                    if (tabId) {
+                        chrome.tabs.sendMessage(tabId, { action: 'applyMyName', name }, () => {
+                            if (chrome.runtime.lastError) { /* ignore */ }
+                        });
+                    }
+                }
+            } catch (_) { /* ignore */ }
             showStatus('Имя сохранено');
         } else {
             showError(result.error || 'Не удалось сохранить имя');

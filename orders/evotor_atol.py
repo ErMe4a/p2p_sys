@@ -88,6 +88,8 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
         payment_address = "https://telegram.org/"
     elif "gate" in exchange_type:
         payment_address = "https://www.gate.com/"
+    elif "bingx" in exchange_type:
+        payment_address = "https://paycat.com/"
     else:
         payment_address = "https://www.bybit.com/"
 

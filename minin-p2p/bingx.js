@@ -1,7 +1,11 @@
+
+(function() {
+'use strict';
+
 // P2P Analytics Content Script (BingX)
 console.log('P2P Analytics: BingX content script loaded');
 
-const EXCHANGE_TYPE_BINGX = 4;
+const EXCHANGE_TYPE_BINGX = 5;
 
 // COMMISSION_TYPE_PERCENT и COMMISSION_TYPE_MONEY доступны глобально из order_api.js
 
@@ -911,7 +915,7 @@ async function initialize() {
     isInitializing = true;
 
     try {
-        const urlPattern = /bingx\.com.*\/order\/\d+/;
+        const urlPattern = /(bingx\.com|paycat\.com).*\/order\/\d+/;
         if (!urlPattern.test(window.location.href)) {
             cleanupResources();
             return;
@@ -1022,3 +1026,5 @@ try {
         }
     });
 } catch (e) {}
+
+})();
