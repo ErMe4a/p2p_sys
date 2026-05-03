@@ -1249,6 +1249,12 @@ def export_excel_report(request):
     # Запись строки ордера
     # =====================================================================
     def _get_cv_name(o):
+        # Если фильтр по валюте задан — используем его напрямую
+        if currency == 'TON':
+            return 'TON'
+        elif currency == 'USDT':
+            return 'USDT'
+        # Иначе определяем из чека
         receipt = o.receipt
         if not receipt or not isinstance(receipt, dict):
             return 'USDT'
@@ -1460,7 +1466,6 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
-
 
 def admin_login(request):
     """Вход в админку"""

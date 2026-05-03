@@ -126,13 +126,17 @@ function parseAmountFromPage() {
             for (const node of labelSpan.childNodes) {
                 if (node.nodeType === Node.TEXT_NODE) directText += node.textContent;
             }
-            if (directText.trim() === 'Сумма' || directText.trim() === 'Amount') {
-                const valueSpan = row.querySelector('.text1, .number');
-                const raw = valueSpan ? valueSpan.textContent.trim() : '';
-                if (raw) {
-                    const amount = extractNumber(raw);
-                    if (amount !== null) return amount.toString();
-                }
+            const trimmed = directText.trim();
+            // Берём только чистую "Сумма" без "продажи"/"покупки"
+            if (trimmed !== 'Сумма' && trimmed !== 'Amount') continue;
+            // Дополнительная защита — если внутри span есть .sell/.buy — пропускаем
+            if (labelSpan.querySelector('.sell, .buy')) continue;
+
+            const valueSpan = row.querySelector('.text1, .number');
+            const raw = valueSpan ? valueSpan.textContent.trim() : '';
+            if (raw) {
+                const amount = extractNumber(raw);
+                if (amount !== null) return amount.toString();
             }
         }
         return '';

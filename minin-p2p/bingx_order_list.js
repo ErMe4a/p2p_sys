@@ -108,11 +108,7 @@
         wrapper.style.gap = '2px';
         wrapper.style.marginTop = '2px';
 
-        if (statusDiv) {
-            flexContainer.insertBefore(wrapper, statusDiv);
-        } else {
-            flexContainer.appendChild(wrapper);
-        }
+        flexContainer.appendChild(wrapper);
 
         return { wrapper, savedBadge: null, receiptBadge: null };
     }
