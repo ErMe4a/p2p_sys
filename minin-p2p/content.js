@@ -769,6 +769,9 @@ function collectFormData() {
     formData.commissionType = commissionType ? commissionType.getAttribute('data-commission-type') || COMMISSION_TYPE_PERCENT : COMMISSION_TYPE_PERCENT;
     
     formData.screenshot = true;
+
+    const editCheckbox = document.querySelector('#edit-checkbox');
+    formData.manualEdit = editCheckbox ? editCheckbox.checked : false;
     
     const receiptCheckbox = document.querySelector('#check-checkbox');
     formData.hasReceipt = receiptCheckbox ? receiptCheckbox.checked : false;
@@ -914,7 +917,8 @@ async function handleFormSubmission() {
             
             price: formData.price,       
             quantity: formData.quantity, 
-            amount: formData.amount      
+            amount: formData.amount,
+            manualEdit: formData.manualEdit 
         };
         
         console.log('P2P Analytics: Order data prepared:', orderData);
@@ -1464,6 +1468,7 @@ function createCheckContent() {
     const checkContent = document.createElement('div');
     checkContent.className = 'p2p-analytics-check-content';
 
+    // ── Чекбокс ЧЕК ──────────────────────────────────────────────────────────
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
 
@@ -1480,6 +1485,26 @@ function createCheckContent() {
     checkboxWrapper.appendChild(checkbox);
     checkboxWrapper.appendChild(label);
 
+    // ── Чекбокс РЕДАКТИРОВАНИЕ ────────────────────────────────────────────────
+    const editCheckboxWrapper = document.createElement('div');
+    editCheckboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
+    editCheckboxWrapper.style.marginTop = '4px';
+
+    const editCheckbox = document.createElement('input');
+    editCheckbox.type = 'checkbox';
+    editCheckbox.className = 'p2p-analytics-checkbox';
+    editCheckbox.id = 'edit-checkbox';
+    editCheckbox.checked = false; // по умолчанию выключен
+
+    const editLabel = document.createElement('label');
+    editLabel.className = 'p2p-analytics-checkbox-label';
+    editLabel.htmlFor = 'edit-checkbox';
+    editLabel.textContent = 'Редактирование';
+
+    editCheckboxWrapper.appendChild(editCheckbox);
+    editCheckboxWrapper.appendChild(editLabel);
+
+    // ── Сообщения ─────────────────────────────────────────────────────────────
     const warningMessage = document.createElement('div');
     warningMessage.className = 'p2p-analytics-check-warning';
     warningMessage.style.display = 'none';
@@ -1490,6 +1515,7 @@ function createCheckContent() {
     successMessage.style.display = 'none';
     successMessage.textContent = 'Чек пробит';
 
+    // ── Поля ввода ────────────────────────────────────────────────────────────
     const conditionalInputs = document.createElement('div');
     conditionalInputs.className = 'p2p-analytics-conditional-inputs';
     conditionalInputs.style.display = 'none';
@@ -1511,20 +1537,71 @@ function createCheckContent() {
     conditionalInputs.appendChild(costInputWrapper);
 
     checkContent.appendChild(checkboxWrapper);
+    checkContent.appendChild(editCheckboxWrapper);
     checkContent.appendChild(warningMessage);
     checkContent.appendChild(successMessage);
     checkContent.appendChild(conditionalInputs);
 
+    // ── Хелперы блокировки/разблокировки полей курс/кол-во/стоимость ─────────
+    // Контакт всегда редактируемый — он не зависит от галочки редактирования
+
+    function lockFinancialFields() {
+        [rateInput, quantityInput, costInput].forEach(input => {
+            if (!input) return;
+            input.readOnly = true;
+            input.disabled = true;
+            input.classList.add('p2p-analytics-input-readonly');
+            input.style.backgroundColor = '';
+            input.style.color = '';
+            input.style.border = '';
+            input.style.boxShadow = '';
+        });
+    }
+
+    function unlockFinancialFields() {
+        [rateInput, quantityInput, costInput].forEach(input => {
+            if (!input) return;
+            input.readOnly = false;
+            input.disabled = false;
+            input.classList.remove('p2p-analytics-input-readonly');
+            // Подсветка — лёгкий жёлтый фон чтобы пользователь видел что поля активны
+            input.style.backgroundColor = '#fffbe6';
+            input.style.color = '';
+            input.style.border = '1px solid #f7a600';
+            input.style.boxShadow = '0 0 0 2px rgba(247,166,0,0.15)';
+        });
+    }
+
+    // ── Обработчик чекбокса РЕДАКТИРОВАНИЕ ───────────────────────────────────
+    editCheckbox.addEventListener('change', () => {
+        if (editCheckbox.checked) {
+            unlockFinancialFields();
+        } else {
+            lockFinancialFields();
+            // При снятии галочки — возвращаем данные из страницы (API данные)
+            waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
+        }
+    });
+
+    // ── Обработчик чекбокса ЧЕК ──────────────────────────────────────────────
+    checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+            conditionalInputs.style.display = 'block';
+        } else {
+            conditionalInputs.style.display = 'none';
+        }
+    });
+
     let receiptExists = false;
 
     const orderId = getOrderIdFromUrl();
-    const orderCheckPromise = orderId 
+    const orderCheckPromise = orderId
         ? checkOrderExists(orderId).catch(error => {
             console.error('P2P Analytics: Error checking order receipt:', error);
             return { success: false, exists: false };
         })
         : Promise.resolve({ success: false, exists: false });
-    
+
     const credentialsCheckPromise = checkEvotorCredentials().catch(error => {
         console.error('P2P Analytics: Error checking evotor credentials:', error);
         return false;
@@ -1532,23 +1609,27 @@ function createCheckContent() {
 
     Promise.all([orderCheckPromise, credentialsCheckPromise]).then(([orderResult, hasCredentials]) => {
         if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.receipt) {
+            // ── Чек уже пробит — всё только для чтения ───────────────────────
             receiptExists = true;
             checkbox.checked = true;
-            checkbox.disabled = true; 
+            checkbox.disabled = true;
             checkbox.classList.add('p2p-analytics-checkbox-disabled');
-            successMessage.style.display = 'block';
-            
-            conditionalInputs.style.display = 'block';
 
+            // Редактирование недоступно если чек уже пробит
+            editCheckbox.disabled = true;
+            editCheckbox.classList.add('p2p-analytics-checkbox-disabled');
+
+            successMessage.style.display = 'block';
+            conditionalInputs.style.display = 'block';
             conditionalInputs.style.opacity = '0.7';
             conditionalInputs.style.pointerEvents = 'none';
             conditionalInputs.style.filter = 'grayscale(100%)';
-            
+
             const receipt = orderResult.data.receipt;
-            
+
             const lockStyle = (input) => {
-                input.style.backgroundColor = '#333'; 
-                input.style.color = '#aaa'; 
+                input.style.backgroundColor = '#333';
+                input.style.color = '#aaa';
                 input.style.border = '1px solid #444';
             };
 
@@ -1559,7 +1640,6 @@ function createCheckContent() {
                 contactInput.classList.add('p2p-analytics-input-readonly');
                 lockStyle(contactInput);
             }
-            
             if (rateInput) {
                 rateInput.value = (receipt.price !== null && receipt.price !== undefined) ? receipt.price : '';
                 rateInput.readOnly = true;
@@ -1567,7 +1647,6 @@ function createCheckContent() {
                 rateInput.classList.add('p2p-analytics-input-readonly');
                 lockStyle(rateInput);
             }
-            
             if (quantityInput) {
                 quantityInput.value = (receipt.amount !== null && receipt.amount !== undefined) ? receipt.amount : '';
                 quantityInput.readOnly = true;
@@ -1575,7 +1654,6 @@ function createCheckContent() {
                 quantityInput.classList.add('p2p-analytics-input-readonly');
                 lockStyle(quantityInput);
             }
-            
             if (costInput) {
                 costInput.value = (receipt.sum !== null && receipt.sum !== undefined) ? receipt.sum : '';
                 costInput.readOnly = true;
@@ -1583,46 +1661,41 @@ function createCheckContent() {
                 costInput.classList.add('p2p-analytics-input-readonly');
                 lockStyle(costInput);
             }
-            
-            console.log('P2P Analytics: Receipt already exists for this order, showing readonly data');
+
+            console.log('P2P Analytics: Receipt already exists, showing readonly data');
+
         } else if (!hasCredentials) {
+            // ── Нет учётных данных Эвотор ─────────────────────────────────────
             checkbox.disabled = true;
             checkbox.classList.add('p2p-analytics-checkbox-disabled');
+            editCheckbox.disabled = true;
+            editCheckbox.classList.add('p2p-analytics-checkbox-disabled');
             warningMessage.style.display = 'block';
             console.log('P2P Analytics: Checkbox disabled - evotor credentials not filled');
+
         } else {
-            checkbox.checked = true;
+            // ── Нормальный режим ──────────────────────────────────────────────
+            checkbox.checked = true;       // чек по умолчанию включён
+            editCheckbox.checked = false;  // редактирование по умолчанию выключено
             conditionalInputs.style.display = 'block';
-            
+
+            // Финансовые поля заблокированы по умолчанию (редактирование выключено)
+            lockFinancialFields();
+
+            // Контакт всегда доступен
             if (contactInput) {
                 contactInput.readOnly = false;
                 contactInput.disabled = false;
                 contactInput.classList.remove('p2p-analytics-input-readonly');
             }
-            if (rateInput) {
-                rateInput.readOnly = false;
-                rateInput.disabled = false;
-                rateInput.classList.remove('p2p-analytics-input-readonly');
-            }
-            if (quantityInput) {
-                quantityInput.readOnly = false;
-                quantityInput.disabled = false;
-                quantityInput.classList.remove('p2p-analytics-input-readonly');
-            }
-            if (costInput) {
-                costInput.readOnly = false;
-                costInput.disabled = false;
-                costInput.classList.remove('p2p-analytics-input-readonly');
-            }
-            
-            console.log('P2P Analytics: Checkbox enabled and checked by default - evotor credentials are present');
-            console.log('P2P Analytics: Auto-filling receipt fields...');
-            
+
+            console.log('P2P Analytics: Normal mode — check ON, edit OFF');
+
             if (contactInput) {
                 contactInput.value = generateRandomGmail();
-                console.log('P2P Analytics: Contact filled:', contactInput.value);
             }
-            
+
+            // Заполняем курс/кол-во/стоимость из страницы (API данные)
             waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
         }
     });

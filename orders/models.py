@@ -82,6 +82,10 @@ class Order(models.Model):
         default=False,
         verbose_name="Данные верифицированы через API"
     )
+    is_manual = models.BooleanField(
+        default=False,
+        verbose_name="Данные введены вручную пользователем"
+    )
 
     def __str__(self):
         return f"{self.operation_type} - {self.external_id}"

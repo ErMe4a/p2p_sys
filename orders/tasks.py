@@ -3,7 +3,7 @@ from celery import shared_task
 from .models import User, Order
 from .bybit_api import sync_bybit_orders
 from .mexc_api import sync_mexc_orders
-
+from .models import UnprocessedOrder
 logger = logging.getLogger(__name__)
 
 
@@ -104,27 +104,36 @@ def verify_and_receipt_later(self, order_id: int):
     )
 
     if api_data:
-        o.price          = api_data["price"]
-        o.cost           = api_data["cost"]
-        o.amount         = api_data["amount"]
-        o.operation_type = api_data["operation_type"]
-        o.is_verified    = True
-        o.save(update_fields=["price", "cost", "amount", "operation_type", "is_verified"])
+        # ── Если пользователь вручную отредактировал данные — не перезаписываем ──
+        if o.is_manual:
+            logger.info(
+                "verify_and_receipt_later: Order %d — is_manual=True, "
+                "данные из API игнорируем, оставляем данные пользователя "
+                "price=%s cost=%s amount=%s",
+                order_id, o.price, o.cost, o.amount,
+            )
+            o.is_verified = True
+            o.save(update_fields=["is_verified"])
+        else:
+            o.price          = api_data["price"]
+            o.cost           = api_data["cost"]
+            o.amount         = api_data["amount"]
+            o.operation_type = api_data["operation_type"]
+            o.is_verified    = True
+            o.save(update_fields=["price", "cost", "amount", "operation_type", "is_verified"])
 
-        # Удаляем из необработанных только после успешной верификации
-        # Для MEXC это критично — до этого момента данные ещё могут понадобиться
-        from .models import UnprocessedOrder
+
         UnprocessedOrder.objects.filter(
             user=o.user,
             order_id=o.external_id,
         ).delete()
 
         logger.info(
-            "verify_and_receipt_later: Order %d верифицирован — price=%s cost=%s amount=%s type=%s",
-            order_id, api_data["price"], api_data["cost"], api_data["amount"], api_data["operation_type"],
+            "verify_and_receipt_later: Order %d верифицирован (manual=%s)",
+            order_id, o.is_manual,
         )
         _try_send_receipt(o)
-
+        
     else:
         if attempt < 5:
             countdown = 30 * (2 ** (attempt - 1))  # 30 → 60 → 120 → 240 сек

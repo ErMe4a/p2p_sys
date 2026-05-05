@@ -142,10 +142,9 @@ def order(request):
     if not external_id:
         return Response({"message": "orderId required"}, status=400)
 
-    exchange_name   = get_exchange_name(data.get("exchangeType", 1))
+    exchange_name = get_exchange_name(data.get("exchangeType", 1))
 
     # ── Проверка валидности ключей биржи ─────────────────────────────────────
-    # Если ключ протух — не даём пробивать ордер, расширение покажет сообщение
     if exchange_name == "Bybit" and not request.user.bybit_key_valid:
         return Response({
             "success": False,
@@ -161,6 +160,9 @@ def order(request):
     commission      = data.get("commission") or 0
     commission_type = data.get("commissionType", "PERCENT")
 
+    # ── Флаг ручного редактирования ──────────────────────────────────────────
+    is_manual = bool(data.get("manualEdit", False))
+
     created_at = None
     if "createdAt" in data:
         created_at = parse_datetime(data.get("createdAt"))
@@ -175,44 +177,52 @@ def order(request):
     elif isinstance(details_obj, int):
         bank = BankDetail.objects.filter(id=details_obj, is_deleted=False).first()
 
-    # Данные чека из расширения (contact, sum и тд) — сохраним для отложенного чека
+    # Данные чека из расширения (contact, sum и тд)
     receipt_data_raw = data.get("receipt")
     receipt_dict = receipt_data_raw if isinstance(receipt_data_raw, dict) else {}
 
-    # ── Получаем финансовые данные из API биржи ───────────────────────────────
-    # Bybit  → прямой запрос get_order_details()
-    # MEXC   → ищем в UnprocessedOrder
-    # Другие → None (HTX, Gate, Telegram)
-    api_data = get_order_from_exchange(
-        user=request.user,
-        order_id=external_id,
-        exchange_name=exchange_name,
-        order_date=created_at,  # дата ордера на бирже — для точного поиска в MEXC
-    )
-
-    if api_data:
-        price       = api_data["price"]
-        cost        = api_data["cost"]
-        amount      = api_data["amount"]
-        op_type     = api_data["operation_type"]
-        is_verified = True
-        logger.info(
-            "Order %s [%s]: данные из API — price=%s cost=%s amount=%s type=%s",
-            external_id, exchange_name, price, cost, amount, op_type,
-        )
-    else:
-        # HTX / Gate / Telegram — берём из расширения как раньше
-        # Bybit / MEXC — API не ответил, сохраняем с нулями, чек откладываем
+    # ── Получаем финансовые данные ────────────────────────────────────────────
+    if is_manual:
+        # Пользователь отредактировал данные вручную — берём из плашки, API не трогаем
         price       = data.get("price") or receipt_dict.get("price") or 0
         cost        = data.get("amount") or receipt_dict.get("sum") or 0
         amount      = data.get("quantity") or receipt_dict.get("amount") or 0
         op_type     = str(data.get("type") or "BUY").strip().upper()
-        is_verified = exchange_name not in ("Bybit", "MEXC")  # для других бирж верифицировать не нужно
-        if not is_verified:
-            logger.warning(
-                "Order %s [%s]: API не вернул данные — сохраняем с данными расширения, чек откладываем.",
-                external_id, exchange_name,
+        is_verified = True  # данные финальные, чек бьём сразу без Celery
+        logger.info(
+            "Order %s [%s]: ручное редактирование — price=%s cost=%s amount=%s type=%s",
+            external_id, exchange_name, price, cost, amount, op_type,
+        )
+    else:
+        # Стандартный путь — тянем данные из API биржи
+        api_data = get_order_from_exchange(
+            user=request.user,
+            order_id=external_id,
+            exchange_name=exchange_name,
+            order_date=created_at,
+        )
+
+        if api_data:
+            price       = api_data["price"]
+            cost        = api_data["cost"]
+            amount      = api_data["amount"]
+            op_type     = api_data["operation_type"]
+            is_verified = True
+            logger.info(
+                "Order %s [%s]: данные из API — price=%s cost=%s amount=%s type=%s",
+                external_id, exchange_name, price, cost, amount, op_type,
             )
+        else:
+            price       = data.get("price") or receipt_dict.get("price") or 0
+            cost        = data.get("amount") or receipt_dict.get("sum") or 0
+            amount      = data.get("quantity") or receipt_dict.get("amount") or 0
+            op_type     = str(data.get("type") or "BUY").strip().upper()
+            is_verified = exchange_name not in ("Bybit", "MEXC")
+            if not is_verified:
+                logger.warning(
+                    "Order %s [%s]: API не вернул данные — сохраняем с данными расширения, чек откладываем.",
+                    external_id, exchange_name,
+                )
 
     if op_type not in ("SELL", "BUY"):
         op_type = "BUY"
@@ -243,6 +253,7 @@ def order(request):
         o.cost            = cost
         o.amount          = amount
         o.is_verified     = is_verified
+        o.is_manual       = is_manual  # <- новое поле
 
         # Сохраняем данные чека (contact, sum и тд) для verify_and_receipt_later
         if receipt_dict and not (o.receipt and o.receipt.get("uuid")):
@@ -277,9 +288,7 @@ def order(request):
     receipt_debug = None
 
     if not is_verified:
-        # Bybit/MEXC — данных из API нет, откладываем
-        # UnprocessedOrder НЕ удаляем — verify_and_receipt_later будет искать там для MEXC
-        # MEXC ждёт дольше (120 сек) чтобы Celery успел подтянуть ордер
+        # Bybit/MEXC — данных из API нет, откладываем в Celery
         from .tasks import verify_and_receipt_later
         countdown = 120 if exchange_name == "MEXC" else 30
         verify_and_receipt_later.apply_async(
@@ -288,11 +297,11 @@ def order(request):
             queue="receipt",
         )
         logger.info(
-            "Order %s [%s]: чек отложен на %d сек, UnprocessedOrder сохранён до верификации.",
+            "Order %s [%s]: чек отложен на %d сек.",
             external_id, exchange_name, countdown,
         )
     else:
-        # Данные верифицированы — удаляем из необработанных и бьём чек
+        # Данные верифицированы (API или ручной режим) — бьём чек сразу
         UnprocessedOrder.objects.filter(user=request.user, order_id=external_id).delete()
 
         if should_make_receipt(data):
@@ -304,6 +313,7 @@ def order(request):
         "success": True,
         "id": o.id,
         "verified": is_verified,
+        "manual": is_manual,
         "receipt": {
             "enabled": bool(receipt_debug),
             "status": getattr(receipt_debug, "status", None),
