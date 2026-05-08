@@ -590,7 +590,8 @@ function createSubmitButton() {
                 receipt: existingReceipt ? existingReceipt : (formData.hasReceipt ? formData.receipt : null),
                 createdAt: formData.createdAt,
                 type: formData.type,
-                exchangeType: EXCHANGE_TYPE_MEXC // MEXC
+                exchangeType: EXCHANGE_TYPE_MEXC,
+                manualEdit: formData.manualEdit, // MEXC
             };
 
             const result = await saveOrder(orderData);
@@ -1399,7 +1400,7 @@ function createCheckContent() {
     const checkContent = document.createElement('div');
     checkContent.className = 'p2p-analytics-check-content';
 
-    // === 1. Создаем инпуты (Курс, Кол-во, Стоимость) ===
+    // === 1. Постоянные инпуты (Курс, Кол-во, Стоимость) ===
     const permanentInputs = document.createElement('div');
     permanentInputs.className = 'p2p-analytics-permanent-inputs';
 
@@ -1418,7 +1419,7 @@ function createCheckContent() {
     checkContent.appendChild(permanentInputs);
     checkContent.appendChild(createSeparator());
 
-    // === 2. Чекбокс ===
+    // === 2. Чекбокс ЧЕК ===
     const checkboxWrapper = document.createElement('div');
     checkboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
 
@@ -1435,14 +1436,32 @@ function createCheckContent() {
     checkboxWrapper.appendChild(checkbox);
     checkboxWrapper.appendChild(label);
 
-    // === НОВОЕ: Выбор типа (Приход/Расход) ===
+    // === 3. Чекбокс РЕДАКТИРОВАНИЕ ===
+    const editCheckboxWrapper = document.createElement('div');
+    editCheckboxWrapper.className = 'p2p-analytics-checkbox-wrapper';
+    editCheckboxWrapper.style.marginTop = '4px';
+
+    const editCheckbox = document.createElement('input');
+    editCheckbox.type = 'checkbox';
+    editCheckbox.className = 'p2p-analytics-checkbox';
+    editCheckbox.id = 'edit-checkbox';
+    editCheckbox.checked = false;
+
+    const editLabel = document.createElement('label');
+    editLabel.className = 'p2p-analytics-checkbox-label';
+    editLabel.htmlFor = 'edit-checkbox';
+    editLabel.textContent = 'Редактирование';
+
+    editCheckboxWrapper.appendChild(editCheckbox);
+    editCheckboxWrapper.appendChild(editLabel);
+
+    // === 4. Выбор типа (Приход/Расход) ===
     const typeSelector = document.createElement('div');
     typeSelector.className = 'p2p-analytics-type-selector';
-    typeSelector.style.display = 'none'; 
+    typeSelector.style.display = 'none';
 
-    // 1. СЛЕВА: Приход (Продажа/SELL) - КРАСНЫЙ
     const labelSell = document.createElement('label');
-    labelSell.className = 'p2p-analytics-radio-label type-sell'; 
+    labelSell.className = 'p2p-analytics-radio-label type-sell';
     const radioSell = document.createElement('input');
     radioSell.type = 'radio';
     radioSell.name = 'order-type-selection';
@@ -1450,9 +1469,8 @@ function createCheckContent() {
     labelSell.appendChild(radioSell);
     labelSell.appendChild(document.createTextNode('Приход (Продажа)'));
 
-    // 2. СПРАВА: Расход (Покупка/BUY) - ЗЕЛЕНЫЙ
     const labelBuy = document.createElement('label');
-    labelBuy.className = 'p2p-analytics-radio-label type-buy'; 
+    labelBuy.className = 'p2p-analytics-radio-label type-buy';
     const radioBuy = document.createElement('input');
     radioBuy.type = 'radio';
     radioBuy.name = 'order-type-selection';
@@ -1463,7 +1481,7 @@ function createCheckContent() {
     typeSelector.appendChild(labelSell);
     typeSelector.appendChild(labelBuy);
 
-    // Сообщения
+    // === Сообщения ===
     const warningMessage = document.createElement('div');
     warningMessage.className = 'p2p-analytics-check-warning';
     warningMessage.style.display = 'none';
@@ -1474,7 +1492,7 @@ function createCheckContent() {
     successMessage.style.display = 'none';
     successMessage.textContent = 'Чек пробит (данные зафиксированы)';
 
-    // === 3. Условные инпуты (Контакт) ===
+    // === 5. Условные инпуты (Контакт) ===
     const conditionalInputs = document.createElement('div');
     conditionalInputs.className = 'p2p-analytics-conditional-inputs';
     conditionalInputs.style.display = 'none';
@@ -1482,8 +1500,9 @@ function createCheckContent() {
     const contactInputWrapper = createInput('Контакт', 'contact-input', 'Введите контакт');
     const contactInput = contactInputWrapper.querySelector('#contact-input');
     conditionalInputs.appendChild(contactInputWrapper);
-    
+
     checkContent.appendChild(checkboxWrapper);
+    checkContent.appendChild(editCheckboxWrapper);
     checkContent.appendChild(typeSelector);
     checkContent.appendChild(warningMessage);
     checkContent.appendChild(successMessage);
@@ -1491,33 +1510,77 @@ function createCheckContent() {
 
     let receiptExists = false;
 
-    // === ЛОГИКА ===
-    (async () => {
-        // Автоопределение
-        const detectedType = detectOrderType();
-        
-        if (detectedType === 'sell') {
-            radioSell.checked = true;
-        } else if (detectedType === 'buy') {
-            radioBuy.checked = true; 
+    // === Хелперы блокировки финансовых полей ===
+    function lockFinancialFields() {
+        [rateInput, quantityInput, costInput].forEach(input => {
+            if (!input) return;
+            input.readOnly = true;
+            input.disabled = true;
+            input.classList.add('p2p-analytics-input-readonly');
+            input.style.removeProperty('background-color');
+            input.style.removeProperty('border');
+            input.style.removeProperty('box-shadow');
+            input.style.removeProperty('color');
+        });
+    }
+
+    function unlockFinancialFields() {
+        [rateInput, quantityInput, costInput].forEach(input => {
+            if (!input) return;
+            input.readOnly = false;
+            input.disabled = false;
+            input.classList.remove('p2p-analytics-input-readonly');
+            input.style.backgroundColor = '#fffbe6';
+            input.style.color = '';
+            input.style.border = '1px solid #0B8E5A';
+            input.style.boxShadow = '0 0 0 2px rgba(11,142,90,0.15)';
+        });
+    }
+
+    // === Обработчик чекбокса РЕДАКТИРОВАНИЕ ===
+    editCheckbox.addEventListener('change', () => {
+        if (editCheckbox.checked) {
+            unlockFinancialFields();
         } else {
-            // Если не определили, не ставим ничего и показываем блок выбора
-            // Пользователь сам увидит, что галочки нет
-            if (checkbox.checked) {
-                typeSelector.style.border = '1px solid #f7a600'; // Подсветка желтым
+            lockFinancialFields();
+            // При снятии галочки — возвращаем данные со страницы
+            if (rateInput) rateInput.value = parsePriceFromPage();
+            if (quantityInput) quantityInput.value = parseQuantityFromPage();
+            if (costInput) costInput.value = parseAmountFromPage();
+        }
+    });
+
+    // === Обработчик чекбокса ЧЕК ===
+    checkbox.addEventListener('change', () => {
+        if (!receiptExists) {
+            const isChecked = checkbox.checked;
+            conditionalInputs.style.display = isChecked ? 'block' : 'none';
+            typeSelector.style.display = isChecked ? 'flex' : 'none';
+            if (isChecked && contactInput && !contactInput.value) {
+                contactInput.value = generateRandomGmail();
             }
         }
+    });
+
+    // === ЛОГИКА ИНИЦИАЛИЗАЦИИ ===
+    (async () => {
+        const detectedType = detectOrderType();
+        if (detectedType === 'sell') radioSell.checked = true;
+        else if (detectedType === 'buy') radioBuy.checked = true;
 
         const orderId = await getOrderId();
-        
-        const orderCheckPromise = orderId 
+
+        const orderCheckPromise = orderId
             ? checkOrderExists(orderId).catch(() => ({ success: false, exists: false }))
             : Promise.resolve({ success: false, exists: false });
-        
-        const credentialsCheckPromise = (window.P2POrderAPI ? window.P2POrderAPI.checkEvotorCredentials() : checkEvotorCredentials()).catch(() => false);
+
+        const credentialsCheckPromise = (window.P2POrderAPI
+            ? window.P2POrderAPI.checkEvotorCredentials()
+            : checkEvotorCredentials()
+        ).catch(() => false);
 
         Promise.all([orderCheckPromise, credentialsCheckPromise]).then(([orderResult, hasCredentials]) => {
-            
+
             const lockInputStyle = (input) => {
                 input.style.backgroundColor = '#333';
                 input.style.color = '#aaa';
@@ -1531,18 +1594,21 @@ function createCheckContent() {
             };
 
             if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.receipt) {
+                // ── Чек уже пробит — всё только для чтения ───────────────────
                 receiptExists = true;
                 const receipt = orderResult.data.receipt;
 
                 checkbox.checked = true;
                 checkbox.disabled = true;
                 checkbox.classList.add('p2p-analytics-checkbox-disabled');
-                
+
+                editCheckbox.disabled = true;
+                editCheckbox.classList.add('p2p-analytics-checkbox-disabled');
+
                 typeSelector.style.display = 'flex';
                 radioBuy.disabled = true;
                 radioSell.disabled = true;
 
-                // Ставим тип из базы
                 const orderType = orderResult.data.type || 'BUY';
                 if (orderType === 'SELL') radioSell.checked = true;
                 else radioBuy.checked = true;
@@ -1556,8 +1622,8 @@ function createCheckContent() {
 
                 const fields = [
                     { el: rateInput, val: receipt.price },
-                    { el: quantityInput, val: receipt.amount }, 
-                    { el: costInput, val: receipt.sum },        
+                    { el: quantityInput, val: receipt.amount },
+                    { el: costInput, val: receipt.sum },
                     { el: contactInput, val: receipt.contact }
                 ];
 
@@ -1572,29 +1638,43 @@ function createCheckContent() {
                 });
 
             } else {
+                // ── Нормальный режим ──────────────────────────────────────────
                 if (orderResult.success && orderResult.exists && orderResult.data) {
                     const order = orderResult.data;
+
+                    // Данные из БД приоритетнее страницы
                     rateInput.value = order.price || parsePriceFromPage();
                     quantityInput.value = order.quantity || parseQuantityFromPage();
                     if (costInput) costInput.value = order.amount || parseAmountFromPage();
-                    
+
                     if (order.type === 'SELL') radioSell.checked = true;
                     else if (order.type === 'BUY') radioBuy.checked = true;
+
+                    // Восстанавливаем состояние галочки редактирования из БД
+                    if (order.isManual) {
+                        editCheckbox.checked = true;
+                        unlockFinancialFields();
+                        console.log('P2P Analytics MEXC: Restored manualEdit=true from DB');
+                    } else {
+                        editCheckbox.checked = false;
+                        lockFinancialFields();
+                    }
+
                 } else {
+                    // Ордера в БД нет — берём со страницы, поля заблокированы
                     rateInput.value = parsePriceFromPage();
                     quantityInput.value = parseQuantityFromPage();
                     if (costInput) costInput.value = parseAmountFromPage();
+                    lockFinancialFields();
                 }
 
-                [rateInput, quantityInput, costInput, contactInput].forEach(el => {
-                    if (el) {
-                        el.readOnly = false;
-                        el.disabled = false;
-                        el.classList.remove('p2p-analytics-input-readonly');
-                        el.style.pointerEvents = 'auto';
-                    }
-                });
-                
+                // Контакт всегда доступен
+                if (contactInput) {
+                    contactInput.readOnly = false;
+                    contactInput.disabled = false;
+                    contactInput.classList.remove('p2p-analytics-input-readonly');
+                }
+
                 permanentInputs.style.pointerEvents = 'auto';
                 permanentInputs.style.opacity = '1';
                 permanentInputs.style.filter = 'none';
@@ -1602,14 +1682,16 @@ function createCheckContent() {
                 if (!hasCredentials) {
                     checkbox.disabled = true;
                     checkbox.classList.add('p2p-analytics-checkbox-disabled');
+                    editCheckbox.disabled = true;
+                    editCheckbox.classList.add('p2p-analytics-checkbox-disabled');
                     warningMessage.style.display = 'block';
                 } else {
                     checkbox.checked = true;
                     checkbox.disabled = false;
-                    
+
                     typeSelector.style.display = 'flex';
                     conditionalInputs.style.display = 'block';
-                    
+
                     if (contactInput && !contactInput.value) {
                         contactInput.value = generateRandomGmail();
                     }
@@ -1617,107 +1699,83 @@ function createCheckContent() {
             }
         });
     })();
-    
-    checkbox.addEventListener('change', () => {
-        if (!receiptExists) {
-            const isChecked = checkbox.checked;
-            conditionalInputs.style.display = isChecked ? 'block' : 'none';
-            typeSelector.style.display = isChecked ? 'flex' : 'none';
-
-            if (isChecked && contactInput && !contactInput.value) {
-                contactInput.value = generateRandomGmail();
-            }
-        }
-    });
 
     return checkContent;
 }
-
 // Function to collect form data
 
 function collectFormData() {
     const formData = {};
-    
-    // Банк
+
     const bankButton = document.querySelector('.p2p-analytics-button .p2p-analytics-button-text');
     const selectedBankId = bankButton ? bankButton.getAttribute('data-bank-id') : null;
     formData.bank = bankButton ? bankButton.textContent : null;
     formData.bankId = selectedBankId ? parseInt(selectedBankId) : null;
-    
-    // Комиссия
+
     const commissionInput = document.querySelector('.p2p-analytics-commission-input');
     const commissionType = document.querySelector('.p2p-analytics-suffix-text');
     formData.commission = commissionInput ? parseFloat(commissionInput.value) : null;
     formData.commissionType = commissionType ? commissionType.getAttribute('data-commission-type') || COMMISSION_TYPE_PERCENT : COMMISSION_TYPE_PERCENT;
-    
+
     formData.screenshot = true;
-    
-    // Цифры (Price, Amount, Quantity)
+
+    // ── Флаг ручного редактирования ──────────────────────────────────────────
+    const editCheckbox = document.querySelector('#edit-checkbox');
+    formData.manualEdit = editCheckbox ? editCheckbox.checked : false;
+
     const rateInput = document.querySelector('#rate-input');
     const quantityInput = document.querySelector('#quantity-input');
-    const costInput = document.querySelector('#cost-input'); // Рубли
-    
+    const costInput = document.querySelector('#cost-input');
+
     const parsedPrice = parseNumberOrNull(rateInput?.value);
-    const parsedAmount = parseNumberOrNull(costInput?.value); // Рубли
-    const parsedQuantity = parseNumberOrNull(quantityInput?.value); // Крипта
+    const parsedAmount = parseNumberOrNull(costInput?.value);
+    const parsedQuantity = parseNumberOrNull(quantityInput?.value);
 
     formData.price = (parsedPrice !== null && !isNaN(parsedPrice)) ? parsedPrice : 0;
-    formData.amount = (parsedAmount !== null && !isNaN(parsedAmount)) ? parsedAmount : 0;   
+    formData.amount = (parsedAmount !== null && !isNaN(parsedAmount)) ? parsedAmount : 0;
     formData.quantity = (parsedQuantity !== null && !isNaN(parsedQuantity)) ? parseFloat(parsedQuantity.toFixed(3)) : 0;
-    
-    // Логика Чека
+
     const receiptCheckbox = document.querySelector('#check-checkbox');
     formData.hasReceipt = receiptCheckbox ? receiptCheckbox.checked : false;
-    
-    // === ВАЛИДАЦИЯ ТИПА ===
+
     const selectedType = document.querySelector('input[name="order-type-selection"]:checked');
-    
     if (selectedType) {
         formData.type = selectedType.value;
     } else {
-        // Если радио не выбрано, пробуем авто-детект
         const orderInfo = detectOrderType();
         if (orderInfo !== 'unknown') {
             formData.type = orderInfo.toUpperCase();
         } else {
-            // Если и авто-детект не сработал -> ОШИБКА или дефолт
-            // Лучше вернуть null и проверить это при отправке
             formData.type = 'UNKNOWN';
         }
     }
-    
-    // Если чек включен, ТИП ОБЯЗАН БЫТЬ ВЫБРАН
+
     if (formData.hasReceipt && (!formData.type || formData.type === 'UNKNOWN')) {
-        // Подсвечиваем ошибку визуально
         const selector = document.querySelector('.p2p-analytics-type-selector');
         if (selector) selector.style.border = '2px solid red';
         showNotification('ОШИБКА: Выберите тип сделки (Приход/Расход)!', 'error');
-        // Возвращаем флаг ошибки, который можно проверить в handleFormSubmission
-        formData.validationError = true; 
+        formData.validationError = true;
     }
 
     if (formData.hasReceipt) {
         const contactInput = document.querySelector('#contact-input');
         let contactValue = contactInput ? contactInput.value : '';
-        
         if (!contactValue || contactValue.trim() === '') {
-            contactValue = generateRandomGmail(); 
+            contactValue = generateRandomGmail();
         }
-        
         formData.receipt = {
             contact: contactValue,
-            price: formData.price,    
-            amount: formData.quantity, 
-            sum: formData.amount,       
+            price: formData.price,
+            amount: formData.quantity,
+            sum: formData.amount,
         };
     } else {
         formData.receipt = null;
     }
-    
-    // Добавляем дату создания
+
     const orderInfo = parseOrderInfo();
     formData.createdAt = orderInfo.createdAt;
-    
+
     return formData;
 }
 

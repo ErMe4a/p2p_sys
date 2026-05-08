@@ -132,7 +132,8 @@ def order(request):
             "price": str(getattr(o, "price", 0)),
             "amount": str(getattr(o, "cost", 0)),
             "quantity": str(getattr(o, "amount", 0)),
-            "receipt": receipt_data
+            "receipt": receipt_data,
+            "isManual": getattr(o, "is_manual", False),
         })
 
     # === POST ===

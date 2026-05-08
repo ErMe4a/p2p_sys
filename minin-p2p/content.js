@@ -28,7 +28,8 @@ const FIXED_BANKS = [
 ];
 // Helper to detect if we're on merchant-admin page
 function isMerchantAdminPage() {
-    return /merchant-admin/i.test(window.location.href);
+    // Проверяем pathname, а не весь href — защита от совпадений в параметрах/хэше
+    return /\/merchant-admin/i.test(window.location.pathname);
 }
 
 // New: helpers to detect order type on page (locale-agnostic)
@@ -1494,7 +1495,7 @@ function createCheckContent() {
     editCheckbox.type = 'checkbox';
     editCheckbox.className = 'p2p-analytics-checkbox';
     editCheckbox.id = 'edit-checkbox';
-    editCheckbox.checked = false; // по умолчанию выключен
+    editCheckbox.checked = false;
 
     const editLabel = document.createElement('label');
     editLabel.className = 'p2p-analytics-checkbox-label';
@@ -1542,19 +1543,17 @@ function createCheckContent() {
     checkContent.appendChild(successMessage);
     checkContent.appendChild(conditionalInputs);
 
-    // ── Хелперы блокировки/разблокировки полей курс/кол-во/стоимость ─────────
-    // Контакт всегда редактируемый — он не зависит от галочки редактирования
-
+    // ── Хелперы блокировки/разблокировки ─────────────────────────────────────
     function lockFinancialFields() {
         [rateInput, quantityInput, costInput].forEach(input => {
             if (!input) return;
             input.readOnly = true;
             input.disabled = true;
             input.classList.add('p2p-analytics-input-readonly');
-            input.style.backgroundColor = '';
-            input.style.color = '';
-            input.style.border = '';
-            input.style.boxShadow = '';
+            input.style.removeProperty('background-color');
+            input.style.removeProperty('border');
+            input.style.removeProperty('box-shadow');
+            input.style.removeProperty('color');
         });
     }
 
@@ -1564,7 +1563,6 @@ function createCheckContent() {
             input.readOnly = false;
             input.disabled = false;
             input.classList.remove('p2p-analytics-input-readonly');
-            // Подсветка — лёгкий жёлтый фон чтобы пользователь видел что поля активны
             input.style.backgroundColor = '#fffbe6';
             input.style.color = '';
             input.style.border = '1px solid #f7a600';
@@ -1578,7 +1576,6 @@ function createCheckContent() {
             unlockFinancialFields();
         } else {
             lockFinancialFields();
-            // При снятии галочки — возвращаем данные из страницы (API данные)
             waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
         }
     });
@@ -1608,6 +1605,7 @@ function createCheckContent() {
     });
 
     Promise.all([orderCheckPromise, credentialsCheckPromise]).then(([orderResult, hasCredentials]) => {
+
         if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.receipt) {
             // ── Чек уже пробит — всё только для чтения ───────────────────────
             receiptExists = true;
@@ -1615,7 +1613,6 @@ function createCheckContent() {
             checkbox.disabled = true;
             checkbox.classList.add('p2p-analytics-checkbox-disabled');
 
-            // Редактирование недоступно если чек уже пробит
             editCheckbox.disabled = true;
             editCheckbox.classList.add('p2p-analytics-checkbox-disabled');
 
@@ -1675,28 +1672,33 @@ function createCheckContent() {
 
         } else {
             // ── Нормальный режим ──────────────────────────────────────────────
-            checkbox.checked = true;       // чек по умолчанию включён
-            editCheckbox.checked = false;  // редактирование по умолчанию выключено
+            checkbox.checked = true;
+            editCheckbox.checked = false;
             conditionalInputs.style.display = 'block';
 
-            // Финансовые поля заблокированы по умолчанию (редактирование выключено)
-            lockFinancialFields();
+            // Восстанавливаем isManual из БД
+            if (orderResult.success && orderResult.exists && orderResult.data && orderResult.data.isManual) {
+                editCheckbox.checked = true;
+                unlockFinancialFields();
+                // Данные из БД приоритетнее страницы
+                if (rateInput && orderResult.data.price) rateInput.value = orderResult.data.price;
+                if (quantityInput && orderResult.data.quantity) quantityInput.value = orderResult.data.quantity;
+                if (costInput && orderResult.data.amount) costInput.value = orderResult.data.amount;
+                console.log('P2P Analytics: Restored manualEdit=true from DB');
+            } else {
+                lockFinancialFields();
+                waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
+            }
 
             // Контакт всегда доступен
             if (contactInput) {
                 contactInput.readOnly = false;
                 contactInput.disabled = false;
                 contactInput.classList.remove('p2p-analytics-input-readonly');
-            }
-
-            console.log('P2P Analytics: Normal mode — check ON, edit OFF');
-
-            if (contactInput) {
                 contactInput.value = generateRandomGmail();
             }
 
-            // Заполняем курс/кол-во/стоимость из страницы (API данные)
-            waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
+            console.log('P2P Analytics: Normal mode — check ON, edit restored from DB');
         }
     });
 
@@ -1813,6 +1815,11 @@ try {
 
 async function createFloatingWidget() {
     // Check if widget already exists
+
+    const urlPattern = /bybit\.com.*\/orderList\/\d+/;
+    const isCorrectPage = urlPattern.test(window.location.href) || isMerchantAdminPage();
+    if (!isCorrectPage) return false;
+
     const existingWidget = document.querySelector('.p2p-analytics-widget');
     if (existingWidget) {
         console.log('P2P Analytics: Widget already exists');
