@@ -68,6 +68,12 @@
                                 onclick="openBalanceModal('{{ u.id }}', '{{ u.username }}', '{{ u.real_balance|default:0|floatformat:2 }}', '{{ u.init_amount|default:0 }}', '{{ u.init_rate|default:0 }}')">
                             {% if u.has_initial_balance %}✅ Ост.{% else %}Ост.{% endif %}
                         </button>
+
+                        {# НОВАЯ КНОПКА — ручной ввод грязной прибыли за месяц #}
+                        <button class="btn btn-sm btn-outline-warning ms-1"
+                                onclick="openProfitModal('{{ u.id }}', '{{ u.username }}')">
+                            💰
+                        </button>
                         
                         <button class="btn btn-sm btn-outline-secondary ms-1" 
                                 onclick="openEditUserModal(
@@ -86,6 +92,7 @@
     </div>
 </div>
 
+{# ===== МОДАЛКА: ДОБАВИТЬ ПОЛЬЗОВАТЕЛЯ ===== #}
 <div class="modal-overlay" id="addUserModal">
     <div class="modal-content-custom" style="max-width: 500px;">
         <div class="modal-header-custom">
@@ -107,6 +114,7 @@
     </div>
 </div>
 
+{# ===== МОДАЛКА: РЕДАКТИРОВАТЬ ПОЛЬЗОВАТЕЛЯ ===== #}
 <div class="modal-overlay" id="editUserModal">
     <div class="modal-content-custom">
         <div class="modal-header-custom">
@@ -166,6 +174,7 @@
     </div>
 </div>
 
+{# ===== МОДАЛКА: ОТЧЁТЫ ===== #}
 <div class="modal-overlay" id="reportsModal">
     <div class="modal-content-custom" style="max-width: 500px;">
         <div class="modal-header-custom">
@@ -216,6 +225,7 @@
     </div>
 </div>
 
+{# ===== МОДАЛКА: НАЧАЛЬНЫЙ ОСТАТОК ===== #}
 <div class="modal-overlay" id="balanceModal">
     <div class="modal-content-custom" style="max-width: 400px;">
         <div class="modal-header-custom">
@@ -250,6 +260,7 @@
     </div>
 </div>
 
+{# ===== МОДАЛКА: ДОЛЯ ===== #}
 <div class="modal-overlay" id="shareModal">
     <div class="modal-content-custom" style="max-width: 450px;">
         <div class="modal-header-custom">
@@ -277,6 +288,75 @@
                 <button type="submit" class="btn btn-sm btn-outline-blue px-4">Сохранить</button>
             </div>
         </form>
+    </div>
+</div>
+
+{# ===== МОДАЛКА: ГРЯЗНАЯ ПРИБЫЛЬ ЗА МЕСЯЦ ===== #}
+<div class="modal-overlay" id="profitModal">
+    <div class="modal-content-custom" style="max-width: 480px;">
+        <div class="modal-header-custom">
+            <span>💰 Прибыль: <strong id="profitUserLoginLabel" class="text-primary"></strong></span>
+            <button class="btn-close btn-close-white" onclick="closeProfitModal()"></button>
+        </div>
+
+        <input type="hidden" id="profitUserId">
+
+        <div class="form-section-inner mt-2">
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Год</label>
+                    <select class="form-control" id="profitYear">
+                        <option value="2025">2025</option>
+                        <option value="2026" selected>2026</option>
+                        <option value="2027">2027</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Месяц</label>
+                    <select class="form-control" id="profitMonth">
+                        <option value="01">Январь</option>
+                        <option value="02">Февраль</option>
+                        <option value="03">Март</option>
+                        <option value="04">Апрель</option>
+                        <option value="05">Май</option>
+                        <option value="06">Июнь</option>
+                        <option value="07">Июль</option>
+                        <option value="08">Август</option>
+                        <option value="09">Сентябрь</option>
+                        <option value="10">Октябрь</option>
+                        <option value="11">Ноябрь</option>
+                        <option value="12">Декабрь</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group mt-2">
+                <label>Грязная прибыль (₽)</label>
+                <input class="form-control" type="number" step="0.01" id="profitGross" placeholder="Например: 500000.00">
+            </div>
+            <div style="display:flex; gap:12px; justify-content:flex-end; margin-top:14px;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeProfitModal()">Отмена</button>
+                <button type="button" class="btn btn-sm btn-outline-blue px-4" onclick="saveProfitEntry()" id="profitSaveBtn">💾 Сохранить</button>
+            </div>
+            <div id="profitSaveMsg" style="font-size:12px; margin-top:8px; display:none;"></div>
+        </div>
+
+        <div style="font-size:12px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:8px;">
+            История записей
+        </div>
+        <div id="profitEntriesWrap">
+            <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                <thead>
+                    <tr style="color:var(--text-muted); background:rgba(255,255,255,0.04);">
+                        <th style="padding:8px 10px; text-align:left; border-bottom:1px solid var(--border-color);">Месяц</th>
+                        <th style="padding:8px 10px; text-align:right; border-bottom:1px solid var(--border-color);">Грязная прибыль</th>
+                        <th style="padding:8px 10px; border-bottom:1px solid var(--border-color);"></th>
+                    </tr>
+                </thead>
+                <tbody id="profitEntriesBody">
+                    <tr><td colspan="3" style="padding:16px; text-align:center; color:var(--text-muted);">Загрузка...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -327,7 +407,7 @@
     }
     function closeBalanceModal() { document.getElementById('balanceModal').classList.remove('active'); }
 
-    // === НОВАЯ ЛОГИКА ДОЛИ ===
+    // === ДОЛЯ ===
     let currentShares = {};
 
     function openShareModal(id, login, sharesJsonRaw) {
@@ -335,14 +415,13 @@
         document.getElementById('shareUserLoginLabel').innerText = login;
         
         try {
-            // Распаковываем JSON-строку обратно в объект JavaScript
             currentShares = JSON.parse(sharesJsonRaw);
         } catch(e) {
             currentShares = {};
         }
         
         document.getElementById('shareYear').value = "2026";
-        updateShareMonths(); // Генерируем сетку месяцев
+        updateShareMonths();
         
         document.getElementById('shareModal').classList.add('active');
     }
@@ -357,9 +436,7 @@
         let html = '';
         months.forEach((m, idx) => {
             let monthNum = (idx + 1).toString().padStart(2, '0');
-            let key = `${year}-${monthNum}`; // Например, '2026-03'
-            
-            // Если для этого ключа в базе ничего нет, ставим 20 по умолчанию
+            let key = `${year}-${monthNum}`;
             let val = currentShares[key] !== undefined ? currentShares[key] : 20.0;
             
             html += `
@@ -373,8 +450,8 @@
         });
         container.innerHTML = html;
     }
-    // ========================
 
+    // === ОТЧЁТЫ ===
     async function openReportsModal(userId, username) {
         document.getElementById('reportsUserId').value = userId;
         document.getElementById('reportsUserLogin').innerText = username;
@@ -421,7 +498,7 @@
         const end = document.getElementById('reportsEndDate').value;
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-        const currency = document.getElementById('reportsCurrency').value;  // НОВОЕ
+        const currency = document.getElementById('reportsCurrency').value;
         window.location.href = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}&currency=${currency}`;
     }
 
@@ -437,15 +514,121 @@
         const end = document.getElementById('reportsEndDate').value;
         const bank = document.getElementById('reportsUserDetails').value;
         const type = document.getElementById('reportsOperationType').value;
-        const currency = document.getElementById('reportsCurrency').value;  // НОВОЕ
+        const currency = document.getElementById('reportsCurrency').value;
         if (!userId) { alert("Ошибка: Не выбран пользователь"); return; }
         window.location.href = `/admin-panel/export/screenshots/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}&currency=${currency}`;
     }
-    
-    // ИЗМЕНЕНО: Добавил closeShareModal в закрытие по клику вне модалки
+
+    // === ГРЯЗНАЯ ПРИБЫЛЬ ЗА МЕСЯЦ ===
+    async function openProfitModal(userId, login) {
+        document.getElementById('profitUserId').value = userId;
+        document.getElementById('profitUserLoginLabel').innerText = login;
+        document.getElementById('profitGross').value = '';
+        document.getElementById('profitSaveMsg').style.display = 'none';
+        document.getElementById('profitModal').classList.add('active');
+        await loadProfitEntries(userId);
+    }
+
+    function closeProfitModal() {
+        document.getElementById('profitModal').classList.remove('active');
+    }
+
+    async function loadProfitEntries(userId) {
+        const tbody = document.getElementById('profitEntriesBody');
+        tbody.innerHTML = '<tr><td colspan="3" style="padding:16px; text-align:center; color:var(--text-muted);">Загрузка...</td></tr>';
+        try {
+            const resp = await fetch(`/p2p-admin/manual-entries/${userId}/`);
+            const data = await resp.json();
+            const entries = data.entries;
+
+            if (!entries.length) {
+                tbody.innerHTML = '<tr><td colspan="3" style="padding:16px; text-align:center; color:var(--text-muted);">Нет записей</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = entries.map(e => `
+                <tr style="border-bottom:1px solid var(--border-color);">
+                    <td style="padding:8px 10px; font-weight:500;">${e.month_name}</td>
+                    <td style="padding:8px 10px; text-align:right; font-family:monospace; color:#00c087;">
+                        ${parseFloat(e.gross).toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})} ₽
+                    </td>
+                    <td style="padding:8px 10px; text-align:right;">
+                        <button class="btn btn-sm btn-outline-secondary" style="font-size:11px; padding:2px 8px;"
+                            onclick="fillProfitForm('${e.month}', ${e.gross})">✏️</button>
+                    </td>
+                </tr>
+            `).join('');
+        } catch(e) {
+            tbody.innerHTML = '<tr><td colspan="3" style="padding:16px; text-align:center; color:#f84960;">Ошибка загрузки</td></tr>';
+        }
+    }
+
+    // Заполняет форму при нажатии ✏️ в таблице истории
+    function fillProfitForm(month, gross) {
+        const parts = month.split('-');
+        document.getElementById('profitYear').value  = parts[0];
+        document.getElementById('profitMonth').value = parts[1];
+        document.getElementById('profitGross').value = gross;
+    }
+
+    async function saveProfitEntry() {
+        const userId = document.getElementById('profitUserId').value;
+        const year   = document.getElementById('profitYear').value;
+        const month  = document.getElementById('profitMonth').value;
+        const gross  = parseFloat(document.getElementById('profitGross').value);
+        const btn    = document.getElementById('profitSaveBtn');
+        const msg    = document.getElementById('profitSaveMsg');
+
+        if (isNaN(gross)) {
+            msg.textContent = '❌ Введите сумму';
+            msg.style.color = '#f84960';
+            msg.style.display = 'block';
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Сохранение...';
+
+        try {
+            const resp = await fetch('/p2p-admin/manual-entry/save/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                },
+                body: JSON.stringify({
+                    user_id: parseInt(userId),
+                    month:   `${year}-${month}`,
+                    gross:   gross,
+                }),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                msg.textContent = data.created ? '✅ Запись создана' : '✅ Запись обновлена';
+                msg.style.color = '#00c087';
+                msg.style.display = 'block';
+                document.getElementById('profitGross').value = '';
+                await loadProfitEntries(userId);
+            } else {
+                msg.textContent = '❌ ' + (data.error || 'Ошибка');
+                msg.style.color = '#f84960';
+                msg.style.display = 'block';
+            }
+        } catch(e) {
+            msg.textContent = '❌ Сетевая ошибка';
+            msg.style.color = '#f84960';
+            msg.style.display = 'block';
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '💾 Сохранить';
+        }
+    }
+    // ================================
+
     window.onclick = function(e) {
         if (e.target.classList.contains('modal-overlay')) {
-            closeAddUserModal(); closeEditUserModal(); closeReportsModal(); closeBalanceModal(); closeShareModal();
+            closeAddUserModal(); closeEditUserModal(); closeReportsModal();
+            closeBalanceModal(); closeShareModal(); closeProfitModal();
         }
     }
 </script>
