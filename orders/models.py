@@ -40,6 +40,18 @@ class BankDetail(models.Model):
     def __str__(self):
         return self.name
 
+class MonthlyManualEntry(models.Model):
+    user  = models.ForeignKey(User, on_delete=models.CASCADE, related_name='manual_entries')
+    month = models.CharField(max_length=7, verbose_name="Месяц")  # '2026-01'
+    gross = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Грязная прибыль (₽)")
+
+    class Meta:
+        unique_together = ('user', 'month')
+        verbose_name = "Ручная запись прибыли"
+        verbose_name_plural = "Ручные записи прибыли"
+
+    def __str__(self):
+        return f"{self.user.username} — {self.month}: {self.gross} ₽"
 
 class Order(models.Model):
     OPERATION_CHOICES = [('BUY', 'Покупка'), ('SELL', 'Продажа')]
