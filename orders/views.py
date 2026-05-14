@@ -1795,7 +1795,7 @@ def admin_profit_view(request):
             'expenses_list':         expenses_list,
             'net_profit':            net_all,
             'net_profit_positive':   net_all >= 0,
-            'has_activity':          (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0),
+            'has_activity': (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0) or MonthlyManualEntry.objects.filter(user=u, month=share_key).exists(),
             'usdt_bank_comm': usdt_bank_comm,
             'ton_bank_comm':  ton_bank_comm,
             # Детализация USDT
