@@ -1711,7 +1711,14 @@ def admin_profit_view(request):
         gross_usdt = usdt['gross']
         gross_ton  = ton['gross']
         gross_all  = gross_usdt + gross_ton
-
+        
+        # Если ордеров нет — берём ручную запись от админа
+        if gross_all == 0.0:
+            manual = MonthlyManualEntry.objects.filter(user=u, month=share_key).first()
+            if manual:
+                gross_all  = float(manual.gross)
+                gross_usdt = gross_all  # вся сумма идёт как USDT (TON не трогаем)
+                gross_ton  = 0.0
 
         # Пропорционально делим расходы между USDT и TON
         pos_usdt  = max(0.0, gross_usdt)
