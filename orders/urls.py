@@ -31,4 +31,6 @@ urlpatterns = [
     path('p2p-admin/api/get-turnover/<int:user_id>/', views.api_get_turnover, name='api_get_turnover'),
     path('admin-panel/export/screenshots/', views.export_screenshots_view, name='export_screenshots'),\
     path('p2p-admin/profit/', views.admin_profit_view, name='admin_profit'),
+    path('p2p-admin/manual-entries/<int:user_id>/', views.admin_manual_entry_list, name='admin_manual_entry_list'),
+    path('p2p-admin/manual-entry/save/',            views.admin_manual_entry_save,  name='admin_manual_entry_save'),
 ]
