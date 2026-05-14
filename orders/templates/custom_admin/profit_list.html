@@ -186,7 +186,7 @@
             <tbody id="statsTableBody">
                 {% for stat in user_stats %}
                 <tr class="{% if not stat.has_activity %}inactive-row{% endif %}"
-                    data-usdt-balance="{{ stat.usdt.remainder_qty_display }}"
+                    data-usdt-balance="{{ stat.usdt_balance_display }}"
                     data-ton-balance="{{ stat.ton.remainder_qty_display }}"
                     data-all-balance="{{ stat.crypto_balance }}"
 
