@@ -29,7 +29,7 @@ from .bybit_api import sync_bybit_orders
 from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
-from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense
+from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry
 from .receipt_service import create_or_update_and_send_receipt
 from zoneinfo import ZoneInfo
 MSK = ZoneInfo('Europe/Moscow')
@@ -2255,5 +2255,80 @@ def export_screenshots_view(request):
     response['Content-Disposition'] = f'attachment; filename="{filename_zip}"'
     
     return response
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_manual_entry_save(request):
+    """
+    Сохраняет или обновляет грязную прибыль за месяц для пользователя.
+    Принимает POST с JSON: { user_id, month, gross }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
+
+    import json
+    try:
+        body = json.loads(request.body)
+    except Exception:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    user_id = body.get('user_id')
+    month   = body.get('month')   # '2026-01'
+    gross   = body.get('gross', 0)
+
+    if not user_id or not month:
+        return JsonResponse({'error': 'user_id и month обязательны'}, status=400)
+
+    # Проверяем формат месяца
+    import re
+    if not re.match(r'^\d{4}-\d{2}$', str(month)):
+        return JsonResponse({'error': 'Формат месяца: YYYY-MM'}, status=400)
+
+    try:
+        entry, created = MonthlyManualEntry.objects.update_or_create(
+            user_id=user_id,
+            month=month,
+            defaults={'gross': gross}
+        )
+        return JsonResponse({
+            'ok':      True,
+            'created': created,
+            'id':      entry.id,
+            'month':   entry.month,
+            'gross':   float(entry.gross),
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_manual_entry_list(request, user_id):
+    """
+    Возвращает все ручные записи прибыли для пользователя.
+    GET /p2p-admin/manual-entries/<user_id>/
+    """
+    entries = MonthlyManualEntry.objects.filter(user_id=user_id).order_by('-month')
+
+    months_ru = {
+        '01': 'Январь',  '02': 'Февраль', '03': 'Март',
+        '04': 'Апрель',  '05': 'Май',      '06': 'Июнь',
+        '07': 'Июль',    '08': 'Август',   '09': 'Сентябрь',
+        '10': 'Октябрь', '11': 'Ноябрь',  '12': 'Декабрь',
+    }
+
+    data = []
+    for e in entries:
+        month_num  = e.month.split('-')[1]  # '2026-01' -> '01'
+        month_name = months_ru.get(month_num, '')
+        year       = e.month.split('-')[0]
+        data.append({
+            'id':         e.id,
+            'month':      e.month,
+            'month_name': f"{month_name} {year}",
+            'gross':      float(e.gross),
+        })
+
+    return JsonResponse({'entries': data})
 
 
