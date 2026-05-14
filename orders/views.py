@@ -1713,12 +1713,23 @@ def admin_profit_view(request):
         gross_all  = gross_usdt + gross_ton
         
         # Если ордеров нет — берём ручную запись от админа
-        if gross_all == 0.0:
+        has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
+        
+        if not has_activity:
             manual = MonthlyManualEntry.objects.filter(user=u, month=share_key).first()
             if manual:
                 gross_all  = float(manual.gross)
-                gross_usdt = gross_all  # вся сумма идёт как USDT (TON не трогаем)
+                gross_usdt = gross_all
                 gross_ton  = 0.0
+        
+            # Остаток крипты берём из ордера "Остаток (до 1 фев)"
+            init_order = Order.objects.filter(
+                user=u,
+                exchange_type="Остаток (до 1 фев)"
+            ).first()
+            manual_crypto_balance = float(init_order.amount) if init_order else 0.0
+        else:
+            manual_crypto_balance = None  # не нужен — считается из ордеров
 
         # Пропорционально делим расходы между USDT и TON
         pos_usdt  = max(0.0, gross_usdt)
@@ -1762,7 +1773,7 @@ def admin_profit_view(request):
 
         user_stats.append({
             'user':                  u,
-            'crypto_balance':        calc['remainder_qty_display'],
+            'crypto_balance': manual_crypto_balance if manual_crypto_balance is not None else calc['remainder_qty_display'],
             'prev_balance_qty':      calc['prev_balance_qty'],
             'prev_balance_cost':     calc['prev_balance_cost'],
             'month_buy_qty':         calc['month_buy_qty'],
@@ -1770,6 +1781,7 @@ def admin_profit_view(request):
             'month_sell_qty':        calc['month_sell_qty'],
             'month_sell_cost':       calc['month_sell_cost'],
             'turnover':              calc['month_sell_cost'] + calc['month_buy_cost'],
+            'usdt_balance_display': manual_crypto_balance if manual_crypto_balance is not None else usdt['remainder_qty_display'],
             'bank_comm_rub':         bank_comm_rub,
             'exchange_comm_rub':     exchange_comm_rub,
             'total_comm_rub':        bank_comm_rub,
