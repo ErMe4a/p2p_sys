@@ -102,10 +102,11 @@
         </h5>
 
         <div class="filters-row">
-            <div class="currency-switcher">
-                <button class="currency-btn active-usdt" id="btnUsdt" onclick="setCurrency('usdt')">USDT</button>
-                <button class="currency-btn"             id="btnTon"  onclick="setCurrency('ton')">TON</button>
-            </div>
+            <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
+                <option value="usdt" selected>USDT</option>
+                <option value="ton">TON</option>
+                <option value="all">Все</option>
+            </select>
 
             <select class="form-control form-control-sm filter-select" id="filterExchange" onchange="applyFilters()">
                 <option value="">Все биржи</option>
@@ -175,7 +176,7 @@
             <thead style="font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); background: rgba(255,255,255,0.02);">
                 <tr>
                     <th class="sortable" onclick="sortTable('name')">Пользователь<span class="sort-icon"></span></th>
-                    <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток (USDT)<span class="sort-icon"></span></th>
+                    <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('comm')">Комиссии<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('gross')">Прибыль и НДФЛ<span class="sort-icon"></span></th>
@@ -186,7 +187,7 @@
             <tbody id="statsTableBody">
                 {% for stat in user_stats %}
                 <tr class="{% if not stat.has_activity %}inactive-row{% endif %}"
-                    data-usdt-balance="{{ stat.usdt_balance_display }}"
+                    data-usdt-balance="{{ stat.usdt.remainder_qty_display }}"
                     data-ton-balance="{{ stat.ton.remainder_qty_display }}"
                     data-all-balance="{{ stat.crypto_balance }}"
 
@@ -230,10 +231,13 @@
                     </td>
 
                     <td>
-                        <div class="fw-bold balance-positive row-balance" style="font-size: 1rem;">
-                            <span class="money">{{ stat.crypto_balance }}</span>
+                        <div class="fw-bold balance-positive row-balance-usdt" style="font-size: 0.95rem;">
+                            <span class="money">{{ stat.usdt.remainder_qty_display }}</span> USDT
                         </div>
-                        <div class="row-balance-label" style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>
+                        <div class="fw-bold row-balance-ton" style="font-size: 0.95rem; color: #3d9af5;">
+                            <span class="money">{{ stat.ton.remainder_qty_display }}</span> TON
+                        </div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>
                     </td>
 
                     <td>
@@ -246,7 +250,8 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
-                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted"><span class="money row-exch">{{ stat.exchange_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">USDT</span></span></div>
+                            <div class="row-exch-usdt-line"><span class="val-label row-exch-usdt-label">Биржа:</span> <span class="val-money text-muted"><span class="money row-exch">{{ stat.exchange_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">USDT</span></span></div>
+                            <div class="row-exch-ton-line" style="display:none;"><span class="val-label" style="color:var(--text-muted);">Б.TON:</span> <span class="val-money text-muted"><span class="money row-exch-ton">{{ stat.ton.month_exch_comm }}</span> <span style="font-size:10px;">TON</span></span></div>
                         </div>
                     </td>
 
@@ -311,8 +316,9 @@
     function setCurrency(val) {
         currentCurrency = val;
 
-        document.getElementById('btnUsdt').className = 'currency-btn' + (val === 'usdt' ? ' active-usdt' : '');
-        document.getElementById('btnTon').className  = 'currency-btn' + (val === 'ton'  ? ' active-ton'  : '');
+        // Синхронизируем select
+        var sel = document.getElementById('currencySelect');
+        if (sel) sel.value = val;
 
         var badge = document.getElementById('currencyBadge');
         if (val === 'usdt') {
@@ -326,7 +332,13 @@
             badge.textContent = 'ВСЕ';
         }
 
-        document.getElementById('thBalance').textContent = val === 'ton' ? 'Остаток (TON)' : 'Остаток (USDT)';
+        if (val === 'ton') {
+            document.getElementById('thBalance').textContent = 'Остаток (TON)';
+        } else if (val === 'usdt') {
+            document.getElementById('thBalance').textContent = 'Остаток (USDT)';
+        } else {
+            document.getElementById('thBalance').textContent = 'Остаток';
+        }
 
         var d = summaryData[val];
         document.getElementById('sum-sell').textContent   = fmt(d.sell);
@@ -339,18 +351,29 @@
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
 
-            // Остаток
-            var balanceVal, balanceLabel;
-            if (val === 'ton') {
-                balanceVal = parseFloat(d.tonBalance || 0); balanceLabel = 'TON';
-            } else if (val === 'usdt') {
-                balanceVal = parseFloat(d.usdtBalance || 0); balanceLabel = 'USDT';
+            // Остаток — USDT строка
+            var usdtBal = parseFloat(d.usdtBalance || 0);
+            var tonBal  = parseFloat(d.tonBalance  || 0);
+            var usdtBalEl = row.querySelector('.row-balance-usdt');
+            var tonBalEl  = row.querySelector('.row-balance-ton');
+
+            if (val === 'usdt') {
+                usdtBalEl.style.display = '';
+                tonBalEl.style.display  = 'none';
+                usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
+            } else if (val === 'ton') {
+                usdtBalEl.style.display = 'none';
+                tonBalEl.style.display  = '';
+                tonBalEl.className = 'fw-bold row-balance-ton ' + (tonBal >= 0 ? '' : 'balance-negative');
+                tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             } else {
-                balanceVal = parseFloat(d.allBalance || 0); balanceLabel = 'USDT+TON';
+                // all — показываем обе строки
+                usdtBalEl.style.display = '';
+                tonBalEl.style.display  = '';
+                usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
+                tonBalEl.className  = 'fw-bold row-balance-ton';
+                tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
-            var balEl = row.querySelector('.row-balance');
-            balEl.textContent = fmt(balanceVal) + ' ' + balanceLabel;
-            balEl.className   = 'fw-bold row-balance ' + (balanceVal >= 0 ? 'balance-positive' : 'balance-negative');
 
             // Sell / Buy
             row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
@@ -360,7 +383,23 @@
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
 
             // Комиссия биржи
-            row.querySelector('.row-exch').textContent = fmt(parseFloat(val === 'ton' ? d.tonExch  : val === 'usdt' ? d.usdtExch  : d.allExch)  || 0);
+            var exchUsdtLine = row.querySelector('.row-exch-usdt-line');
+            var exchTonLine  = row.querySelector('.row-exch-ton-line');
+            if (val === 'ton') {
+                if (exchUsdtLine) exchUsdtLine.style.display = 'none';
+                if (exchTonLine)  exchTonLine.style.display  = '';
+                row.querySelector('.row-exch-ton').textContent = fmt(parseFloat(d.tonExch || 0));
+            } else if (val === 'usdt') {
+                if (exchUsdtLine) exchUsdtLine.style.display = '';
+                if (exchTonLine)  exchTonLine.style.display  = 'none';
+                row.querySelector('.row-exch').textContent = fmt(parseFloat(d.usdtExch || 0));
+            } else {
+                // all — показываем обе строки биржи
+                if (exchUsdtLine) exchUsdtLine.style.display = '';
+                if (exchTonLine)  exchTonLine.style.display  = '';
+                row.querySelector('.row-exch').textContent     = fmt(parseFloat(d.usdtExch || 0));
+                row.querySelector('.row-exch-ton').textContent = fmt(parseFloat(d.tonExch  || 0));
+            }
 
             // Прибыль до вычета
             var gross = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
