@@ -202,9 +202,9 @@
                     data-ton-gross="{{ stat.ton_gross }}"
                     data-all-gross="{{ stat.gross }}"
 
-                    data-usdt-exch="{{ stat.usdt.month_exch_comm }}"
-                    data-ton-exch="{{ stat.ton.month_exch_comm }}"
-                    data-all-exch="{{ stat.exchange_comm_rub }}"
+                    data-usdt-exch="{{ stat.usdt_exch_comm_rub }}"
+                    data-ton-exch="{{ stat.ton_exch_comm_rub }}"
+                    data-all-exch="{{ stat.all_exch_comm_rub }}"
 
                     data-usdt-bank="{{ stat.usdt.month_buy_comm|add:stat.usdt.month_sell_comm }}"
                     data-ton-bank="{{ stat.ton.month_buy_comm|add:stat.ton.month_sell_comm }}"
@@ -250,8 +250,7 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
-                            <div class="row-exch-usdt-line"><span class="val-label row-exch-usdt-label">Биржа:</span> <span class="val-money text-muted"><span class="money row-exch">{{ stat.exchange_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">USDT</span></span></div>
-                            <div class="row-exch-ton-line" style="display:none;"><span class="val-label" style="color:var(--text-muted);">Б.TON:</span> <span class="val-money text-muted"><span class="money row-exch-ton">{{ stat.ton.month_exch_comm }}</span> <span style="font-size:10px;">TON</span></span></div>
+                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted money row-exch">{{ stat.all_exch_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">₽</span></div>
                         </div>
                     </td>
 
@@ -382,24 +381,9 @@
             // Комиссия банка (раздельно по валюте)
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
 
-            // Комиссия биржи
-            var exchUsdtLine = row.querySelector('.row-exch-usdt-line');
-            var exchTonLine  = row.querySelector('.row-exch-ton-line');
-            if (val === 'ton') {
-                if (exchUsdtLine) exchUsdtLine.style.display = 'none';
-                if (exchTonLine)  exchTonLine.style.display  = '';
-                row.querySelector('.row-exch-ton').textContent = fmt(parseFloat(d.tonExch || 0));
-            } else if (val === 'usdt') {
-                if (exchUsdtLine) exchUsdtLine.style.display = '';
-                if (exchTonLine)  exchTonLine.style.display  = 'none';
-                row.querySelector('.row-exch').textContent = fmt(parseFloat(d.usdtExch || 0));
-            } else {
-                // all — показываем обе строки биржи
-                if (exchUsdtLine) exchUsdtLine.style.display = '';
-                if (exchTonLine)  exchTonLine.style.display  = '';
-                row.querySelector('.row-exch').textContent     = fmt(parseFloat(d.usdtExch || 0));
-                row.querySelector('.row-exch-ton').textContent = fmt(parseFloat(d.tonExch  || 0));
-            }
+            // Комиссия биржи — всегда в рублях, одна строка
+            var exchRub = parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0;
+            row.querySelector('.row-exch').textContent = fmt(exchRub);
 
             // Прибыль до вычета
             var gross = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
