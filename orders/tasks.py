@@ -7,10 +7,6 @@ from .models import UnprocessedOrder
 logger = logging.getLogger(__name__)
 
 
-# ── Синхронизация необработанных ──────────────────────────────────────────────
-# Очередь: "sync" — долгие задачи, низкий приоритет
-# Запускается Celery Beat каждые N минут
-
 @shared_task(bind=True, max_retries=0, queue="sync")
 def sync_bybit_orders_task(self):
     """
@@ -19,7 +15,6 @@ def sync_bybit_orders_task(self):
     Юзеры с невалидными ключами пропускаются.
     """
 
-    # ── Bybit ─────────────────────────────────────────────────────────────────
     bybit_users = (
         User.objects
         .filter(bybit_key_valid=True)
@@ -37,7 +32,6 @@ def sync_bybit_orders_task(self):
         except Exception as e:
             logger.error("Bybit sync error [%s]: %s", user.username, e, exc_info=True)
 
-    # ── MEXC ──────────────────────────────────────────────────────────────────
     mexc_users = (
         User.objects
         .filter(mexc_key_valid=True)
@@ -59,10 +53,6 @@ def sync_bybit_orders_task(self):
     return {"bybit": bybit_total, "mexc": mexc_total}
 
 
-# ── Отложенный чек ────────────────────────────────────────────────────────────
-# Очередь: "receipt" — быстрые задачи, высокий приоритет
-# Запускается по требованию из api_views.py когда API не вернул данные сразу
-
 @shared_task(bind=True, max_retries=5, queue="receipt")
 def verify_and_receipt_later(self, order_id: int):
     """
@@ -83,13 +73,11 @@ def verify_and_receipt_later(self, order_id: int):
         logger.warning("verify_and_receipt_later: Order %d не найден.", order_id)
         return
 
-    # Уже верифицирован другим процессом
     if o.is_verified:
         logger.info("verify_and_receipt_later: Order %d уже верифицирован.", order_id)
         _try_send_receipt(o)
         return
 
-    # Чек уже пробит
     if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
         logger.info("verify_and_receipt_later: Order %d чек уже пробит.", order_id)
         return
@@ -104,7 +92,6 @@ def verify_and_receipt_later(self, order_id: int):
     )
 
     if api_data:
-        # ── Если пользователь вручную отредактировал данные — не перезаписываем ──
         if o.is_manual:
             logger.info(
                 "verify_and_receipt_later: Order %d — is_manual=True, "
@@ -122,7 +109,6 @@ def verify_and_receipt_later(self, order_id: int):
             o.is_verified    = True
             o.save(update_fields=["price", "cost", "amount", "operation_type", "is_verified"])
 
-
         UnprocessedOrder.objects.filter(
             user=o.user,
             order_id=o.external_id,
@@ -133,17 +119,16 @@ def verify_and_receipt_later(self, order_id: int):
             order_id, o.is_manual,
         )
         _try_send_receipt(o)
-        
+
     else:
         if attempt < 5:
-            countdown = 30 * (2 ** (attempt - 1))  # 30 → 60 → 120 → 240 сек
+            countdown = 30 * (2 ** (attempt - 1))
             logger.warning(
                 "verify_and_receipt_later: Order %d — API не ответил, повтор через %d сек.",
                 order_id, countdown,
             )
             raise self.retry(countdown=countdown)
         else:
-            # Исчерпали попытки — бьём чек с тем что есть
             logger.warning(
                 "verify_and_receipt_later: Order %d — 5 попыток исчерпаны, бьём чек с данными из БД.",
                 order_id,
@@ -158,7 +143,6 @@ def _try_send_receipt(order: Order):
     """
     from .receipt_service import create_or_update_and_send_receipt
 
-    # Уже пробит
     if order.receipt and isinstance(order.receipt, dict) and order.receipt.get("uuid"):
         return
 
@@ -172,6 +156,23 @@ def _try_send_receipt(order: Order):
     if not order.cost or float(order.cost) == 0:
         logger.warning("_try_send_receipt: Order %d — нулевая сумма, чек не бьём.", order.id)
         return
+
+    # ── ИСПРАВЛЕНИЕ ──────────────────────────────────────────────────────────
+    # Берём финансовые данные из верифицированного ордера (API данные),
+    # а не из плашки расширения где курс мог прийти в копейках (79950 вместо 79.95).
+    # contact берём из receipt_dict — его в API нет.
+    if order.is_verified:
+        receipt_dict = {
+            **receipt_dict,
+            "price":  float(order.price),
+            "sum":    float(order.cost),
+            "amount": float(order.amount),
+        }
+        logger.info(
+            "_try_send_receipt: Order %d — подменяем данные чека из ордера: "
+            "price=%s sum=%s amount=%s",
+            order.id, float(order.price), float(order.cost), float(order.amount),
+        )
 
     try:
         result = create_or_update_and_send_receipt(order, receipt_dict)

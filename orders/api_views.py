@@ -29,7 +29,6 @@ EXCHANGE_NAME_TO_ID = {
     "MEXC": 3,
     "Gate": 4, "GATE": 4,
     "BingX": 5, "BINGX": 5,
-
 }
 
 def get_exchange_id(name):
@@ -145,7 +144,6 @@ def order(request):
 
     exchange_name = get_exchange_name(data.get("exchangeType", 1))
 
-    # ── Проверка валидности ключей биржи ─────────────────────────────────────
     if exchange_name == "Bybit" and not request.user.bybit_key_valid:
         return Response({
             "success": False,
@@ -160,15 +158,12 @@ def order(request):
 
     commission      = data.get("commission") or 0
     commission_type = data.get("commissionType", "PERCENT")
-
-    # ── Флаг ручного редактирования ──────────────────────────────────────────
-    is_manual = bool(data.get("manualEdit", False))
+    is_manual       = bool(data.get("manualEdit", False))
 
     created_at = None
     if "createdAt" in data:
         created_at = parse_datetime(data.get("createdAt"))
 
-    # Банк
     bank = None
     details_obj = data.get("details")
     if isinstance(details_obj, dict):
@@ -178,24 +173,20 @@ def order(request):
     elif isinstance(details_obj, int):
         bank = BankDetail.objects.filter(id=details_obj, is_deleted=False).first()
 
-    # Данные чека из расширения (contact, sum и тд)
     receipt_data_raw = data.get("receipt")
     receipt_dict = receipt_data_raw if isinstance(receipt_data_raw, dict) else {}
 
-    # ── Получаем финансовые данные ────────────────────────────────────────────
     if is_manual:
-        # Пользователь отредактировал данные вручную — берём из плашки, API не трогаем
         price       = data.get("price") or receipt_dict.get("price") or 0
         cost        = data.get("amount") or receipt_dict.get("sum") or 0
         amount      = data.get("quantity") or receipt_dict.get("amount") or 0
         op_type     = str(data.get("type") or "BUY").strip().upper()
-        is_verified = True  # данные финальные, чек бьём сразу без Celery
+        is_verified = True
         logger.info(
             "Order %s [%s]: ручное редактирование — price=%s cost=%s amount=%s type=%s",
             external_id, exchange_name, price, cost, amount, op_type,
         )
     else:
-        # Стандартный путь — тянем данные из API биржи
         api_data = get_order_from_exchange(
             user=request.user,
             order_id=external_id,
@@ -228,7 +219,6 @@ def order(request):
     if op_type not in ("SELL", "BUY"):
         op_type = "BUY"
 
-    # ── Сохранение ────────────────────────────────────────────────────────────
     with transaction.atomic():
         try:
             o = Order.objects.select_for_update().get(
@@ -254,13 +244,11 @@ def order(request):
         o.cost            = cost
         o.amount          = amount
         o.is_verified     = is_verified
-        o.is_manual       = is_manual  # <- новое поле
+        o.is_manual       = is_manual
 
-        # Сохраняем данные чека (contact, sum и тд) для verify_and_receipt_later
         if receipt_dict and not (o.receipt and o.receipt.get("uuid")):
             o.receipt = receipt_dict
 
-        # Фиксируем процент биржи только при создании
         if created:
             ex_lower = exchange_name.lower()
             user_comm_rate = 0.0
@@ -289,7 +277,6 @@ def order(request):
     receipt_debug = None
 
     if not is_verified:
-        # Bybit/MEXC — данных из API нет, откладываем в Celery
         from .tasks import verify_and_receipt_later
         countdown = 120 if exchange_name == "MEXC" else 30
         verify_and_receipt_later.apply_async(
@@ -302,13 +289,27 @@ def order(request):
             external_id, exchange_name, countdown,
         )
     else:
-        # Данные верифицированы (API или ручной режим) — бьём чек сразу
+        # Данные верифицированы — бьём чек сразу
         UnprocessedOrder.objects.filter(user=request.user, order_id=external_id).delete()
 
         if should_make_receipt(data):
             contact = receipt_dict.get("contact")
             if contact and cost:
-                receipt_debug = create_or_update_and_send_receipt(o, receipt_dict)
+                # ── ИСПРАВЛЕНИЕ ──────────────────────────────────────────────
+                # Берём финансовые данные из верифицированного ордера (API),
+                # а не из плашки расширения где курс мог прийти в копейках.
+                # contact берём из receipt_dict — его в API нет.
+                verified_receipt = {
+                    **receipt_dict,
+                    "price":  float(o.price),
+                    "sum":    float(o.cost),
+                    "amount": float(o.amount),
+                }
+                logger.info(
+                    "Order %s [%s]: бьём чек с данными из ордера — price=%s sum=%s amount=%s",
+                    external_id, exchange_name, float(o.price), float(o.cost), float(o.amount),
+                )
+                receipt_debug = create_or_update_and_send_receipt(o, verified_receipt)
 
     return Response({
         "success": True,
