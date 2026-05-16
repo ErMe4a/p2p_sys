@@ -1501,6 +1501,49 @@ def admin_logout(request):
     return redirect('admin_login')
 
 
+def _calc_ndfl(gross: float, tax_type: str) -> float:
+    """
+    Расчёт налога в зависимости от типа налогообложения.
+
+    УСН (USN_INCOME, USN_INCOME_OUTCOME) — 1% от gross
+    ОСН/ОСНО (OCH/OSNO) — прогрессивная шкала по месяцу:
+      до 2 400 000           → 13%
+      2 400 000 - 5 000 000  → 15%
+      5 000 000 - 20 000 000 → 18%
+      20 000 000 - 50 000 000→ 20%
+      свыше 50 000 000       → 22%
+    """
+    if gross <= 0:
+        return 0.0
+
+    tax_type = str(tax_type or '').strip().upper()
+
+    # УСН — 1% от грязной прибыли
+    if tax_type in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+        return gross * 0.01
+
+    # ОСН/ОСНО — прогрессивная шкала
+    # (OCH, OSNO, OSNO, не задан — все остальные тоже 13%+)
+    brackets = [
+        (2_400_000,  0.13),
+        (5_000_000,  0.15),
+        (20_000_000, 0.18),
+        (50_000_000, 0.20),
+        (float('inf'), 0.22),
+    ]
+
+    ndfl = 0.0
+    prev = 0.0
+    for limit, rate in brackets:
+        if gross <= prev:
+            break
+        taxable = min(gross, limit) - prev
+        ndfl += taxable * rate
+        prev = limit
+
+    return ndfl
+
+
 def _calc_currency(user, month_start, month_end,
                    currency='USDT',
                    exchange_filter='', bank_filter_id=''):
@@ -1717,6 +1760,9 @@ def admin_profit_view(request):
         gross_ton  = ton['gross']
         gross_all  = gross_usdt + gross_ton
 
+        # Тип налогообложения пользователя
+        tax_type = str(getattr(u, 'tax_type', '') or '').strip().upper()
+
         # Если ордеров нет — берём ручную запись от админа
         has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
 
@@ -1749,21 +1795,21 @@ def admin_profit_view(request):
 
         # ── USDT ──────────────────────────────────────────────────────
         after_exp_usdt = max(0.0, gross_usdt - usdt_expense_share)
-        ndfl_usdt      = after_exp_usdt * 0.13 if after_exp_usdt > 0 else 0
+        ndfl_usdt      = _calc_ndfl(after_exp_usdt, tax_type)
         after_usdt     = after_exp_usdt - ndfl_usdt
         share_usdt     = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
         net_usdt       = after_usdt - share_usdt
 
         # ── TON ───────────────────────────────────────────────────────
         after_exp_ton = max(0.0, gross_ton - ton_expense_share)
-        ndfl_ton      = after_exp_ton * 0.13 if after_exp_ton > 0 else 0
+        ndfl_ton      = _calc_ndfl(after_exp_ton, tax_type)
         after_ton     = after_exp_ton - ndfl_ton
         share_ton     = after_ton * (share_percent / 100) if after_ton > 0 else 0
         net_ton       = after_ton - share_ton
 
         # ── ИТОГО: расходы → НДФЛ → доля ─────────────────────────────
         after_exp_all = max(0.0, gross_all - month_expenses)
-        ndfl_all      = after_exp_all * 0.13 if after_exp_all > 0 else 0
+        ndfl_all      = _calc_ndfl(after_exp_all, tax_type)
         after_all     = after_exp_all - ndfl_all
         share_all     = after_all * (share_percent / 100) if after_all > 0 else 0
         net_all       = after_all - share_all
