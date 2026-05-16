@@ -98,7 +98,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="m-0 me-auto">
             ПРИБЫЛЬ ПАРТНЕРОВ — {{ current_month_name }} {{ current_year }}
-            <span class="currency-badge currency-badge-usdt" id="currencyBadge">USDT</span>
+            <span class="currency-badge currency-badge-all" id="currencyBadge">ВСЕ</span>
         </h5>
 
         <div class="filters-row">
@@ -306,7 +306,7 @@
         ton:  { sell: 0, buy: 0, gross: 0, share: 0, net: 0 }
     };
 
-    var currentCurrency = 'usdt';
+    var currentCurrency = 'all';
 
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -520,7 +520,7 @@
             summaryData.ton.net    += parseFloat(row.dataset.tonNet    || 0);
         });
 
-        setCurrency('usdt');
+        setCurrency('all');
     });
 </script>
 {% endblock %}
