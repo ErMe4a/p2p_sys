@@ -1516,19 +1516,18 @@ def _calc_ndfl(gross: float, tax_type: str) -> float:
     if gross <= 0:
         return 0.0
 
-    tax_type = str(tax_type or '').strip().upper()
+    t = str(tax_type or '').strip().upper()
 
     # УСН — 1% от грязной прибыли
-    if tax_type in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+    if t in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
         return gross * 0.01
 
     # ОСН/ОСНО — прогрессивная шкала
-    # (OCH, OSNO, OSNO, не задан — все остальные тоже 13%+)
     brackets = [
-        (2_400_000,  0.13),
-        (5_000_000,  0.15),
-        (20_000_000, 0.18),
-        (50_000_000, 0.20),
+        (2_400_000,    0.13),
+        (5_000_000,    0.15),
+        (20_000_000,   0.18),
+        (50_000_000,   0.20),
         (float('inf'), 0.22),
     ]
 
@@ -1563,7 +1562,7 @@ def _calc_currency(user, month_start, month_end,
     prev_buy_qty   = 0.0
     prev_buy_cost  = 0.0
     prev_sell_qty  = 0.0
-    prev_exch_comm = 0.0  # в крипте (для расчёта остатка qty)
+    prev_exch_comm = 0.0
 
     for o in prev_orders:
         amt = float(o.amount or 0)
@@ -1592,12 +1591,12 @@ def _calc_currency(user, month_start, month_end,
 
     month_orders = month_orders.order_by('created_at')
 
-    month_buy_qty      = 0.0; month_buy_cost  = 0.0
-    month_buy_comm     = 0.0
-    month_sell_qty     = 0.0; month_sell_cost = 0.0
-    month_sell_comm    = 0.0
-    month_exch_comm    = 0.0  # в крипте (для расчёта остатка qty)
-    month_exch_comm_rub = 0.0  # в рублях по курсу каждого ордера (для расчёта прибыли)
+    month_buy_qty       = 0.0; month_buy_cost  = 0.0
+    month_buy_comm      = 0.0
+    month_sell_qty      = 0.0; month_sell_cost = 0.0
+    month_sell_comm     = 0.0
+    month_exch_comm     = 0.0    # в крипте (для расчёта остатка qty)
+    month_exch_comm_rub = 0.0   # в рублях по курсу каждого ордера
 
     for o in month_orders:
         amt        = float(o.amount or 0)
@@ -1612,13 +1611,13 @@ def _calc_currency(user, month_start, month_end,
             month_buy_comm += total_comm
         else:
             exch_rate = float(o.exchange_commission_rate or 0)
-            exch_usdt = amt * exch_rate / 100  # комса в крипте по этому ордеру
+            exch_crypto = amt * exch_rate / 100
 
             month_sell_qty      += amt
             month_sell_cost     += cost
             month_sell_comm     += total_comm
-            month_exch_comm     += exch_usdt              # накапливаем в крипте (для остатка)
-            month_exch_comm_rub += exch_usdt * price      # сразу в рублях по курсу ордера
+            month_exch_comm     += exch_crypto
+            month_exch_comm_rub += exch_crypto * price  # в рублях по курсу ордера
 
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
@@ -1645,8 +1644,8 @@ def _calc_currency(user, month_start, month_end,
         'month_sell_qty':        month_sell_qty,
         'month_sell_cost':       month_sell_cost,
         'month_sell_comm':       month_sell_comm,
-        'month_exch_comm':       month_exch_comm,      # в крипте (для отображения)
-        'month_exch_comm_rub':   month_exch_comm_rub,  # в рублях (для прибыли)
+        'month_exch_comm':       month_exch_comm,
+        'month_exch_comm_rub':   month_exch_comm_rub,
         'total_buy_qty':         total_buy_qty,
         'total_buy_cost':        total_buy_cost,
         'remainder_qty_display': remainder_qty_display,
@@ -1684,7 +1683,7 @@ def _calc_month_profit_filtered(user, month_start, month_end,
         'month_sell_qty':        usdt['month_sell_qty']  + ton['month_sell_qty'],
         'month_sell_cost':       usdt['month_sell_cost'] + ton['month_sell_cost'],
         'month_sell_comm':       usdt['month_sell_comm'] + ton['month_sell_comm'],
-        'month_exch_usdt':       usdt['month_exch_comm'] + ton['month_exch_comm'],  # в крипте
+        'month_exch_usdt':       usdt['month_exch_comm'] + ton['month_exch_comm'],
         'total_buy_qty':         usdt['total_buy_qty'],
         'total_buy_cost':        usdt['total_buy_cost'],
         'remainder_qty_display': usdt['remainder_qty_display'],
@@ -1702,7 +1701,7 @@ def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
     USDT и TON считаются раздельно, итог складывается.
-    Комиссия биржи считается в рублях по курсу каждого ордера.
+    Налог считается в зависимости от типа налогообложения пользователя.
     """
     now       = timezone.now()
     year_str  = request.GET.get('year',  str(now.year))
@@ -1741,6 +1740,9 @@ def admin_profit_view(request):
         usdt = calc['usdt']
         ton  = calc['ton']
 
+        # Тип налогообложения пользователя
+        tax_type = str(getattr(u, 'tax_type', '') or '').strip().upper()
+
         # Доля пользователя за месяц
         share_percent = 20.0
         if u.profit_shares and isinstance(u.profit_shares, dict):
@@ -1759,9 +1761,6 @@ def admin_profit_view(request):
         gross_usdt = usdt['gross']
         gross_ton  = ton['gross']
         gross_all  = gross_usdt + gross_ton
-
-        # Тип налогообложения пользователя
-        tax_type = str(getattr(u, 'tax_type', '') or '').strip().upper()
 
         # Если ордеров нет — берём ручную запись от админа
         has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
@@ -1807,18 +1806,18 @@ def admin_profit_view(request):
         share_ton     = after_ton * (share_percent / 100) if after_ton > 0 else 0
         net_ton       = after_ton - share_ton
 
-        # ── ИТОГО: расходы → НДФЛ → доля ─────────────────────────────
+        # ── ИТОГО: расходы → налог → доля ─────────────────────────────
         after_exp_all = max(0.0, gross_all - month_expenses)
         ndfl_all      = _calc_ndfl(after_exp_all, tax_type)
         after_all     = after_exp_all - ndfl_all
         share_all     = after_all * (share_percent / 100) if after_all > 0 else 0
         net_all       = after_all - share_all
 
-        bank_comm_rub     = calc['month_buy_comm'] + calc['month_sell_comm']
-        usdt_bank_comm    = usdt['month_buy_comm'] + usdt['month_sell_comm']
-        ton_bank_comm     = ton['month_buy_comm']  + ton['month_sell_comm']
-        exchange_comm_rub = calc['month_exch_usdt']  # в крипте для отображения
-        usdt_exch_comm_rub = usdt['month_exch_comm_rub']  # в рублях по курсу каждого ордера
+        bank_comm_rub      = calc['month_buy_comm'] + calc['month_sell_comm']
+        usdt_bank_comm     = usdt['month_buy_comm'] + usdt['month_sell_comm']
+        ton_bank_comm      = ton['month_buy_comm']  + ton['month_sell_comm']
+        exchange_comm_rub  = calc['month_exch_usdt']
+        usdt_exch_comm_rub = usdt['month_exch_comm_rub']
         ton_exch_comm_rub  = ton['month_exch_comm_rub']
         all_exch_comm_rub  = usdt_exch_comm_rub + ton_exch_comm_rub
 
@@ -1840,6 +1839,7 @@ def admin_profit_view(request):
             'gross':                 gross_all,
             'gross_profit_positive': gross_all >= 0,
             'ndfl':                  ndfl_all,
+            'tax_type':              tax_type,
             'share_percent':         share_percent,
             'share_amount':          share_all,
             'month_expenses':        month_expenses,
@@ -1911,7 +1911,6 @@ def admin_profit_view(request):
         'selected_bank':       bank_filter_id,
         'default_banks':       default_banks,
     })
-
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

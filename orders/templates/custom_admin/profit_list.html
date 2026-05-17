@@ -257,7 +257,7 @@
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">До вычета:</span> <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span></div>
-                            <div><span class="val-label">НДФЛ:</span>      <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span></div>
+                            <div><span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span> <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span></div>
                         </div>
                     </td>
 
