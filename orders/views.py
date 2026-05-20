@@ -1501,28 +1501,20 @@ def admin_logout(request):
     return redirect('admin_login')
 
 
-def _calc_ndfl(gross: float, tax_type: str) -> float:
-    """
-    Расчёт налога в зависимости от типа налогообложения.
 
-    УСН (USN_INCOME, USN_INCOME_OUTCOME) — 1% от gross
-    ОСН/ОСНО (OCH/OSNO) — прогрессивная шкала по месяцу:
-      до 2 400 000           → 13%
-      2 400 000 - 5 000 000  → 15%
-      5 000 000 - 20 000 000 → 18%
-      20 000 000 - 50 000 000→ 20%
-      свыше 50 000 000       → 22%
+
+def _progressive_ndfl(base: float) -> float:
     """
-    if gross <= 0:
+    Прогрессивная шкала НДФЛ от базы (нарастающим итогом за год).
+    до 2 400 000           → 13%
+    2 400 000 - 5 000 000  → 15%
+    5 000 000 - 20 000 000 → 18%
+    20 000 000 - 50 000 000→ 20%
+    свыше 50 000 000       → 22%
+    """
+    if base <= 0:
         return 0.0
 
-    t = str(tax_type or '').strip().upper()
-
-    # УСН — 1% от грязной прибыли
-    if t in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
-        return gross * 0.01
-
-    # ОСН/ОСНО — прогрессивная шкала
     brackets = [
         (2_400_000,    0.13),
         (5_000_000,    0.15),
@@ -1534,13 +1526,73 @@ def _calc_ndfl(gross: float, tax_type: str) -> float:
     ndfl = 0.0
     prev = 0.0
     for limit, rate in brackets:
-        if gross <= prev:
+        if base <= prev:
             break
-        taxable = min(gross, limit) - prev
+        taxable = min(base, limit) - prev
         ndfl += taxable * rate
         prev = limit
 
     return ndfl
+
+
+def _calc_ndfl(gross: float, tax_type: str,
+               sell_cost: float = 0.0,
+               ytd_base: float = 0.0) -> float:
+    """
+    Расчёт налога за текущий месяц.
+    gross — уже включает вычет расходов пользователя.
+
+    УСН (USN_INCOME, USN_INCOME_OUTCOME):
+        налог = sell_cost * 1%
+
+    ОСН/ОСНО (OCH/OSNO) — нарастающим итогом:
+        налог_месяц = прогрессия(ytd_base + gross) - прогрессия(ytd_base)
+    """
+    t = str(tax_type or '').strip().upper()
+
+    if t in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+        return max(0.0, sell_cost) * 0.01
+
+    if gross <= 0:
+        return 0.0
+
+    ndfl_total = _progressive_ndfl(ytd_base + gross)
+    ndfl_prev  = _progressive_ndfl(ytd_base)
+    return max(0.0, ndfl_total - ndfl_prev)
+
+
+def _get_ytd_base(user, year: int, month: int, share_key: str) -> float:
+    """
+    Накопленная налоговая база (gross - расходы) за все месяцы года ДО текущего.
+    Используется для нарастающего итога НДФЛ по ОСН.
+    """
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+
+    ytd_base = 0.0
+
+    for mo in range(1, month):
+        ms_start = datetime(year, mo, 1, tzinfo=MSK)
+        ms_end   = datetime(year, mo + 1, 1, tzinfo=MSK) if mo < 12 else datetime(year + 1, 1, 1, tzinfo=MSK)
+        mo_key   = f"{year}-{str(mo).zfill(2)}"
+
+        calc    = _calc_month_profit_filtered(user, ms_start, ms_end)
+        gross_mo = calc['gross']
+
+        if calc['month_buy_qty'] == 0 and calc['month_sell_qty'] == 0:
+            manual = MonthlyManualEntry.objects.filter(user=user, month=mo_key).first()
+            if manual:
+                gross_mo = float(manual.gross)
+
+        expenses_mo = float(
+            UserExpense.objects.filter(user=user, month=mo_key)
+            .aggregate(Sum('amount'))['amount__sum'] or 0
+        )
+
+        # База = gross - расходы (то же что gross_net в текущем месяце)
+        ytd_base += max(0.0, gross_mo - expenses_mo)
+
+    return ytd_base
 
 
 def _calc_currency(user, month_start, month_end,
@@ -1550,7 +1602,6 @@ def _calc_currency(user, month_start, month_end,
     Расчёт прибыли за месяц по одной валюте (USDT или TON).
     Средневзвешенный курс остатка.
     Комиссия биржи считается в рублях по курсу каждого ордера отдельно.
-    Переходящий остаток — всегда без фильтра биржи/банка.
     """
     prev_orders = Order.objects.filter(
         user=user,
@@ -1595,8 +1646,8 @@ def _calc_currency(user, month_start, month_end,
     month_buy_comm      = 0.0
     month_sell_qty      = 0.0; month_sell_cost = 0.0
     month_sell_comm     = 0.0
-    month_exch_comm     = 0.0    # в крипте (для расчёта остатка qty)
-    month_exch_comm_rub = 0.0   # в рублях по курсу каждого ордера
+    month_exch_comm     = 0.0
+    month_exch_comm_rub = 0.0
 
     for o in month_orders:
         amt        = float(o.amount or 0)
@@ -1610,14 +1661,14 @@ def _calc_currency(user, month_start, month_end,
             month_buy_cost += cost
             month_buy_comm += total_comm
         else:
-            exch_rate = float(o.exchange_commission_rate or 0)
+            exch_rate   = float(o.exchange_commission_rate or 0)
             exch_crypto = amt * exch_rate / 100
 
             month_sell_qty      += amt
             month_sell_cost     += cost
             month_sell_comm     += total_comm
             month_exch_comm     += exch_crypto
-            month_exch_comm_rub += exch_crypto * price  # в рублях по курсу ордера
+            month_exch_comm_rub += exch_crypto * price
 
     total_buy_qty  = prev_balance_qty  + month_buy_qty
     total_buy_cost = prev_balance_cost + month_buy_cost
@@ -1659,8 +1710,7 @@ def _calc_currency(user, month_start, month_end,
 def _calc_month_profit_filtered(user, month_start, month_end,
                                 exchange_filter='', bank_filter_id=''):
     """
-    Считает прибыль за месяц раздельно по USDT и TON,
-    затем объединяет в общий результат.
+    Считает прибыль за месяц раздельно по USDT и TON.
     """
     usdt = _calc_currency(user, month_start, month_end,
                           currency='USDT',
@@ -1700,8 +1750,9 @@ def _calc_month_profit_filtered(user, month_start, month_end,
 def admin_profit_view(request):
     """
     Сводная таблица прибыли по всем пользователям за выбранный месяц.
-    USDT и TON считаются раздельно, итог складывается.
-    Налог считается в зависимости от типа налогообложения пользователя.
+    gross = выручка - себестоимость - комса банка - комса биржи - расходы пользователя
+    ОСН — НДФЛ нарастающим итогом за год.
+    УСН — 1% от оборота продаж.
     """
     now       = timezone.now()
     year_str  = request.GET.get('year',  str(now.year))
@@ -1740,15 +1791,12 @@ def admin_profit_view(request):
         usdt = calc['usdt']
         ton  = calc['ton']
 
-        # Тип налогообложения пользователя
         tax_type = str(getattr(u, 'tax_type', '') or '').strip().upper()
 
-        # Доля пользователя за месяц
         share_percent = 20.0
         if u.profit_shares and isinstance(u.profit_shares, dict):
             share_percent = float(u.profit_shares.get(share_key, 20.0))
 
-        # Расходы пользователя за месяц
         month_expenses = float(
             UserExpense.objects.filter(user=u, month=share_key)
             .aggregate(Sum('amount'))['amount__sum'] or 0
@@ -1758,31 +1806,30 @@ def admin_profit_view(request):
             .values('name', 'amount')
         )
 
-        gross_usdt = usdt['gross']
-        gross_ton  = ton['gross']
-        gross_all  = gross_usdt + gross_ton
+        # gross_raw — до вычета расходов (для отображения расходов отдельно если нужно)
+        gross_raw_usdt = usdt['gross']
+        gross_raw_ton  = ton['gross']
+        gross_raw_all  = gross_raw_usdt + gross_raw_ton
 
-        # Если ордеров нет — берём ручную запись от админа
         has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
 
         if not has_activity:
             manual = MonthlyManualEntry.objects.filter(user=u, month=share_key).first()
             if manual:
-                gross_all  = float(manual.gross)
-                gross_usdt = gross_all
-                gross_ton  = 0.0
+                gross_raw_all  = float(manual.gross)
+                gross_raw_usdt = gross_raw_all
+                gross_raw_ton  = 0.0
 
             init_order = Order.objects.filter(
-                user=u,
-                exchange_type="Остаток (до 1 фев)"
+                user=u, exchange_type="Остаток (до 1 фев)"
             ).first()
             manual_crypto_balance = float(init_order.amount) if init_order else 0.0
         else:
             manual_crypto_balance = None
 
-        # Пропорционально делим расходы между USDT и TON
-        pos_usdt  = max(0.0, gross_usdt)
-        pos_ton   = max(0.0, gross_ton)
+        # Пропорция расходов между USDT и TON
+        pos_usdt  = max(0.0, gross_raw_usdt)
+        pos_ton   = max(0.0, gross_raw_ton)
         pos_total = pos_usdt + pos_ton
 
         if pos_total > 0:
@@ -1792,26 +1839,45 @@ def admin_profit_view(request):
             usdt_expense_share = 0.0
             ton_expense_share  = 0.0
 
+        # gross_net = gross - расходы (это и есть "До вычета" в таблице)
+        gross_usdt = max(0.0, gross_raw_usdt - usdt_expense_share)
+        gross_ton  = max(0.0, gross_raw_ton  - ton_expense_share)
+        gross_all  = max(0.0, gross_raw_all  - month_expenses)
+
+        # Накопленная база за год (для ОСН нарастающий итог)
+        t = tax_type
+        if t not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+            ytd_base = _get_ytd_base(u, year, month, share_key)
+        else:
+            ytd_base = 0.0
+
+        sell_cost_all = calc['month_sell_cost']
+
         # ── USDT ──────────────────────────────────────────────────────
-        after_exp_usdt = max(0.0, gross_usdt - usdt_expense_share)
-        ndfl_usdt      = _calc_ndfl(after_exp_usdt, tax_type)
-        after_usdt     = after_exp_usdt - ndfl_usdt
-        share_usdt     = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
-        net_usdt       = after_usdt - share_usdt
+        ytd_usdt  = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
+        ndfl_usdt = _calc_ndfl(gross_usdt, tax_type,
+                               sell_cost=usdt['month_sell_cost'],
+                               ytd_base=ytd_usdt)
+        after_usdt = gross_usdt - ndfl_usdt
+        share_usdt = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
+        net_usdt   = after_usdt - share_usdt
 
         # ── TON ───────────────────────────────────────────────────────
-        after_exp_ton = max(0.0, gross_ton - ton_expense_share)
-        ndfl_ton      = _calc_ndfl(after_exp_ton, tax_type)
-        after_ton     = after_exp_ton - ndfl_ton
-        share_ton     = after_ton * (share_percent / 100) if after_ton > 0 else 0
-        net_ton       = after_ton - share_ton
+        ytd_ton  = ytd_base * (pos_ton / pos_total) if pos_total > 0 else 0.0
+        ndfl_ton = _calc_ndfl(gross_ton, tax_type,
+                              sell_cost=ton['month_sell_cost'],
+                              ytd_base=ytd_ton)
+        after_ton = gross_ton - ndfl_ton
+        share_ton = after_ton * (share_percent / 100) if after_ton > 0 else 0
+        net_ton   = after_ton - share_ton
 
-        # ── ИТОГО: расходы → налог → доля ─────────────────────────────
-        after_exp_all = max(0.0, gross_all - month_expenses)
-        ndfl_all      = _calc_ndfl(after_exp_all, tax_type)
-        after_all     = after_exp_all - ndfl_all
-        share_all     = after_all * (share_percent / 100) if after_all > 0 else 0
-        net_all       = after_all - share_all
+        # ── ИТОГО ─────────────────────────────────────────────────────
+        ndfl_all  = _calc_ndfl(gross_all, tax_type,
+                               sell_cost=sell_cost_all,
+                               ytd_base=ytd_base)
+        after_all = gross_all - ndfl_all
+        share_all = after_all * (share_percent / 100) if after_all > 0 else 0
+        net_all   = after_all - share_all
 
         bank_comm_rub      = calc['month_buy_comm'] + calc['month_sell_comm']
         usdt_bank_comm     = usdt['month_buy_comm'] + usdt['month_sell_comm']
@@ -1836,7 +1902,7 @@ def admin_profit_view(request):
             'exchange_comm_rub':     exchange_comm_rub,
             'total_comm_rub':        bank_comm_rub,
             'eq_buy_cost':           calc['eq_buy_cost'],
-            'gross':                 gross_all,
+            'gross':                 gross_all,           # уже с вычетом расходов
             'gross_profit_positive': gross_all >= 0,
             'ndfl':                  ndfl_all,
             'tax_type':              tax_type,
