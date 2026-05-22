@@ -1943,6 +1943,8 @@ def admin_profit_view(request):
     from collections import defaultdict
     MSK = ZoneInfo('Europe/Moscow')
 
+    import time
+    t0 = time.time()
     now      = timezone.now()
     year_str = request.GET.get('year',  str(now.year))
     month_str = request.GET.get('month', str(now.month).zfill(2))
@@ -2244,6 +2246,7 @@ def admin_profit_view(request):
         (m['name'] for m in months_list if m['num'] == month_str), month_str
     )
 
+    print(f"[profit_view] {time.time() - t0:.2f}s", flush=True)
     return render(request, 'custom_admin/profit_list.html', {
         'user_stats':          user_stats,
         'summary':             summary,
