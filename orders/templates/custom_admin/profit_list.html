@@ -102,6 +102,13 @@
     .sortable.sort-asc .sort-icon::after  { content: ' ▲'; opacity: 1; color: #6c8cff; }
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
+    .income-tax-row .d-flex {
+        flex-wrap: wrap;      /* при сужении экрана элементы переносятся */
+        row-gap: 6px;
+    }
+    .income-tax-row .d-flex > div {
+        white-space: nowrap;  /* текст внутри блока не переносится */
+    }
 </style>
 {% endblock %}
 
@@ -292,14 +299,16 @@
                     </td>
 
                     <td>
-                        <div class="finance-block">
-                            <div class="d-flex justify-content-between">
-                                <span class="val-label">Доход:</span>
-                                <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
-                            </div>
-                            <div class="d-flex justify-content-between">
-                                <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
-                                <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
+                        <div class="finance-block income-tax-row">
+                            <div class="d-flex justify-content-between gap-3">
+                                <div>
+                                    <span class="val-label">Доход:</span>
+                                    <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
+                                </div>
+                                <div>
+                                    <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
+                                    <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
+                                </div>
                             </div>
                         </div>
                     </td>
