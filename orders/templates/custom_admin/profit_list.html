@@ -178,10 +178,10 @@
                     <th class="sortable" onclick="sortTable('name')">Пользователь<span class="sort-icon"></span></th>
                     <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
-                    <th class="sortable" onclick="sortTable('comm')">Комиссии<span class="sort-icon"></span></th>
-                    <th class="sortable" onclick="sortTable('gross')">Прибыль и НДФЛ<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('comm')">Прочие<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('gross')">Доход и налог<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('share')">Доля<span class="sort-icon"></span></th>
-                    <th class="sortable text-end" onclick="sortTable('net')">Итог за месяц<span class="sort-icon"></span></th>
+                    <th class="sortable text-end" onclick="sortTable('net')">Чистая прибыль<span class="sort-icon"></span></th>
                 </tr>
             </thead>
             <tbody id="statsTableBody">
@@ -247,26 +247,14 @@
                         </div>
                     </td>
 
+                    <!-- Столбец "Прочие": сюда перенесён блок прочих расходов -->
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
                             <div><span class="val-label">Биржа:</span> <span class="val-money text-muted money row-exch">{{ stat.all_exch_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">₽</span></div>
-                        </div>
-                    </td>
-
-                    <td>
-                        <div class="finance-block">
-                            <div><span class="val-label">До вычета:</span> <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span></div>
-                            <div><span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span> <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span></div>
-                        </div>
-                    </td>
-
-                    <td>
-                        <div class="finance-block">
-                            <div><span class="val-label row-share-pct">{{ stat.share_percent }}%:</span> <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span></div>
                             {% if stat.month_expenses > 0 %}
                             <div class="expense-tooltip">
-                                <div><span class="val-label">Расходы:</span> <span class="val-money text-warning money">{{ stat.month_expenses }}</span></div>
+                                <div><span class="val-label">Прочие:</span> <span class="val-money text-warning money">{{ stat.month_expenses }}</span></div>
                                 <div class="tooltip-box">
                                     <div style="font-weight:600;color:#fff;margin-bottom:6px;">📋 Расходы за месяц</div>
                                     {% for exp in stat.expenses_list %}
@@ -282,6 +270,20 @@
                                 </div>
                             </div>
                             {% endif %}
+                        </div>
+                    </td>
+
+                    <td>
+                        <div class="finance-block">
+                            <div><span class="val-label">Доход:</span> <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span></div>
+                            <div><span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span> <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span></div>
+                        </div>
+                    </td>
+
+                    <!-- Теперь столбец "Доля" содержит только процент и сумму доли -->
+                    <td>
+                        <div class="finance-block">
+                            <div><span class="val-label row-share-pct">{{ stat.share_percent }}%:</span> <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span></div>
                         </div>
                     </td>
 
