@@ -128,14 +128,18 @@
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
 
-    /* ===== Колонка "Доход и налог" — вертикальный стек ===== */
+    /* ===== Колонка "Доход и налог" — горизонтально в одну строку ===== */
     .income-tax-col {
         display: flex;
-        flex-direction: column;
-        gap: 5px;
+        flex-direction: row;
+        align-items: baseline;
+        gap: 16px;
+        flex-wrap: nowrap;
+        white-space: nowrap;
     }
     .income-tax-col .finance-row {
         white-space: nowrap;
+        flex-shrink: 0;
     }
 
     /* ===== Фиксированные минимальные ширины колонок ===== */
