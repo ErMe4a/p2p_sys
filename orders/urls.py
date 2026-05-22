@@ -33,4 +33,5 @@ urlpatterns = [
     path('p2p-admin/profit/', views.admin_profit_view, name='admin_profit'),
     path('p2p-admin/manual-entries/<int:user_id>/', views.admin_manual_entry_list, name='admin_manual_entry_list'),
     path('p2p-admin/manual-entry/save/',            views.admin_manual_entry_save,  name='admin_manual_entry_save'),
+    path('p2p-admin/api/user-yearly-profit/', views.api_user_yearly_profit, name='api_user_yearly_profit'),
 ]

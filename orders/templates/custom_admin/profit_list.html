@@ -170,10 +170,22 @@
         </h5>
 
         <div class="filters-row">
-            <div class="search-wrapper">
-                <input type="text" id="userSearch" class="form-control form-control-sm filter-select" placeholder="Поиск пользователя...">
+            <div class="search-wrapper" style="position:relative;">
+                <input type="text" id="userSearch" class="form-control form-control-sm filter-select"
+                       placeholder="Поиск пользователя..." autocomplete="off">
                 <span class="search-icon">🔍</span>
+                <div id="searchDropdown" style="
+                    display:none; position:absolute; top:100%; left:0; right:0;
+                    background:#1a2035; border:1px solid var(--border-color);
+                    border-radius:8px; z-index:1000; margin-top:4px;
+                    box-shadow:0 4px 20px rgba(0,0,0,0.5); overflow:hidden;
+                "></div>
             </div>
+            <button id="btnClearUser" onclick="clearUserFilter()" style="
+                display:none; padding:5px 12px; border-radius:8px; font-size:12px;
+                background:rgba(255,100,100,0.15); border:1px solid rgba(255,100,100,0.3);
+                color:#ff6c6c; cursor:pointer;
+            ">✕ Сбросить</button>
 
             <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
                 <option value="usdt" selected>USDT</option>
@@ -406,7 +418,10 @@
 {% block extra_js %}
 <script>
     var currentCurrency = 'all';
+    var selectedUserId   = null;
+    var selectedUsername = null;
 
+    // ── Утилиты ──────────────────────────────────────────────────
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
@@ -415,44 +430,37 @@
         if (raw === undefined || raw === null) return 0;
         if (typeof raw === 'number') return raw;
         let str = String(raw).trim();
-        if (str.includes(':')) {
-            str = str.split(':').pop().trim();
-        }
+        if (str.includes(':')) str = str.split(':').pop().trim();
         str = str.replace(/[^\d,.-]/g, '').replace(',', '.');
         let num = parseFloat(str);
         return isNaN(num) ? 0 : num;
     }
 
+    // ── Summary карточки ─────────────────────────────────────────
     function updateSummaryFromVisibleRows() {
         var sell = 0, buy = 0, gross = 0, share = 0, net = 0;
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             if (row.style.display === 'none') return;
             var d = row.dataset;
-            var s, b, g, sh, n;
             if (currentCurrency === 'ton') {
-                s  = parseFloat(d.tonSell  || 0);
-                b  = parseFloat(d.tonBuy   || 0);
-                g  = parseFloat(d.tonGross || 0);
-                sh = parseFloat(d.tonShare || 0);
-                n  = parseFloat(d.tonNet   || 0);
+                sell  += parseFloat(d.tonSell  || 0);
+                buy   += parseFloat(d.tonBuy   || 0);
+                gross += parseFloat(d.tonGross || 0);
+                share += parseFloat(d.tonShare || 0);
+                net   += parseFloat(d.tonNet   || 0);
             } else if (currentCurrency === 'usdt') {
-                s  = parseFloat(d.usdtSell  || 0);
-                b  = parseFloat(d.usdtBuy   || 0);
-                g  = parseFloat(d.usdtGross || 0);
-                sh = parseFloat(d.usdtShare || 0);
-                n  = parseFloat(d.usdtNet   || 0);
+                sell  += parseFloat(d.usdtSell  || 0);
+                buy   += parseFloat(d.usdtBuy   || 0);
+                gross += parseFloat(d.usdtGross || 0);
+                share += parseFloat(d.usdtShare || 0);
+                net   += parseFloat(d.usdtNet   || 0);
             } else {
-                s  = parseFloat(d.allSell  || 0);
-                b  = parseFloat(d.allBuy   || 0);
-                g  = parseFloat(d.allGross || 0);
-                sh = parseFloat(d.allShare || 0);
-                n  = parseFloat(d.allNet   || 0);
+                sell  += parseFloat(d.allSell  || 0);
+                buy   += parseFloat(d.allBuy   || 0);
+                gross += parseFloat(d.allGross || 0);
+                share += parseFloat(d.allShare || 0);
+                net   += parseFloat(d.allNet   || 0);
             }
-            sell  += s;
-            buy   += b;
-            gross += g;
-            share += sh;
-            net   += n;
         });
         document.getElementById('sum-sell').textContent   = fmt(sell);
         document.getElementById('sum-buy').textContent    = fmt(buy);
@@ -462,16 +470,179 @@
         document.getElementById('sum-net').textContent    = fmt(net);
     }
 
+    function setSummaryFromData(s) {
+        document.getElementById('sum-sell').textContent   = fmt(s.sell_sum);
+        document.getElementById('sum-buy').textContent    = fmt(s.buy_sum);
+        document.getElementById('sum-volume').textContent = fmt(s.turnover);
+        document.getElementById('sum-gross').textContent  = fmt(s.gross);
+        document.getElementById('sum-share').textContent  = fmt(s.share);
+        document.getElementById('sum-net').textContent    = fmt(s.net);
+    }
+
+    // ── Поиск с автодополнением ───────────────────────────────────
+    var searchTimeout = null;
+    var dropdown      = document.getElementById('searchDropdown');
+
     document.getElementById('userSearch').addEventListener('input', function() {
-        var query = this.value.toLowerCase().trim();
-        document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
-            var nameEl = row.querySelector('td:first-child .fw-bold');
-            var name = nameEl ? nameEl.textContent.toLowerCase() : '';
-            row.style.display = (query === '' || name.includes(query)) ? '' : 'none';
-        });
-        updateSummaryFromVisibleRows();
+        var query = this.value.trim();
+        clearTimeout(searchTimeout);
+
+        if (query.length < 1) {
+            dropdown.style.display = 'none';
+            if (selectedUserId) clearUserFilter();
+            return;
+        }
+
+        searchTimeout = setTimeout(function() {
+            fetch('/p2p-admin/api/search-users/?q=' + encodeURIComponent(query))
+                .then(function(r) { return r.json(); })
+                .then(function(users) {
+                    dropdown.innerHTML = '';
+                    if (!users.length) {
+                        dropdown.style.display = 'none';
+                        return;
+                    }
+                    users.forEach(function(u) {
+                        var item = document.createElement('div');
+                        item.textContent = u.username;
+                        item.style.cssText = 'padding:8px 14px; cursor:pointer; font-size:0.85rem; border-bottom:1px solid rgba(255,255,255,0.05);';
+                        item.addEventListener('mouseenter', function() { this.style.background = 'rgba(108,140,255,0.15)'; });
+                        item.addEventListener('mouseleave', function() { this.style.background = ''; });
+                        item.addEventListener('click', function() {
+                            selectUser(u.id, u.username);
+                        });
+                        dropdown.appendChild(item);
+                    });
+                    dropdown.style.display = 'block';
+                });
+        }, 250);
     });
 
+    // Закрыть дропдаун при клике вне
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.search-wrapper')) {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    // ── Выбор пользователя — загрузка данных за год ───────────────
+    function selectUser(userId, username) {
+        selectedUserId   = userId;
+        selectedUsername = username;
+        dropdown.style.display = 'none';
+        document.getElementById('userSearch').value = username;
+        document.getElementById('btnClearUser').style.display = '';
+
+        var year = document.getElementById('filterYear').value;
+        loadUserYearlyData(userId, year);
+    }
+
+    function loadUserYearlyData(userId, year) {
+        var tableWrap = document.querySelector('.table-responsive');
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">⏳ Загрузка...</div>';
+
+        fetch('/p2p-admin/api/user-yearly-profit/?user_id=' + userId + '&year=' + year)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                setSummaryFromData(data.summary);
+                renderYearlyTable(data);
+            })
+            .catch(function() {
+                tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#ff6c6c;">Ошибка загрузки данных</div>';
+            });
+    }
+
+    function renderYearlyTable(data) {
+        var tableWrap = document.querySelector('.table-responsive');
+
+        if (!data.months || !data.months.length) {
+            tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Нет данных за ' + data.year + ' год</div>';
+            return;
+        }
+
+        var html = '';
+
+        data.months.forEach(function(m) {
+            html += '<div style="margin-bottom:20px;">';
+            // Заголовок месяца
+            html += '<div style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--text-muted);padding:8px 4px 6px;border-bottom:1px solid var(--border-color);margin-bottom:6px;">';
+            html += '📅 ' + m.month_name + ' ' + data.year;
+            html += '</div>';
+
+            // Таблица месяца
+            html += '<table class="table table-hover align-middle" style="color:var(--text-main);border-color:var(--border-color);margin-bottom:0;">';
+            html += '<thead style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:rgba(255,255,255,0.02);">';
+            html += '<tr>';
+            html += '<th>Пользователь</th>';
+            html += '<th>Остаток</th>';
+            html += '<th>Движение (RUB)</th>';
+            html += '<th>Прочие</th>';
+            html += '<th>Доход и налог</th>';
+            html += '<th>Доля</th>';
+            html += '<th class="text-end">Чистая прибыль</th>';
+            html += '</tr></thead><tbody>';
+
+            html += '<tr>';
+
+            // Пользователь
+            html += '<td><div class="fw-bold" style="font-size:0.9rem;">' + data.username + '</div></td>';
+
+            // Остаток
+            html += '<td>';
+            html += '<div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>';
+            html += '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>';
+            html += '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div>';
+            html += '</td>';
+
+            // Движение
+            html += '<td><div class="finance-block">';
+            html += '<div class="finance-row"><span class="val-label">Buy:</span><span class="val-money text-success">' + fmt(m.buy) + '</span></div>';
+            html += '<div class="finance-row"><span class="val-label">Sell:</span><span class="val-money text-danger">' + fmt(m.sell) + '</span></div>';
+            html += '</div></td>';
+
+            // Прочие
+            html += '<td><div class="finance-block">';
+            html += '<div class="finance-row"><span class="val-label">Банк:</span><span class="val-money text-muted">' + fmt(m.bank_comm) + '</span></div>';
+            html += '<div class="finance-row"><span class="val-label">Биржа:</span><span class="val-money text-muted">' + fmt(m.exch_comm) + '</span></div>';
+            if (m.expenses > 0) {
+                html += '<div class="finance-row"><span class="val-label">Прочие:</span><span class="val-money text-warning">' + fmt(m.expenses) + '</span></div>';
+            }
+            html += '</div></td>';
+
+            // Доход и налог
+            html += '<td><div class="income-tax-col">';
+            html += '<div class="finance-row"><span class="val-label-lg">Доход:</span><span class="val-money ' + (m.gross_positive ? 'text-success' : 'text-danger') + '">' + fmt(m.gross) + '</span></div>';
+            html += '<div class="finance-row"><span class="val-label-lg">' + m.tax_label + ':</span><span class="val-money text-warning">' + fmt(m.ndfl) + '</span></div>';
+            html += '</div></td>';
+
+            // Доля
+            html += '<td><div class="finance-block">';
+            html += '<div class="finance-row"><span class="val-label">' + m.share_percent + '%:</span><span class="val-money" style="color:var(--accent-blue);">' + fmt(m.share) + '</span></div>';
+            html += '</div></td>';
+
+            // Чистая прибыль
+            html += '<td class="text-end">';
+            html += '<div class="fw-bold ' + (m.net_positive ? 'text-net-profit' : 'text-danger') + '" style="font-size:1rem;">' + fmt(m.net) + ' ₽</div>';
+            html += '</td>';
+
+            html += '</tr></tbody></table></div>';
+        });
+
+        tableWrap.innerHTML = html;
+    }
+
+    // ── Сброс фильтра пользователя ────────────────────────────────
+    function clearUserFilter() {
+        selectedUserId   = null;
+        selectedUsername = null;
+        document.getElementById('userSearch').value = '';
+        document.getElementById('btnClearUser').style.display = 'none';
+
+        // Восстанавливаем оригинальную таблицу
+        location.reload();
+    }
+
+    // ── Переключение валюты ───────────────────────────────────────
     function setCurrency(val) {
         currentCurrency = val;
 
@@ -491,9 +662,11 @@
         }
 
         var thBal = document.getElementById('thBalance');
-        if (val === 'ton')       thBal.childNodes[0].nodeValue = 'Остаток (TON)';
-        else if (val === 'usdt') thBal.childNodes[0].nodeValue = 'Остаток (USDT)';
-        else                     thBal.childNodes[0].nodeValue = 'Остаток';
+        if (thBal) {
+            if (val === 'ton')       thBal.childNodes[0].nodeValue = 'Остаток (TON)';
+            else if (val === 'usdt') thBal.childNodes[0].nodeValue = 'Остаток (USDT)';
+            else                     thBal.childNodes[0].nodeValue = 'Остаток';
+        }
 
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
@@ -502,6 +675,8 @@
             var tonBal    = parseFloat(d.tonBalance  || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
             var tonBalEl  = row.querySelector('.row-balance-ton');
+
+            if (!usdtBalEl || !tonBalEl) return;
 
             if (val === 'usdt') {
                 usdtBalEl.style.display = '';
@@ -520,21 +695,16 @@
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
-            // Движение
             row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy  : val === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0);
             row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell : val === 'usdt' ? d.usdtSell : d.allSell) || 0);
-
-            // Прочие
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank : val === 'usdt' ? d.usdtBank : d.allBank) || 0);
             row.querySelector('.row-exch').textContent = fmt(parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0);
 
-            // Доход
             var gross   = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
             var grossEl = row.querySelector('.row-gross');
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
-            // НДФЛ / УСН / Доля / Чистая
             var ndflVal, shareVal, netVal;
             if (val === 'ton') {
                 ndflVal  = cleanNdflValue(d.tonNdfl);
@@ -562,6 +732,7 @@
         updateSummaryFromVisibleRows();
     }
 
+    // ── Фильтры ───────────────────────────────────────────────────
     function applyFilters() {
         var year     = document.getElementById('filterYear').value;
         var exchange = document.getElementById('filterExchange').value;
@@ -580,11 +751,13 @@
         window.location.href = currentUrl.toString();
     }
 
+    // ── Сортировка ────────────────────────────────────────────────
     var sortState = { key: null, dir: 1 };
 
     function sortTable(key) {
         var tbody = document.getElementById('statsTableBody');
-        var rows  = Array.from(tbody.querySelectorAll('tr'));
+        if (!tbody) return;
+        var rows = Array.from(tbody.querySelectorAll('tr'));
 
         sortState.dir = (sortState.key === key) ? sortState.dir * -1 : -1;
         sortState.key = key;
@@ -641,6 +814,7 @@
         rows.forEach(function(r) { tbody.appendChild(r); });
     }
 
+    // ── Инициализация ─────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.money').forEach(function(el) {
             var raw = el.innerText.replace(/\s/g, '').replace(',', '.');
