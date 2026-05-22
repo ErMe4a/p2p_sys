@@ -14,7 +14,7 @@
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
     
     .finance-block { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
-    .val-label { display: inline-block; width: 70px; color: var(--text-muted); }
+    .val-label { display: inline-block; width: 80px; color: var(--text-muted); }  /* увеличено до 80px */
     .val-money { font-family: 'Inter', monospace; font-weight: 500; }
     .balance-positive { color: #6c8cff; }
     .balance-negative { color: #ff6c6c; }
@@ -24,7 +24,7 @@
     /* Поле поиска пользователя */
     .search-wrapper { position: relative; display: inline-block; }
     .search-wrapper input {
-        width: 220px !important;  /* шире стандартного фильтра */
+        width: 220px !important;
         padding-right: 30px !important;
     }
     .search-wrapper .search-icon {
@@ -114,7 +114,6 @@
         </h5>
 
         <div class="filters-row">
-            <!-- Поле поиска пользователя с лупой -->
             <div class="search-wrapper">
                 <input type="text" id="userSearch" class="form-control form-control-sm filter-select" placeholder="Поиск пользователя...">
                 <span class="search-icon">🔍</span>
@@ -260,8 +259,9 @@
 
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Sell:</span> <span class="val-money text-success money row-sell">{{ stat.month_sell_cost }}</span></div>
-                            <div><span class="val-label">Buy:</span>  <span class="val-money text-danger money row-buy">{{ stat.month_buy_cost }}</span></div>
+                            <!-- Поменяны местами: сначала Buy, потом Sell; цвета наоборот -->
+                            <div><span class="val-label">Buy:</span> <span class="val-money text-success money row-buy">{{ stat.month_buy_cost }}</span></div>
+                            <div><span class="val-label">Sell:</span> <span class="val-money text-danger money row-sell">{{ stat.month_sell_cost }}</span></div>
                         </div>
                     </td>
 
@@ -304,7 +304,7 @@
                         </div>
                     </td>
 
-                    <!-- Столбец "Доля" (без прочих расходов) -->
+                    <!-- Столбец "Доля" -->
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label row-share-pct">{{ stat.share_percent }}%:</span> <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span></div>
@@ -332,11 +332,10 @@
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // Пересчёт итоговых сумм на основе видимых строк и текущей валюты
     function updateSummaryFromVisibleRows() {
         var sell = 0, buy = 0, gross = 0, share = 0, net = 0;
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
-            if (row.style.display === 'none') return;  // пропускаем скрытые поиском
+            if (row.style.display === 'none') return;
             var d = row.dataset;
             var s, b, g, sh, n;
             if (currentCurrency === 'ton') {
@@ -372,18 +371,13 @@
         document.getElementById('sum-net').textContent    = fmt(net);
     }
 
-    // Фильтрация по имени пользователя
     document.getElementById('userSearch').addEventListener('input', function() {
         var query = this.value.toLowerCase().trim();
         var rows = document.querySelectorAll('#statsTableBody tr');
         rows.forEach(function(row) {
             var nameEl = row.querySelector('td:first-child .fw-bold');
             var name = nameEl ? nameEl.textContent.toLowerCase() : '';
-            if (query === '' || name.includes(query)) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
+            row.style.display = (query === '' || name.includes(query)) ? '' : 'none';
         });
         updateSummaryFromVisibleRows();
     });
@@ -439,8 +433,9 @@
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
-            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
+            // Обновляем значения с учётом нового порядка: Buy теперь первый, Sell второй
             row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy   : val === 'usdt' ? d.usdtBuy   : d.allBuy)   || 0);
+            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
 
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
 
@@ -474,7 +469,6 @@
             netEl.className = 'fw-bold row-net ' + (netVal >= 0 ? 'text-net-profit' : 'text-danger');
         });
 
-        // После смены валюты пересчитываем итоги по видимым строкам
         updateSummaryFromVisibleRows();
     }
 
@@ -553,7 +547,6 @@
         });
 
         rows.forEach(function(r) { tbody.appendChild(r); });
-        // После сортировки итоги не меняются, но если нужно – можно не пересчитывать
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -564,7 +557,6 @@
             }
         });
 
-        // Инициализация – показываем все валюты и пересчитываем итоги
         setCurrency('all');
     });
 </script>
