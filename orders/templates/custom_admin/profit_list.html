@@ -5,49 +5,69 @@
 {% block extra_css %}
 <style>
     .month-tabs { display: flex; gap: 8px; overflow-x: auto; margin-bottom: 20px; padding-bottom: 5px; }
-    .month-tab { 
-        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); 
-        color: var(--text-muted); padding: 8px 18px; border-radius: 8px; 
-        text-decoration: none; font-size: 0.85rem; transition: 0.2s; white-space: nowrap; 
+    .month-tab {
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+        color: var(--text-muted); padding: 8px 18px; border-radius: 8px;
+        text-decoration: none; font-size: 0.85rem; transition: 0.2s; white-space: nowrap;
     }
     .month-tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
-    
-    .finance-block { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
-    /* === Уменьшена ширина label, чтобы текст не разрывался === */
-    .val-label { 
-        display: inline-block; 
-        width: 52px; 
-        color: var(--text-muted); 
+
+    /* ===== Базовый блок строки ===== */
+    .finance-block {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        font-size: 0.82rem;
+    }
+    .finance-row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        white-space: nowrap;
+    }
+
+    /* ===== Метка (label): фиксированная ширина + выравнивание вправо ===== */
+    .val-label {
+        display: inline-block;
+        min-width: 52px;
+        width: 52px;
+        text-align: right;
+        color: var(--text-muted);
+        font-size: 0.78rem;
         flex-shrink: 0;
     }
-    .val-money { font-family: 'Inter', monospace; font-weight: 500; }
+    /* Для колонки "Доход и налог" — чуть шире под "Доход:" */
+    .val-label-lg {
+        display: inline-block;
+        min-width: 58px;
+        width: 58px;
+        text-align: right;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        flex-shrink: 0;
+    }
+
+    /* ===== Числа ===== */
+    .val-money {
+        font-family: 'Inter', monospace;
+        font-weight: 500;
+        font-size: 0.85rem;
+    }
+
     .balance-positive { color: #6c8cff; }
     .balance-negative { color: #ff6c6c; }
+
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
 
     .search-wrapper { position: relative; display: inline-block; }
-    .search-wrapper input {
-        width: 220px !important;
-        padding-right: 30px !important;
-    }
+    .search-wrapper input { width: 220px !important; padding-right: 30px !important; }
     .search-wrapper .search-icon {
         position: absolute; right: 8px; top: 50%;
         transform: translateY(-50%); color: var(--text-muted);
         pointer-events: none; font-size: 14px;
     }
-
-    .currency-switcher { display: flex; gap: 4px; }
-    .currency-btn {
-        padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
-        cursor: pointer; border: 1px solid var(--border-color); background: transparent;
-        transition: all .15s ease; color: var(--text-muted);
-    }
-    .currency-btn:hover { color: #fff; }
-    .currency-btn.active-all  { background: rgba(108,140,255,.15); border-color: rgba(108,140,255,.4); color: #6c8cff; }
-    .currency-btn.active-usdt { background: rgba(88,214,141,.12); border-color: rgba(88,214,141,.35); color: #58d68d; }
-    .currency-btn.active-ton  { background: rgba(61,154,245,.12); border-color: rgba(61,154,245,.35); color: #3d9af5; }
 
     .text-net-profit { color: #e879f9 !important; }
     .inactive-row { opacity: 0.4; }
@@ -59,7 +79,7 @@
         margin-bottom: 25px;
     }
     .summary-card {
-        background: rgba(255, 255, 255, 0.02);
+        background: rgba(255,255,255,0.02);
         border: 1px solid var(--border-color);
         padding: 16px;
         border-radius: 12px;
@@ -68,7 +88,7 @@
         gap: 8px;
         transition: transform 0.2s;
     }
-    .summary-card:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.06); }
+    .summary-card:hover { transform: translateY(-2px); background: rgba(255,255,255,0.06); }
     .summary-card .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; white-space: nowrap; }
     .summary-card .value { font-size: 1.3rem; font-weight: 700; font-family: 'Inter', monospace; }
 
@@ -79,7 +99,7 @@
     .c-share .value  { color: #8b5cf6; }
     .c-net .value    { color: #e879f9; }
 
-    .expense-tooltip { position: relative; display: inline-block; cursor: pointer; }
+    .expense-tooltip { position: relative; display: inline-block; cursor: pointer; width: 100%; }
     .expense-tooltip .tooltip-box {
         display: none; position: absolute; right: 0; top: 100%;
         background: #1a2035; border: 1px solid var(--border-color);
@@ -96,38 +116,43 @@
         display: inline-block; padding: 3px 12px; border-radius: 20px;
         font-size: 13px; font-weight: 700; margin-left: 10px; vertical-align: middle;
     }
-    .currency-badge-all  { background: rgba(108,140,255,.2); color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
-    .currency-badge-usdt { background: rgba(88,214,141,.15); color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
-    .currency-badge-ton  { background: rgba(61,154,245,.15); color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
+    .currency-badge-all  { background: rgba(108,140,255,.2);  color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
+    .currency-badge-usdt { background: rgba(88,214,141,.15);  color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
+    .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
 
+    /* ===== Сортировка ===== */
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .sortable:hover { color: #fff; }
     .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
-    .sortable.sort-asc .sort-icon::after  { content: ' ▲'; opacity: 1; color: #6c8cff; }
+    .sortable.sort-asc  .sort-icon::after { content: ' ▲'; opacity: 1; color: #6c8cff; }
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
 
-    /* === Блок "Доход и налог" — вертикально, без обрезания === */
-    .income-tax-row {
+    /* ===== Колонка "Доход и налог" — вертикальный стек ===== */
+    .income-tax-col {
         display: flex;
         flex-direction: column;
-        gap: 3px;
-        width: 100%;
+        gap: 5px;
     }
-    .income-tax-row > div {
-        display: flex;
-        align-items: baseline;
+    .income-tax-col .finance-row {
         white-space: nowrap;
     }
 
-    /* === Фиксированная ширина колонок, чтобы не сжимались === */
-    th:nth-child(4),
-    td:nth-child(4) {
-        min-width: 160px;
-    }
-    th:nth-child(5),
-    td:nth-child(5) {
-        min-width: 220px;
+    /* ===== Фиксированные минимальные ширины колонок ===== */
+    th:nth-child(1), td:nth-child(1) { min-width: 110px; }
+    th:nth-child(2), td:nth-child(2) { min-width: 140px; }
+    th:nth-child(3), td:nth-child(3) { min-width: 160px; }
+    th:nth-child(4), td:nth-child(4) { min-width: 170px; }
+    th:nth-child(5), td:nth-child(5) { min-width: 200px; }
+    th:nth-child(6), td:nth-child(6) { min-width: 110px; }
+    th:nth-child(7), td:nth-child(7) { min-width: 130px; }
+
+    /* ===== Единый размер шрифта таблицы ===== */
+    #statsTableBody td {
+        font-size: 0.82rem;
+        vertical-align: middle;
+        padding-top: 10px;
+        padding-bottom: 10px;
     }
 </style>
 {% endblock %}
@@ -267,44 +292,63 @@
                     data-ton-share="{{ stat.ton_share }}"
                     data-ton-net="{{ stat.ton_net }}"
                 >
+                    <!-- Пользователь -->
                     <td>
-                        <div class="fw-bold" style="font-size: 0.95rem;">{{ stat.user.username }}</div>
+                        <div class="fw-bold" style="font-size: 0.9rem;">{{ stat.user.username }}</div>
                         {% if not stat.has_activity %}
                             <span class="badge bg-secondary" style="font-size: 0.65rem;">Нет активности</span>
                         {% endif %}
                     </td>
 
+                    <!-- Остаток -->
                     <td>
-                        <div class="fw-bold balance-positive row-balance-usdt" style="font-size: 0.95rem;">
-                            <span class="money">{{ stat.usdt.remainder_qty_display }}</span> USDT
+                        <div class="fw-bold balance-positive row-balance-usdt" style="font-size: 0.88rem;">
+                            <span class="money">{{ stat.usdt.remainder_qty_display }}</span>&nbsp;USDT
                         </div>
-                        <div class="fw-bold row-balance-ton" style="font-size: 0.95rem; color: #3d9af5;">
-                            <span class="money">{{ stat.ton.remainder_qty_display }}</span> TON
+                        <div class="fw-bold row-balance-ton" style="font-size: 0.88rem; color: #3d9af5;">
+                            <span class="money">{{ stat.ton.remainder_qty_display }}</span>&nbsp;TON
                         </div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>
+                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">На конец месяца</div>
                     </td>
 
+                    <!-- Движение -->
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Buy:</span> <span class="val-money text-success money row-buy">{{ stat.month_buy_cost }}</span></div>
-                            <div><span class="val-label">Sell:</span> <span class="val-money text-danger money row-sell">{{ stat.month_sell_cost }}</span></div>
+                            <div class="finance-row">
+                                <span class="val-label">Buy:</span>
+                                <span class="val-money text-success money row-buy">{{ stat.month_buy_cost }}</span>
+                            </div>
+                            <div class="finance-row">
+                                <span class="val-label">Sell:</span>
+                                <span class="val-money text-danger money row-sell">{{ stat.month_sell_cost }}</span>
+                            </div>
                         </div>
                     </td>
 
-                    <!-- Столбец "Прочие" -->
+                    <!-- Прочие -->
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
-                            <div><span class="val-label">Биржа:</span> <span class="val-money text-muted money row-exch">{{ stat.all_exch_comm_rub }}</span> <span class="row-exch-label" style="font-size:10px;">₽</span></div>
+                            <div class="finance-row">
+                                <span class="val-label">Банк:</span>
+                                <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span>
+                            </div>
+                            <div class="finance-row">
+                                <span class="val-label">Биржа:</span>
+                                <span class="val-money text-muted money row-exch">{{ stat.all_exch_comm_rub }}</span>
+                                <span class="row-exch-label" style="font-size: 10px; color: var(--text-muted);">₽</span>
+                            </div>
                             {% if stat.month_expenses > 0 %}
                             <div class="expense-tooltip">
-                                <div><span class="val-label">Прочие:</span> <span class="val-money text-warning money">{{ stat.month_expenses }}</span></div>
+                                <div class="finance-row">
+                                    <span class="val-label">Прочие:</span>
+                                    <span class="val-money text-warning money">{{ stat.month_expenses }}</span>
+                                </div>
                                 <div class="tooltip-box">
-                                    <div style="font-weight:600;color:#fff;margin-bottom:6px;">📋 Расходы за месяц</div>
+                                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">📋 Расходы за месяц</div>
                                     {% for exp in stat.expenses_list %}
                                     <div class="tooltip-row">
-                                        <span style="color:var(--text-muted);">{{ exp.name }}</span>
-                                        <span style="color:#ffc107;"><span class="money">{{ exp.amount }}</span> ₽</span>
+                                        <span style="color: var(--text-muted);">{{ exp.name }}</span>
+                                        <span style="color: #ffc107;"><span class="money">{{ exp.amount }}</span> ₽</span>
                                     </div>
                                     {% endfor %}
                                     <div class="tooltip-total">
@@ -317,29 +361,33 @@
                         </div>
                     </td>
 
-                    <!-- ===== ИСПРАВЛЕННАЯ КОЛОНКА "Доход и налог" (вертикальный flex) ===== -->
+                    <!-- Доход и налог -->
                     <td>
-                        <div class="income-tax-row">
-                            <div>
-                                <span class="val-label">Доход:</span>
+                        <div class="income-tax-col">
+                            <div class="finance-row">
+                                <span class="val-label-lg">Доход:</span>
                                 <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
                             </div>
-                            <div>
-                                <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
+                            <div class="finance-row">
+                                <span class="val-label-lg">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
                                 <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
                             </div>
                         </div>
                     </td>
 
-                    <!-- Столбец "Доля" -->
+                    <!-- Доля -->
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label row-share-pct">{{ stat.share_percent }}%:</span> <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span></div>
+                            <div class="finance-row">
+                                <span class="val-label row-share-pct">{{ stat.share_percent }}%:</span>
+                                <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span>
+                            </div>
                         </div>
                     </td>
 
+                    <!-- Чистая прибыль -->
                     <td class="text-end">
-                        <div class="fw-bold row-net {% if stat.net_profit_positive %}text-net-profit{% else %}text-danger{% endif %}" style="font-size: 1.1rem;">
+                        <div class="fw-bold row-net {% if stat.net_profit_positive %}text-net-profit{% else %}text-danger{% endif %}" style="font-size: 1rem;">
                             <span class="money">{{ stat.net_profit }}</span> ₽
                         </div>
                     </td>
@@ -412,8 +460,7 @@
 
     document.getElementById('userSearch').addEventListener('input', function() {
         var query = this.value.toLowerCase().trim();
-        var rows = document.querySelectorAll('#statsTableBody tr');
-        rows.forEach(function(row) {
+        document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var nameEl = row.querySelector('td:first-child .fw-bold');
             var name = nameEl ? nameEl.textContent.toLowerCase() : '';
             row.style.display = (query === '' || name.includes(query)) ? '' : 'none';
@@ -439,19 +486,16 @@
             badge.textContent = 'ВСЕ';
         }
 
-        if (val === 'ton') {
-            document.getElementById('thBalance').textContent = 'Остаток (TON)';
-        } else if (val === 'usdt') {
-            document.getElementById('thBalance').textContent = 'Остаток (USDT)';
-        } else {
-            document.getElementById('thBalance').textContent = 'Остаток';
-        }
+        var thBal = document.getElementById('thBalance');
+        if (val === 'ton')       thBal.childNodes[0].nodeValue = 'Остаток (TON)';
+        else if (val === 'usdt') thBal.childNodes[0].nodeValue = 'Остаток (USDT)';
+        else                     thBal.childNodes[0].nodeValue = 'Остаток';
 
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
 
-            var usdtBal = parseFloat(d.usdtBalance || 0);
-            var tonBal  = parseFloat(d.tonBalance  || 0);
+            var usdtBal   = parseFloat(d.usdtBalance || 0);
+            var tonBal    = parseFloat(d.tonBalance  || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
             var tonBalEl  = row.querySelector('.row-balance-ton');
 
@@ -462,7 +506,7 @@
             } else if (val === 'ton') {
                 usdtBalEl.style.display = 'none';
                 tonBalEl.style.display  = '';
-                tonBalEl.className = 'fw-bold row-balance-ton ' + (tonBal >= 0 ? '' : 'balance-negative');
+                tonBalEl.className  = 'fw-bold row-balance-ton';
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             } else {
                 usdtBalEl.style.display = '';
@@ -472,17 +516,21 @@
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
-            row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy   : val === 'usdt' ? d.usdtBuy   : d.allBuy)   || 0);
-            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
-            row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
-            var exchRub = parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0;
-            row.querySelector('.row-exch').textContent = fmt(exchRub);
+            // Движение
+            row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy  : val === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0);
+            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell : val === 'usdt' ? d.usdtSell : d.allSell) || 0);
 
-            var gross = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
+            // Прочие
+            row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank : val === 'usdt' ? d.usdtBank : d.allBank) || 0);
+            row.querySelector('.row-exch').textContent = fmt(parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0);
+
+            // Доход
+            var gross   = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
             var grossEl = row.querySelector('.row-gross');
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
+            // НДФЛ / УСН / Доля / Чистая
             var ndflVal, shareVal, netVal;
             if (val === 'ton') {
                 ndflVal  = cleanNdflValue(d.tonNdfl);
@@ -497,9 +545,11 @@
                 shareVal = parseFloat(d.allShare || 0);
                 netVal   = parseFloat(d.allNet   || 0);
             }
-            row.querySelector('.row-ndfl').textContent  = fmt(ndflVal);
-            row.querySelector('.row-share').textContent = fmt(shareVal);
+
+            row.querySelector('.row-ndfl').textContent    = fmt(ndflVal);
+            row.querySelector('.row-share').textContent   = fmt(shareVal);
             row.querySelector('.row-share-pct').textContent = (d.sharePercent || '20') + '%:';
+
             var netEl = row.querySelector('.row-net');
             netEl.innerHTML = fmt(netVal) + ' ₽';
             netEl.className = 'fw-bold row-net ' + (netVal >= 0 ? 'text-net-profit' : 'text-danger');
@@ -520,9 +570,9 @@
         }
         currentUrl.searchParams.set('year', year);
         if (exchange) currentUrl.searchParams.set('exchange', exchange);
-        else currentUrl.searchParams.delete('exchange');
-        if (bank) currentUrl.searchParams.set('bank', bank);
-        else currentUrl.searchParams.delete('bank');
+        else          currentUrl.searchParams.delete('exchange');
+        if (bank)     currentUrl.searchParams.set('bank', bank);
+        else          currentUrl.searchParams.delete('bank');
         window.location.href = currentUrl.toString();
     }
 
@@ -532,56 +582,53 @@
         var tbody = document.getElementById('statsTableBody');
         var rows  = Array.from(tbody.querySelectorAll('tr'));
 
-        if (sortState.key === key) {
-            sortState.dir *= -1;
-        } else {
-            sortState.key = key;
-            sortState.dir = -1;
-        }
+        sortState.dir = (sortState.key === key) ? sortState.dir * -1 : -1;
+        sortState.key = key;
 
         document.querySelectorAll('.sortable').forEach(function(th) {
             th.classList.remove('sort-asc', 'sort-desc');
         });
-        var ths = document.querySelectorAll('.sortable');
         var keyMap = { name: 0, balance: 1, turnover: 2, comm: 3, gross: 4, share: 5, net: 6 };
         var idx = keyMap[key];
+        var ths = document.querySelectorAll('.sortable');
         if (idx !== undefined && ths[idx]) {
             ths[idx].classList.add(sortState.dir === -1 ? 'sort-desc' : 'sort-asc');
         }
 
+        var cur = currentCurrency;
+
         rows.sort(function(a, b) {
-            var d = a.dataset;
-            var e = b.dataset;
-            var cur = currentCurrency;
+            var d = a.dataset, e = b.dataset;
             var va, vb;
 
             if (key === 'name') {
                 va = a.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
                 vb = b.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
                 return sortState.dir * va.localeCompare(vb);
-            } else if (key === 'balance') {
-                va = parseFloat(cur === 'ton' ? d.tonBalance  : d.usdtBalance) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonBalance  : e.usdtBalance) || 0;
+            }
+
+            function pick(row, usdt, ton, all) {
+                return parseFloat(cur === 'ton' ? row[ton] : cur === 'usdt' ? row[usdt] : row[all]) || 0;
+            }
+
+            if (key === 'balance') {
+                va = pick(d, 'usdtBalance', 'tonBalance', 'allBalance');
+                vb = pick(e, 'usdtBalance', 'tonBalance', 'allBalance');
             } else if (key === 'turnover') {
-                // === ИСПРАВЛЕНИЕ: учёт валюты 'all' ===
-                var aSell = parseFloat(cur === 'ton' ? d.tonSell : cur === 'usdt' ? d.usdtSell : d.allSell) || 0;
-                var aBuy  = parseFloat(cur === 'ton' ? d.tonBuy  : cur === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0;
-                var bSell = parseFloat(cur === 'ton' ? e.tonSell : cur === 'usdt' ? e.usdtSell : e.allSell) || 0;
-                var bBuy  = parseFloat(cur === 'ton' ? e.tonBuy  : cur === 'usdt' ? e.usdtBuy  : e.allBuy)  || 0;
-                va = aSell + aBuy;
-                vb = bSell + bBuy;
+                va = pick(d, 'usdtSell', 'tonSell', 'allSell') + pick(d, 'usdtBuy', 'tonBuy', 'allBuy');
+                vb = pick(e, 'usdtSell', 'tonSell', 'allSell') + pick(e, 'usdtBuy', 'tonBuy', 'allBuy');
             } else if (key === 'comm') {
-                va = parseFloat(cur === 'ton' ? d.tonBank : cur === 'usdt' ? d.usdtBank : d.allBank) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonBank : cur === 'usdt' ? e.usdtBank : e.allBank) || 0;
+                va = pick(d, 'usdtBank', 'tonBank', 'allBank');
+                vb = pick(e, 'usdtBank', 'tonBank', 'allBank');
             } else if (key === 'gross') {
-                va = parseFloat(cur === 'ton' ? d.tonGross : cur === 'usdt' ? d.usdtGross : d.allGross) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonGross : cur === 'usdt' ? e.usdtGross : e.allGross) || 0;
+                va = pick(d, 'usdtGross', 'tonGross', 'allGross');
+                vb = pick(e, 'usdtGross', 'tonGross', 'allGross');
             } else if (key === 'share') {
-                va = parseFloat(cur === 'ton' ? d.tonShare : cur === 'usdt' ? d.usdtShare : d.allShare) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonShare : cur === 'usdt' ? e.usdtShare : e.allShare) || 0;
+                va = pick(d, 'usdtShare', 'tonShare', 'allShare');
+                vb = pick(e, 'usdtShare', 'tonShare', 'allShare');
             } else if (key === 'net') {
-                va = parseFloat(cur === 'ton' ? d.tonNet   : cur === 'usdt' ? d.usdtNet   : d.allNet)   || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonNet   : cur === 'usdt' ? e.usdtNet   : e.allNet)   || 0;
+                va = pick(d, 'usdtNet', 'tonNet', 'allNet');
+                vb = pick(e, 'usdtNet', 'tonNet', 'allNet');
             }
 
             return sortState.dir * (va - vb);
@@ -592,7 +639,8 @@
 
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('.money').forEach(function(el) {
-            var val = parseFloat(el.innerText.replace(',', '.'));
+            var raw = el.innerText.replace(/\s/g, '').replace(',', '.');
+            var val = parseFloat(raw);
             if (!isNaN(val)) {
                 el.innerText = val.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             }
