@@ -21,6 +21,18 @@
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
 
+    /* Поле поиска пользователя */
+    .search-wrapper { position: relative; display: inline-block; }
+    .search-wrapper input {
+        width: 220px !important;  /* шире стандартного фильтра */
+        padding-right: 30px !important;
+    }
+    .search-wrapper .search-icon {
+        position: absolute; right: 8px; top: 50%;
+        transform: translateY(-50%); color: var(--text-muted);
+        pointer-events: none; font-size: 14px;
+    }
+
     .currency-switcher { display: flex; gap: 4px; }
     .currency-btn {
         padding: 5px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
@@ -102,6 +114,12 @@
         </h5>
 
         <div class="filters-row">
+            <!-- Поле поиска пользователя с лупой -->
+            <div class="search-wrapper">
+                <input type="text" id="userSearch" class="form-control form-control-sm filter-select" placeholder="Поиск пользователя...">
+                <span class="search-icon">🔍</span>
+            </div>
+
             <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
                 <option value="usdt" selected>USDT</option>
                 <option value="ton">TON</option>
@@ -178,7 +196,7 @@
                     <th class="sortable" onclick="sortTable('name')">Пользователь<span class="sort-icon"></span></th>
                     <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
-                    <th class="sortable" onclick="sortTable('comm')">Расходы<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('comm')">Прочие<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('gross')">Доход и налог<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('share')">Доля<span class="sort-icon"></span></th>
                     <th class="sortable text-end" onclick="sortTable('net')">Чистая прибыль<span class="sort-icon"></span></th>
@@ -206,8 +224,8 @@
                     data-ton-exch="{{ stat.ton_exch_comm_rub }}"
                     data-all-exch="{{ stat.all_exch_comm_rub }}"
 
-                    data-usdt-bank="{{ stat.usdt.month_buy_comm|add:stat.usdt.month_sell_comm }}"
-                    data-ton-bank="{{ stat.ton.month_buy_comm|add:stat.ton.month_sell_comm }}"
+                    data-usdt-bank="{{ stat.usdt_bank_comm }}"
+                    data-ton-bank="{{ stat.ton_bank_comm }}"
                     data-all-bank="{{ stat.bank_comm_rub }}"
 
                     data-all-ndfl="{{ stat.ndfl }}"
@@ -247,7 +265,7 @@
                         </div>
                     </td>
 
-                    <!-- Столбец "Прочие": сюда перенесён блок прочих расходов -->
+                    <!-- Столбец "Прочие" -->
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label">Банк:</span>  <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span></div>
@@ -275,12 +293,18 @@
 
                     <td>
                         <div class="finance-block">
-                            <div><span class="val-label">Доход:</span> <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span></div>
-                            <div><span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span> <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span></div>
+                            <div class="d-flex justify-content-between">
+                                <span class="val-label">Доход:</span>
+                                <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
+                                <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
+                            </div>
                         </div>
                     </td>
 
-                    <!-- Теперь столбец "Доля" содержит только процент и сумму доли -->
+                    <!-- Столбец "Доля" (без прочих расходов) -->
                     <td>
                         <div class="finance-block">
                             <div><span class="val-label row-share-pct">{{ stat.share_percent }}%:</span> <span class="val-money money row-share" style="color: var(--accent-blue);">{{ stat.share_amount }}</span></div>
@@ -302,22 +326,71 @@
 
 {% block extra_js %}
 <script>
-    var summaryData = {
-        all:  { sell: 0, buy: 0, gross: 0, share: 0, net: 0 },
-        usdt: { sell: 0, buy: 0, gross: 0, share: 0, net: 0 },
-        ton:  { sell: 0, buy: 0, gross: 0, share: 0, net: 0 }
-    };
-
     var currentCurrency = 'all';
 
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    // Пересчёт итоговых сумм на основе видимых строк и текущей валюты
+    function updateSummaryFromVisibleRows() {
+        var sell = 0, buy = 0, gross = 0, share = 0, net = 0;
+        document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
+            if (row.style.display === 'none') return;  // пропускаем скрытые поиском
+            var d = row.dataset;
+            var s, b, g, sh, n;
+            if (currentCurrency === 'ton') {
+                s  = parseFloat(d.tonSell  || 0);
+                b  = parseFloat(d.tonBuy   || 0);
+                g  = parseFloat(d.tonGross || 0);
+                sh = parseFloat(d.tonShare || 0);
+                n  = parseFloat(d.tonNet   || 0);
+            } else if (currentCurrency === 'usdt') {
+                s  = parseFloat(d.usdtSell  || 0);
+                b  = parseFloat(d.usdtBuy   || 0);
+                g  = parseFloat(d.usdtGross || 0);
+                sh = parseFloat(d.usdtShare || 0);
+                n  = parseFloat(d.usdtNet   || 0);
+            } else {
+                s  = parseFloat(d.allSell  || 0);
+                b  = parseFloat(d.allBuy   || 0);
+                g  = parseFloat(d.allGross || 0);
+                sh = parseFloat(d.allShare || 0);
+                n  = parseFloat(d.allNet   || 0);
+            }
+            sell  += s;
+            buy   += b;
+            gross += g;
+            share += sh;
+            net   += n;
+        });
+        document.getElementById('sum-sell').textContent   = fmt(sell);
+        document.getElementById('sum-buy').textContent    = fmt(buy);
+        document.getElementById('sum-volume').textContent = fmt(sell + buy);
+        document.getElementById('sum-gross').textContent  = fmt(gross);
+        document.getElementById('sum-share').textContent  = fmt(share);
+        document.getElementById('sum-net').textContent    = fmt(net);
+    }
+
+    // Фильтрация по имени пользователя
+    document.getElementById('userSearch').addEventListener('input', function() {
+        var query = this.value.toLowerCase().trim();
+        var rows = document.querySelectorAll('#statsTableBody tr');
+        rows.forEach(function(row) {
+            var nameEl = row.querySelector('td:first-child .fw-bold');
+            var name = nameEl ? nameEl.textContent.toLowerCase() : '';
+            if (query === '' || name.includes(query)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        updateSummaryFromVisibleRows();
+    });
+
     function setCurrency(val) {
         currentCurrency = val;
 
-        // Синхронизируем select
         var sel = document.getElementById('currencySelect');
         if (sel) sel.value = val;
 
@@ -341,18 +414,9 @@
             document.getElementById('thBalance').textContent = 'Остаток';
         }
 
-        var d = summaryData[val];
-        document.getElementById('sum-sell').textContent   = fmt(d.sell);
-        document.getElementById('sum-buy').textContent    = fmt(d.buy);
-        document.getElementById('sum-volume').textContent = fmt(d.sell + d.buy);
-        document.getElementById('sum-gross').textContent  = fmt(d.gross);
-        document.getElementById('sum-share').textContent  = fmt(d.share);
-        document.getElementById('sum-net').textContent    = fmt(d.net);
-
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
 
-            // Остаток — USDT строка
             var usdtBal = parseFloat(d.usdtBalance || 0);
             var tonBal  = parseFloat(d.tonBalance  || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
@@ -368,7 +432,6 @@
                 tonBalEl.className = 'fw-bold row-balance-ton ' + (tonBal >= 0 ? '' : 'balance-negative');
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             } else {
-                // all — показываем обе строки
                 usdtBalEl.style.display = '';
                 tonBalEl.style.display  = '';
                 usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
@@ -376,24 +439,19 @@
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
-            // Sell / Buy
             row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
             row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy   : val === 'usdt' ? d.usdtBuy   : d.allBuy)   || 0);
 
-            // Комиссия банка (раздельно по валюте)
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
 
-            // Комиссия биржи — всегда в рублях, одна строка
             var exchRub = parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0;
             row.querySelector('.row-exch').textContent = fmt(exchRub);
 
-            // Прибыль до вычета
             var gross = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
             var grossEl = row.querySelector('.row-gross');
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
-            // НДФЛ / Доля / Итог — раздельно для каждой валюты
             var ndflVal, shareVal, netVal;
             if (val === 'ton') {
                 ndflVal  = parseFloat(d.tonNdfl  || 0);
@@ -415,6 +473,9 @@
             netEl.innerHTML = fmt(netVal) + ' ₽';
             netEl.className = 'fw-bold row-net ' + (netVal >= 0 ? 'text-net-profit' : 'text-danger');
         });
+
+        // После смены валюты пересчитываем итоги по видимым строкам
+        updateSummaryFromVisibleRows();
     }
 
     function applyFilters() {
@@ -441,15 +502,13 @@
         var tbody = document.getElementById('statsTableBody');
         var rows  = Array.from(tbody.querySelectorAll('tr'));
 
-        // Переключаем направление
         if (sortState.key === key) {
             sortState.dir *= -1;
         } else {
             sortState.key = key;
-            sortState.dir = -1; // сначала по убыванию
+            sortState.dir = -1;
         }
 
-        // Обновляем стрелки в заголовках
         document.querySelectorAll('.sortable').forEach(function(th) {
             th.classList.remove('sort-asc', 'sort-desc');
         });
@@ -494,6 +553,7 @@
         });
 
         rows.forEach(function(r) { tbody.appendChild(r); });
+        // После сортировки итоги не меняются, но если нужно – можно не пересчитывать
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -504,24 +564,7 @@
             }
         });
 
-        document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
-            summaryData.all.sell   += parseFloat(row.dataset.allSell   || 0);
-            summaryData.all.buy    += parseFloat(row.dataset.allBuy    || 0);
-            summaryData.all.gross  += parseFloat(row.dataset.allGross  || 0);
-            summaryData.all.share  += parseFloat(row.dataset.allShare  || 0);
-            summaryData.all.net    += parseFloat(row.dataset.allNet    || 0);
-            summaryData.usdt.sell  += parseFloat(row.dataset.usdtSell  || 0);
-            summaryData.usdt.buy   += parseFloat(row.dataset.usdtBuy   || 0);
-            summaryData.usdt.gross += parseFloat(row.dataset.usdtGross || 0);
-            summaryData.usdt.share += parseFloat(row.dataset.usdtShare || 0);
-            summaryData.usdt.net   += parseFloat(row.dataset.usdtNet   || 0);
-            summaryData.ton.sell   += parseFloat(row.dataset.tonSell   || 0);
-            summaryData.ton.buy    += parseFloat(row.dataset.tonBuy    || 0);
-            summaryData.ton.gross  += parseFloat(row.dataset.tonGross  || 0);
-            summaryData.ton.share  += parseFloat(row.dataset.tonShare  || 0);
-            summaryData.ton.net    += parseFloat(row.dataset.tonNet    || 0);
-        });
-
+        // Инициализация – показываем все валюты и пересчитываем итоги
         setCurrency('all');
     });
 </script>
