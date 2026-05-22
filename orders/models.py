@@ -99,9 +99,16 @@ class Order(models.Model):
         verbose_name="Данные введены вручную пользователем"
     )
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['user', 'currency', 'created_at']),
+        ]
+
     def __str__(self):
         return f"{self.operation_type} - {self.external_id}"
-
+    
+    
 
 class OrderScreenshot(models.Model):
     order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='screenshots')
