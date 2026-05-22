@@ -102,12 +102,25 @@
     .sortable.sort-asc .sort-icon::after  { content: ' ▲'; opacity: 1; color: #6c8cff; }
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
-    .income-tax-row .d-flex {
-        flex-wrap: wrap;      /* при сужении экрана элементы переносятся */
-        row-gap: 6px;
+
+    /* Новый класс для горизонтального расположения дохода и налога */
+    .income-tax-horizontal {
+        display: flex;
+        flex-direction: row;
+        gap: 16px;
+        align-items: baseline;
+        flex-wrap: nowrap;
+        white-space: nowrap;
     }
-    .income-tax-row .d-flex > div {
-        white-space: nowrap;  /* текст внутри блока не переносится */
+    .income-tax-horizontal .val-label {
+        width: auto;
+        margin-right: 4px;
+    }
+    /* Гарантия, что даже при узкой таблице не будет переноса */
+    @media (max-width: 768px) {
+        .income-tax-horizontal {
+            gap: 8px;
+        }
     }
 </style>
 {% endblock %}
@@ -203,7 +216,7 @@
                     <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('comm')">Прочие<span class="sort-icon"></span></th>
-                    <th class="sortable" onclick="sortTable('gross')">Доход и налог<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('gross')" style="min-width: 240px;">Доход и налог<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('share')">Доля<span class="sort-icon"></span></th>
                     <th class="sortable text-end" onclick="sortTable('net')">Чистая прибыль<span class="sort-icon"></span></th>
                 </tr>
@@ -254,7 +267,7 @@
                         {% endif %}
                     </td>
 
-                    <td>
+                    <tr>
                         <div class="fw-bold balance-positive row-balance-usdt" style="font-size: 0.95rem;">
                             <span class="money">{{ stat.usdt.remainder_qty_display }}</span> USDT
                         </div>
@@ -264,9 +277,9 @@
                         <div style="font-size: 0.7rem; color: var(--text-muted);">На конец месяца</div>
                     </td>
 
-                    <td>
+                    <!-- Столбец "Движение" -->
+                    <tr>
                         <div class="finance-block">
-                            <!-- Поменяны местами: сначала Buy, потом Sell; цвета наоборот -->
                             <div><span class="val-label">Buy:</span> <span class="val-money text-success money row-buy">{{ stat.month_buy_cost }}</span></div>
                             <div><span class="val-label">Sell:</span> <span class="val-money text-danger money row-sell">{{ stat.month_sell_cost }}</span></div>
                         </div>
@@ -298,18 +311,17 @@
                         </div>
                     </td>
 
-                    <td>
-                        <div class="finance-block income-tax-row">
-                            <div class="d-flex justify-content-between gap-3">
-                                <div>
-                                    <span class="val-label">Доход:</span>
-                                    <span class="val-money money row-gross ...">{{ stat.gross }}</span>
-                                </div>
-                                <div>
-                                    <!-- НДФЛ / УСН здесь, никуда не пропал -->
-                                    <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
-                                    <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
-                                </div>
+                    <!-- ========== ИСПРАВЛЕННЫЙ СТОЛБЕЦ "Доход и налог" ========== -->
+                    <!-- Убран .finance-block, используется горизонтальный flex -->
+                    <tr>
+                        <div class="income-tax-horizontal">
+                            <div>
+                                <span class="val-label">Доход:</span>
+                                <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
+                            </div>
+                            <div>
+                                <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
+                                <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
                             </div>
                         </div>
                     </td>
@@ -340,6 +352,24 @@
 
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Функция для очистки строки налога от лишнего (например, "15.0%: 57 698,50" -> 57698.5)
+    function cleanNdflValue(raw) {
+        if (raw === undefined || raw === null) return 0;
+        // Если это уже число, возвращаем как есть
+        if (typeof raw === 'number') return raw;
+        // Пытаемся преобразовать строку
+        let str = String(raw).trim();
+        // Если есть двоеточие - берём правую часть
+        if (str.includes(':')) {
+            let parts = str.split(':');
+            str = parts[parts.length - 1].trim();
+        }
+        // Удаляем всё кроме цифр, точки, запятой и минуса
+        str = str.replace(/[^\d,.-]/g, '').replace(',', '.');
+        let num = parseFloat(str);
+        return isNaN(num) ? 0 : num;
     }
 
     function updateSummaryFromVisibleRows() {
@@ -443,12 +473,10 @@
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
-            // Обновляем значения с учётом нового порядка: Buy теперь первый, Sell второй
+            // Обновление значений
             row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy   : val === 'usdt' ? d.usdtBuy   : d.allBuy)   || 0);
             row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell  : val === 'usdt' ? d.usdtSell  : d.allSell)  || 0);
-
             row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank  : val === 'usdt' ? d.usdtBank  : d.allBank)  || 0);
-
             var exchRub = parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0;
             row.querySelector('.row-exch').textContent = fmt(exchRub);
 
@@ -459,15 +487,15 @@
 
             var ndflVal, shareVal, netVal;
             if (val === 'ton') {
-                ndflVal  = parseFloat(d.tonNdfl  || 0);
+                ndflVal  = cleanNdflValue(d.tonNdfl);
                 shareVal = parseFloat(d.tonShare || 0);
                 netVal   = parseFloat(d.tonNet   || 0);
             } else if (val === 'usdt') {
-                ndflVal  = parseFloat(d.usdtNdfl  || 0);
+                ndflVal  = cleanNdflValue(d.usdtNdfl);
                 shareVal = parseFloat(d.usdtShare || 0);
                 netVal   = parseFloat(d.usdtNet   || 0);
             } else {
-                ndflVal  = parseFloat(d.allNdfl  || 0);
+                ndflVal  = cleanNdflValue(d.allNdfl);
                 shareVal = parseFloat(d.allShare || 0);
                 netVal   = parseFloat(d.allNet   || 0);
             }
