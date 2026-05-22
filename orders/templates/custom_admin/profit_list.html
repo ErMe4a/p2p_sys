@@ -303,9 +303,10 @@
                             <div class="d-flex justify-content-between gap-3">
                                 <div>
                                     <span class="val-label">Доход:</span>
-                                    <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
+                                    <span class="val-money money row-gross ...">{{ stat.gross }}</span>
                                 </div>
                                 <div>
+                                    <!-- НДФЛ / УСН здесь, никуда не пропал -->
                                     <span class="val-label">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
                                     <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
                                 </div>
