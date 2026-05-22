@@ -14,14 +14,19 @@
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
     
     .finance-block { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
-    .val-label { display: inline-block; width: 80px; color: var(--text-muted); }  /* увеличено до 80px */
+    /* === Уменьшена ширина label, чтобы текст не разрывался === */
+    .val-label { 
+        display: inline-block; 
+        width: 52px; 
+        color: var(--text-muted); 
+        flex-shrink: 0;
+    }
     .val-money { font-family: 'Inter', monospace; font-weight: 500; }
     .balance-positive { color: #6c8cff; }
     .balance-negative { color: #ff6c6c; }
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
     .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
 
-    /* Поле поиска пользователя */
     .search-wrapper { position: relative; display: inline-block; }
     .search-wrapper input {
         width: 220px !important;
@@ -95,7 +100,6 @@
     .currency-badge-usdt { background: rgba(88,214,141,.15); color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
     .currency-badge-ton  { background: rgba(61,154,245,.15); color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
 
-    /* Сортировка */
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .sortable:hover { color: #fff; }
     .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
@@ -103,27 +107,27 @@
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
 
-    /* Горизонтальное расположение дохода и налога */
+    /* === Блок "Доход и налог" — вертикально, без обрезания === */
     .income-tax-row {
         display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 16px;
-        flex-wrap: nowrap;
-        white-space: nowrap;
+        flex-direction: column;
+        gap: 3px;
         width: 100%;
     }
     .income-tax-row > div {
-        flex: 1;
-        text-align: left;
+        display: flex;
+        align-items: baseline;
+        white-space: nowrap;
     }
-    .income-tax-row .val-label {
-        width: auto;
-        margin-right: 6px;
+
+    /* === Фиксированная ширина колонок, чтобы не сжимались === */
+    th:nth-child(4),
+    td:nth-child(4) {
+        min-width: 160px;
     }
-    /* Минимальная ширина столбца, чтобы не сжимался */
-    th:nth-child(5) {
-        min-width: 240px;
+    th:nth-child(5),
+    td:nth-child(5) {
+        min-width: 220px;
     }
 </style>
 {% endblock %}
@@ -313,7 +317,7 @@
                         </div>
                     </td>
 
-                    <!-- ========== ИСПРАВЛЕННЫЙ СТОЛБЕЦ "Доход и налог" ========== -->
+                    <!-- ===== ИСПРАВЛЕННАЯ КОЛОНКА "Доход и налог" (вертикальный flex) ===== -->
                     <td>
                         <div class="income-tax-row">
                             <div>
@@ -355,7 +359,6 @@
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    // Очистка значения налога от лишних символов (например, "15.0%: 57 698,50")
     function cleanNdflValue(raw) {
         if (raw === undefined || raw === null) return 0;
         if (typeof raw === 'number') return raw;
@@ -560,20 +563,25 @@
                 va = parseFloat(cur === 'ton' ? d.tonBalance  : d.usdtBalance) || 0;
                 vb = parseFloat(cur === 'ton' ? e.tonBalance  : e.usdtBalance) || 0;
             } else if (key === 'turnover') {
-                va = (parseFloat(cur === 'ton' ? d.tonSell  : d.usdtSell)  || 0) + (parseFloat(cur === 'ton' ? d.tonBuy  : d.usdtBuy)  || 0);
-                vb = (parseFloat(cur === 'ton' ? e.tonSell  : e.usdtSell)  || 0) + (parseFloat(cur === 'ton' ? e.tonBuy  : e.usdtBuy)  || 0);
+                // === ИСПРАВЛЕНИЕ: учёт валюты 'all' ===
+                var aSell = parseFloat(cur === 'ton' ? d.tonSell : cur === 'usdt' ? d.usdtSell : d.allSell) || 0;
+                var aBuy  = parseFloat(cur === 'ton' ? d.tonBuy  : cur === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0;
+                var bSell = parseFloat(cur === 'ton' ? e.tonSell : cur === 'usdt' ? e.usdtSell : e.allSell) || 0;
+                var bBuy  = parseFloat(cur === 'ton' ? e.tonBuy  : cur === 'usdt' ? e.usdtBuy  : e.allBuy)  || 0;
+                va = aSell + aBuy;
+                vb = bSell + bBuy;
             } else if (key === 'comm') {
-                va = parseFloat(cur === 'ton' ? d.tonBank  : d.usdtBank)  || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonBank  : e.usdtBank)  || 0;
+                va = parseFloat(cur === 'ton' ? d.tonBank : cur === 'usdt' ? d.usdtBank : d.allBank) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonBank : cur === 'usdt' ? e.usdtBank : e.allBank) || 0;
             } else if (key === 'gross') {
-                va = parseFloat(cur === 'ton' ? d.tonGross : d.usdtGross) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonGross : e.usdtGross) || 0;
+                va = parseFloat(cur === 'ton' ? d.tonGross : cur === 'usdt' ? d.usdtGross : d.allGross) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonGross : cur === 'usdt' ? e.usdtGross : e.allGross) || 0;
             } else if (key === 'share') {
-                va = parseFloat(cur === 'ton' ? d.tonShare : d.usdtShare) || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonShare : e.usdtShare) || 0;
+                va = parseFloat(cur === 'ton' ? d.tonShare : cur === 'usdt' ? d.usdtShare : d.allShare) || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonShare : cur === 'usdt' ? e.usdtShare : e.allShare) || 0;
             } else if (key === 'net') {
-                va = parseFloat(cur === 'ton' ? d.tonNet   : d.usdtNet)   || 0;
-                vb = parseFloat(cur === 'ton' ? e.tonNet   : e.usdtNet)   || 0;
+                va = parseFloat(cur === 'ton' ? d.tonNet   : cur === 'usdt' ? d.usdtNet   : d.allNet)   || 0;
+                vb = parseFloat(cur === 'ton' ? e.tonNet   : cur === 'usdt' ? e.usdtNet   : e.allNet)   || 0;
             }
 
             return sortState.dir * (va - vb);
