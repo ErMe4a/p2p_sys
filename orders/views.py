@@ -3,7 +3,7 @@ import io
 import json
 import os
 import zipfile
-from datetime import datetime, date, time, timezone as dt_timezone
+from datetime import datetime, date, time, timezone as dt_timezone, timedelta
 import json as _json
 from itertools import groupby as _groupby
 
@@ -413,235 +413,18 @@ def delete_unprocessed_order(request, pk):
 
 
 
-def _calc_month_profit_for_user(user, month_start, month_end):
-    """
-    Расчёт прибыли за месяц.
-    Считает ТОЛЬКО USDT ордера — TON исключён из расчёта прибыли.
-    Курс остатка — средневзвешенный (total_buy_cost / total_buy_qty),
-    а не последний курс покупки.
-    """
-    prev_orders = Order.objects.filter(
-        user=user,
-        created_at__gte=SYSTEM_START,
-        created_at__lt=month_start,
-        currency='USDT'
-    ).order_by('created_at')
 
-    prev_buy_qty    = 0.0
-    prev_buy_cost   = 0.0
-    prev_sell_qty   = 0.0
-    prev_exch_usdt  = 0.0
-    prev_last_price = 0.0
-
-    for o in prev_orders:
-        amt = float(o.amount or 0)
-        if o.operation_type == 'BUY':
-            prev_buy_qty    += amt
-            prev_buy_cost   += float(o.cost or 0)
-            prev_last_price  = float(o.price or 0)
-        else:
-            exch_rate = float(o.exchange_commission_rate or 0)
-            prev_sell_qty  += amt
-            prev_exch_usdt += amt * exch_rate / 100
-
-    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
-    # Себестоимость прошлого остатка — по средневзвешенному курсу предыдущих покупок
-    prev_avg_price    = (prev_buy_cost / prev_buy_qty) if prev_buy_qty > 0 else prev_last_price
-    prev_balance_cost = prev_balance_qty * prev_avg_price
-
-    month_orders = Order.objects.filter(
-        user=user,
-        created_at__gte=month_start,
-        created_at__lt=month_end,
-        currency='USDT'
-    ).order_by('created_at')
-
-    month_buy_qty         = 0.0; month_buy_cost       = 0.0
-    month_buy_comm        = 0.0
-    month_sell_qty        = 0.0; month_sell_cost      = 0.0
-    month_sell_comm       = 0.0
-    month_exch_usdt       = 0.0
-    month_last_sell_price = 0.0
-
-    for o in month_orders:
-        amt        = float(o.amount or 0)
-        cost       = float(o.cost   or 0)
-        price      = float(o.price  or 0)
-        comm_val   = float(o.commission or 0)
-        total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
-
-        if o.operation_type == 'BUY':
-            month_buy_qty  += amt
-            month_buy_cost += cost
-            month_buy_comm += total_comm
-        else:
-            exch_rate = float(o.exchange_commission_rate or 0)
-            month_sell_qty        += amt
-            month_sell_cost       += cost
-            month_sell_comm       += total_comm
-            month_exch_usdt       += amt * exch_rate / 100
-            month_last_sell_price  = price
-
-    total_buy_qty  = prev_balance_qty  + month_buy_qty
-    total_buy_cost = prev_balance_cost + month_buy_cost
-
-    remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_usdt
-    remainder_qty_calc    = remainder_qty_display
-
-    # Средневзвешенный курс = суммарная стоимость покупок / суммарное кол-во покупок
-    avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
-    remainder_cost = remainder_qty_calc * avg_price
-    eq_buy_cost    = total_buy_cost - remainder_cost
-
-    # Комиссия биржи в рублях = кол-во USDT * последний курс SELL USDT
-    exch_comm_rub = month_exch_usdt * month_last_sell_price
-
-    if month_sell_qty == 0:
-        gross = 0.0
-    else:
-        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm - exch_comm_rub
-
-    return {
-        'prev_balance_qty':      prev_balance_qty,
-        'prev_balance_cost':     prev_balance_cost,
-        'month_buy_qty':         month_buy_qty,
-        'month_buy_cost':        month_buy_cost,
-        'month_buy_comm':        month_buy_comm,
-        'month_sell_qty':        month_sell_qty,
-        'month_sell_cost':       month_sell_cost,
-        'month_sell_comm':       month_sell_comm,
-        'month_exch_usdt':       month_exch_usdt,
-        'total_buy_qty':         total_buy_qty,
-        'total_buy_cost':        total_buy_cost,
-        'remainder_qty_display': remainder_qty_display,
-        'remainder_qty_calc':    remainder_qty_calc,
-        'remainder_cost':        remainder_cost,
-        'eq_buy_cost':           eq_buy_cost,
-        'avg_price':             round(avg_price, 4),  # для отладки
-        'gross':                 gross,
-    }
-
-
-def _calc_today_profit(user, period_start, period_end):
-    """
-    Расчёт за произвольный период (для вкладки 'Сегодня').
-    Считает ТОЛЬКО USDT ордера — TON исключён из расчёта прибыли.
-    Курс остатка — средневзвешенный (total_buy_cost / total_buy_qty).
-    """
-    from zoneinfo import ZoneInfo
-    MSK = ZoneInfo('Europe/Moscow')
-    month_start = datetime(period_start.year, period_start.month, 1, tzinfo=MSK)
-
-    prev_orders = Order.objects.filter(
-        user=user,
-        created_at__gte=SYSTEM_START,
-        created_at__lt=month_start,
-        currency='USDT'
-    ).order_by('created_at')
-
-    prev_buy_qty    = 0.0
-    prev_buy_cost   = 0.0
-    prev_sell_qty   = 0.0
-    prev_exch_usdt  = 0.0
-    prev_last_price = 0.0
-
-    for o in prev_orders:
-        amt = float(o.amount or 0)
-        if o.operation_type == 'BUY':
-            prev_buy_qty    += amt
-            prev_buy_cost   += float(o.cost or 0)
-            prev_last_price  = float(o.price or 0)
-        else:
-            exch_rate = float(o.exchange_commission_rate or 0)
-            prev_sell_qty  += amt
-            prev_exch_usdt += amt * exch_rate / 100
-
-    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_usdt
-    # Себестоимость прошлого остатка — по средневзвешенному курсу предыдущих покупок
-    prev_avg_price    = (prev_buy_cost / prev_buy_qty) if prev_buy_qty > 0 else prev_last_price
-    prev_balance_cost = prev_balance_qty * prev_avg_price
-
-    period_orders = Order.objects.filter(
-        user=user,
-        created_at__gte=month_start,
-        created_at__lt=period_end,
-        currency='USDT'
-    ).order_by('created_at')
-
-    buy_qty   = 0.0; buy_cost  = 0.0; buy_comm  = 0.0
-    sell_qty  = 0.0; sell_cost = 0.0; sell_comm = 0.0
-    exch_usdt = 0.0
-
-    for o in period_orders:
-        amt        = float(o.amount or 0)
-        cost       = float(o.cost   or 0)
-        price      = float(o.price  or 0)
-        comm_val   = float(o.commission or 0)
-        total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
-
-        if o.operation_type == 'BUY':
-            buy_qty  += amt
-            buy_cost += cost
-            buy_comm += total_comm
-        else:
-            exch_rate  = float(o.exchange_commission_rate or 0)
-            sell_qty   += amt
-            sell_cost  += cost
-            sell_comm  += total_comm
-            exch_usdt  += amt * exch_rate / 100
-
-    total_buy_qty  = prev_balance_qty  + buy_qty
-    total_buy_cost = prev_balance_cost + buy_cost
-
-    remainder_qty_display = total_buy_qty - sell_qty - exch_usdt
-    remainder_qty_calc    = remainder_qty_display
-
-    # Средневзвешенный курс = суммарная стоимость покупок / суммарное кол-во покупок
-    avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
-    remainder_cost = remainder_qty_calc * avg_price
-    eq_buy_cost    = total_buy_cost - remainder_cost
-
-    # last_sell_price — только среди USDT продаж
-    last_sell_price = 0.0
-    for o2 in period_orders:
-        if o2.operation_type == 'SELL' and float(o2.price or 0) > 0:
-            last_sell_price = float(o2.price)
-    exch_comm_rub = exch_usdt * last_sell_price
-
-    if sell_qty == 0:
-        gross = 0.0
-    else:
-        gross = sell_cost - eq_buy_cost - buy_comm - sell_comm - exch_comm_rub
-
-    return {
-        'prev_balance_qty':      prev_balance_qty,
-        'prev_balance_cost':     prev_balance_cost,
-        'buy_qty':               buy_qty,
-        'buy_cost':              buy_cost,
-        'buy_comm':              buy_comm,
-        'sell_qty':              sell_qty,
-        'sell_cost':             sell_cost,
-        'sell_comm':             sell_comm,
-        'exch_usdt':             exch_usdt,
-        'total_buy_qty':         total_buy_qty,
-        'total_buy_cost':        total_buy_cost,
-        'remainder_qty_display': remainder_qty_display,
-        'remainder_qty_calc':    remainder_qty_calc,
-        'remainder_cost':        remainder_cost,
-        'eq_buy_cost':           eq_buy_cost,
-        'avg_price':             round(avg_price, 4),  # для отладки
-        'gross':                 gross,
-    }
 
 @login_required
 def user_profit_view(request):
+    user   = request.user
     action = request.GET.get('action')
 
     # =====================================================================
     # РАСХОДЫ
     # =====================================================================
     if action == 'get_expenses':
-        expenses = UserExpense.objects.filter(user=request.user).order_by('-month', 'name')
+        expenses = UserExpense.objects.filter(user=user).order_by('-month', 'name')
         return JsonResponse({'expenses': [
             {'id': e.id, 'name': e.name, 'amount': float(e.amount), 'month': e.month}
             for e in expenses
@@ -655,7 +438,7 @@ def user_profit_view(request):
             month  = str(body.get('month', ''))
             if not name or amount <= 0 or not month:
                 return JsonResponse({'error': 'Некорректные данные'}, status=400)
-            UserExpense.objects.create(user=request.user, name=name, amount=amount, month=month)
+            UserExpense.objects.create(user=user, name=name, amount=amount, month=month)
             return JsonResponse({'ok': True})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
@@ -664,98 +447,211 @@ def user_profit_view(request):
         try:
             body   = _json.loads(request.body)
             exp_id = int(body.get('id', 0))
-            UserExpense.objects.filter(id=exp_id, user=request.user).delete()
+            UserExpense.objects.filter(id=exp_id, user=user).delete()
             return JsonResponse({'ok': True})
         except Exception as e:
             return JsonResponse({'error': str(e)}, status=400)
 
     # =====================================================================
+    # ОБЩАЯ ПРЕДЗАГРУЗКА ДАННЫХ (используется в get_months и get_turnover)
+    # =====================================================================
+    def _preload_user_data(year=None):
+        """
+        Загружает все данные пользователя одним блоком запросов.
+        Если year=None — грузим все ордера от SYSTEM_START до сейчас.
+        """
+        from zoneinfo import ZoneInfo
+        from collections import defaultdict
+        MSK = ZoneInfo('Europe/Moscow')
+
+        if year:
+            cutoff = datetime(year + 1, 1, 1, tzinfo=MSK)
+        else:
+            cutoff = timezone.now() + timedelta(days=1)
+
+        # 1. Все ордера пользователя
+        raw_orders = (
+            Order.objects
+            .filter(user=user, created_at__gte=SYSTEM_START, created_at__lt=cutoff)
+            .order_by('created_at')
+            .values_list(
+                'id', 'user_id', 'created_at', 'currency', 'operation_type',
+                'amount', 'cost', 'price', 'commission', 'commission_type',
+                'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+            )
+        )
+
+        class _O:
+            __slots__ = (
+                'id', 'user_id', 'created_at', 'currency', 'operation_type',
+                'amount', 'cost', 'price', 'commission', 'commission_type',
+                'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+            )
+            def __init__(self, row):
+                (self.id, self.user_id, self.created_at, self.currency,
+                 self.operation_type, self.amount, self.cost, self.price,
+                 self.commission, self.commission_type, self.exchange_type,
+                 self.bank_detail_id, self.exchange_commission_rate) = row
+
+        all_orders_by_user = defaultdict(list)
+        for row in raw_orders:
+            o = _O(row)
+            all_orders_by_user[o.user_id].append(o)
+
+        # 2. Все расходы пользователя
+        raw_expenses = (
+            UserExpense.objects
+            .filter(user=user)
+            .values('user_id', 'month', 'name', 'amount')
+        )
+        expenses_by_user_month = defaultdict(float)
+        expenses_list_by_user  = defaultdict(list)
+        for e in raw_expenses:
+            key = (e['user_id'], e['month'])
+            expenses_by_user_month[key] += float(e['amount'])
+            expenses_list_by_user[key].append({'name': e['name'], 'amount': float(e['amount'])})
+
+        # 3. Manual entries
+        raw_manuals = (
+            MonthlyManualEntry.objects
+            .filter(user=user)
+            .values('user_id', 'month', 'gross')
+        )
+
+        class _Manual:
+            __slots__ = ('gross',)
+            def __init__(self, gross): self.gross = gross
+
+        manuals_by_user_month = {}
+        for m in raw_manuals:
+            manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m['gross'])
+
+        return all_orders_by_user, expenses_by_user_month, expenses_list_by_user, manuals_by_user_month
+
+    # =====================================================================
     # РАСЧЁТ ПО МЕСЯЦАМ
     # =====================================================================
     if action == 'get_months':
-        user = request.user
         from zoneinfo import ZoneInfo
-        MSK = ZoneInfo('Europe/Moscow')
+        MSK  = ZoneInfo('Europe/Moscow')
+        uid  = user.id
+        year = timezone.now().year
 
-        all_orders = Order.objects.filter(
-            user=user, created_at__gte=SYSTEM_START
-        ).order_by('created_at')
+        all_orders_by_user, expenses_by_user_month, _, manuals_by_user_month = _preload_user_data(year=year)
 
+        tax_type    = str(getattr(user, 'tax_type', '') or '').strip().upper()
+        user_shares = user.profit_shares if isinstance(user.profit_shares, dict) else {}
+
+        # Определяем месяцы с активностью
+        user_orders = all_orders_by_user.get(uid, [])
         months_with_orders = set()
-        for o in all_orders:
+        for o in user_orders:
             dt_msk = o.created_at.astimezone(MSK)
             months_with_orders.add((dt_msk.year, dt_msk.month))
+
+        # Добавляем месяцы с manual entries
+        for (u_id, mo_key) in manuals_by_user_month:
+            if u_id == uid:
+                parts = mo_key.split('-')
+                if len(parts) == 2:
+                    months_with_orders.add((int(parts[0]), int(parts[1])))
 
         if not months_with_orders:
             return JsonResponse({'months': []})
 
-        user_shares = user.profit_shares if isinstance(user.profit_shares, dict) else {}
-
         months_data = []
+
         for (yr, mo) in sorted(months_with_orders):
-            month_start = datetime(yr, mo, 1, tzinfo=MSK)
-            month_end   = datetime(yr + 1, 1, 1, tzinfo=MSK) if mo == 12 else datetime(yr, mo + 1, 1, tzinfo=MSK)
             share_key   = f"{yr}-{str(mo).zfill(2)}"
+            ms_start    = datetime(yr, mo, 1, tzinfo=MSK)
+            ms_end      = (datetime(yr + 1, 1, 1, tzinfo=MSK)
+                           if mo == 12 else datetime(yr, mo + 1, 1, tzinfo=MSK))
 
-            calc  = _calc_month_profit_for_user(user, month_start, month_end)
-            gross = calc['gross']
-
-            # Расходы
-            month_expenses = float(
-                UserExpense.objects.filter(user=user, month=share_key)
-                .aggregate(Sum('amount'))['amount__sum'] or 0
+            calc = _calc_month_profit_from_orders(
+                uid, ms_start, ms_end, all_orders_by_user
             )
+            usdt = calc['usdt']
+            ton  = calc['ton']
 
+            share_percent  = float(user_shares.get(share_key, 20.0))
+            month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
 
-            share_percent = float(user_shares.get(share_key, 20.0))
-            # 1. Вычитаем расходы из грязной прибыли
-            after_expenses = max(0.0, gross - month_expenses)
-            # 2. НДФЛ 13% после расходов
-            ndfl           = after_expenses * 0.13 if after_expenses > 0 else 0
-            # 3. После налога
-            after_ndfl     = after_expenses - ndfl
-            # 4. Доля системы
-            share_amount   = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-            net_profit     = after_ndfl - share_amount
+            gross_raw_usdt = usdt['gross']
+            gross_raw_ton  = ton['gross']
+            gross_raw_all  = gross_raw_usdt + gross_raw_ton
+
+            has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
+
+            if not has_activity:
+                manual = manuals_by_user_month.get((uid, share_key))
+                if manual:
+                    gross_raw_all  = float(manual.gross)
+                    gross_raw_usdt = gross_raw_all
+                    gross_raw_ton  = 0.0
+
+            # Пропорция расходов
+            pos_usdt  = max(0.0, gross_raw_usdt)
+            pos_ton   = max(0.0, gross_raw_ton)
+            pos_total = pos_usdt + pos_ton
+
+            gross_all = max(0.0, gross_raw_all - month_expenses)
+
+            # ytd_base для ОСН
+            if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+                ytd_base = _get_ytd_base_from_cache(
+                    uid, yr, mo,
+                    all_orders_by_user,
+                    expenses_by_user_month,
+                    manuals_by_user_month,
+                )
+            else:
+                ytd_base = 0.0
+
+            ndfl_all   = _calc_ndfl(gross_all, tax_type,
+                                    sell_cost=calc['month_sell_cost'],
+                                    ytd_base=ytd_base)
+            after_all  = gross_all - ndfl_all
+            share_all  = after_all * (share_percent / 100) if after_all > 0 else 0.0
+            net_all    = after_all - share_all
+
+            bank_comm_rub    = calc['month_buy_comm'] + calc['month_sell_comm']
+            all_exch_comm_rub = usdt['month_exch_comm_rub'] + ton['month_exch_comm_rub']
+
+            tax_label = 'УСН' if tax_type in ('USN_INCOME', 'USN_INCOME_OUTCOME') else 'НДФЛ'
 
             months_data.append({
                 'key':               share_key,
                 'year':              yr,
                 'month':             mo,
-                'prev_balance_qty':  round(calc['prev_balance_qty'],       2),
-                'prev_balance_cost': round(calc['prev_balance_cost'],      2),
-                'buy_qty':           round(calc['month_buy_qty'],          2),
-                'buy_cost':          round(calc['month_buy_cost'],         2),
-                'sell_qty':          round(calc['month_sell_qty'],         2),
-                'sell_cost':         round(calc['month_sell_cost'],        2),
-                'total_buy_qty':     round(calc['total_buy_qty'],          2),
-                'total_buy_cost':    round(calc['total_buy_cost'],         2),
-                'remainder_qty':     round(calc['remainder_qty_display'],  2),
-                'remainder_cost':    round(calc['remainder_cost'],         2),
-                'eq_buy_cost':       round(calc['eq_buy_cost'],            2),
-                'buy_comm':          round(calc['month_buy_comm'],         2),
-                'sell_comm':         round(calc['month_sell_comm'],        2),
-                'exch_usdt':         round(calc['month_exch_usdt'],        2),
-                'gross':             round(gross,          2),
-                'ndfl':              round(ndfl,           2),
-                'after_ndfl':        round(after_ndfl,     2),
+                'remainder_qty':     round(usdt['remainder_qty_display'], 2),
+                'ton_remainder_qty': round(ton['remainder_qty_display'],  2),
+                'buy_cost':          round(calc['month_buy_cost'],  2),
+                'sell_cost':         round(calc['month_sell_cost'], 2),
+                'bank_comm':         round(bank_comm_rub,           2),
+                'exch_comm_rub':     round(all_exch_comm_rub,       2),
+                'month_expenses':    round(month_expenses,           2),
+                'gross':             round(gross_all,   2),
+                'tax_label':         tax_label,
+                'ndfl':              round(ndfl_all,    2),
                 'share_percent':     share_percent,
-                'share_amount':      round(share_amount,   2),
-                'month_expenses':    round(month_expenses, 2),
-                'net_profit':        round(net_profit,     2),
+                'share_amount':      round(share_all,   2),
+                'net_profit':        round(net_all,     2),
             })
 
         return JsonResponse({'months': months_data})
 
     # =====================================================================
-    # РАСЧЁТ ЗА ПЕРИОД — вкладка "Сегодня"
+    # ДЕТАЛЬНЫЙ РАСЧЁТ ЗА ПЕРИОД (вкладка "Сегодня")
     # =====================================================================
     if action == 'get_turnover':
-        user           = request.user
+        from zoneinfo import ZoneInfo
+        MSK      = ZoneInfo('Europe/Moscow')
+        uid      = user.id
+        exchange = request.GET.get('exchange', '')
+        bank_id  = request.GET.get('bank', '')
+
         start_date_str = request.GET.get('start')
         end_date_str   = request.GET.get('end')
-        exchange       = request.GET.get('exchange')
-        bank_id        = request.GET.get('bank')
 
         if start_date_str and end_date_str:
             try:
@@ -767,107 +663,99 @@ def user_profit_view(request):
             except ValueError:
                 return JsonResponse({'error': 'Неверный формат даты'}, status=400)
         else:
-            period_start = timezone.now()
-            period_end   = timezone.now()
+            period_start = timezone.now().replace(hour=0,  minute=0,  second=0)
+            period_end   = timezone.now().replace(hour=23, minute=59, second=59)
 
-        calc  = _calc_today_profit(user, period_start, period_end)
-        gross = calc['gross']
+        year      = period_start.year
+        month     = period_start.month
+        share_key = f"{year}-{str(month).zfill(2)}"
 
-        month_key      = f"{period_start.year}-{str(period_start.month).zfill(2)}"
-        user_shares    = user.profit_shares if isinstance(user.profit_shares, dict) else {}
+        ms_start = datetime(year, month, 1, tzinfo=MSK)
+        ms_end   = (datetime(year + 1, 1, 1, tzinfo=MSK)
+                    if month == 12 else datetime(year, month + 1, 1, tzinfo=MSK))
 
-        # Расходы
-        month_expenses = float(
-            UserExpense.objects.filter(user=user, month=month_key)
-            .aggregate(Sum('amount'))['amount__sum'] or 0
+        all_orders_by_user, expenses_by_user_month, _, manuals_by_user_month = _preload_user_data(year=year)
+
+        tax_type      = str(getattr(user, 'tax_type', '') or '').strip().upper()
+        user_shares   = user.profit_shares if isinstance(user.profit_shares, dict) else {}
+        share_percent = float(user_shares.get(share_key, 20.0))
+
+        # Расчёт за месяц (для корректного gross и ytd)
+        calc = _calc_month_profit_from_orders(
+            uid, ms_start, ms_end, all_orders_by_user,
+            exchange_filter=exchange,
+            bank_filter_id=bank_id,
         )
+        usdt = calc['usdt']
+        ton  = calc['ton']
 
+        month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
 
-        share_percent = float(user_shares.get(month_key, 20.0))
-        # 1. Вычитаем расходы из грязной прибыли
-        after_expenses = max(0.0, gross - month_expenses)
-        # 2. НДФЛ 13% после расходов
-        ndfl           = after_expenses * 0.13 if after_expenses > 0 else 0
-        # 3. После налога
-        after_ndfl     = after_expenses - ndfl
-        # 4. Доля системы
-        share_amount   = after_ndfl * (share_percent / 100) if after_ndfl > 0 else 0
-        net_profit     = after_ndfl - share_amount
- 
+        gross_raw_all = usdt['gross'] + ton['gross']
+        has_activity  = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
 
-        # =====================================================================
-        # Глобальный остаток крипты — РАЗДЕЛЬНО по USDT и TON
-        # =====================================================================
+        if not has_activity:
+            manual = manuals_by_user_month.get((uid, share_key))
+            if manual:
+                gross_raw_all = float(manual.gross)
 
-        # --- USDT ---
-        usdt_sell_qs = Order.objects.filter(
-            user=user, created_at__gte=SYSTEM_START,
-            operation_type='SELL', currency='USDT'
-        )
-        usdt_buy_amt  = float(
-            Order.objects.filter(
-                user=user, created_at__gte=SYSTEM_START,
-                operation_type='BUY', currency='USDT'
-            ).aggregate(Sum('amount'))['amount__sum'] or 0
-        )
-        usdt_sell_amt = float(usdt_sell_qs.aggregate(Sum('amount'))['amount__sum'] or 0)
-        usdt_exch_comm = sum(
-            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
-            for o in usdt_sell_qs
-        )
-        usdt_balance = usdt_buy_amt - usdt_sell_amt - usdt_exch_comm
+        gross_all = max(0.0, gross_raw_all - month_expenses)
 
-        # --- TON ---
-        ton_sell_qs = Order.objects.filter(
-            user=user, created_at__gte=SYSTEM_START,
-            operation_type='SELL', currency='TON'
-        )
-        ton_buy_amt  = float(
-            Order.objects.filter(
-                user=user, created_at__gte=SYSTEM_START,
-                operation_type='BUY', currency='TON'
-            ).aggregate(Sum('amount'))['amount__sum'] or 0
-        )
-        ton_sell_amt  = float(ton_sell_qs.aggregate(Sum('amount'))['amount__sum'] or 0)
-        ton_exch_comm = sum(
-            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
-            for o in ton_sell_qs
-        )
-        ton_balance = ton_buy_amt - ton_sell_amt - ton_exch_comm
-        
+        # ytd_base для ОСН
+        if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+            ytd_base = _get_ytd_base_from_cache(
+                uid, year, month,
+                all_orders_by_user,
+                expenses_by_user_month,
+                manuals_by_user_month,
+            )
+        else:
+            ytd_base = 0.0
 
-        # Общий (для обратной совместимости)
-        crypto_balance = usdt_balance + ton_balance
+        ndfl_all  = _calc_ndfl(gross_all, tax_type,
+                               sell_cost=calc['month_sell_cost'],
+                               ytd_base=ytd_base)
+        after_all = gross_all - ndfl_all
+        share_all = after_all * (share_percent / 100) if after_all > 0 else 0.0
+        net_all   = after_all - share_all
 
-        # =====================================================================
+        # Остатки USDT и TON (глобальные, от SYSTEM_START)
+        usdt_balance = usdt['remainder_qty_display']
+        ton_balance  = ton['remainder_qty_display']
 
-        period_orders = Order.objects.filter(
-            user=user,
-            created_at__gte=SYSTEM_START,
-            created_at__range=(period_start, period_end)
+        # Ордера за период для таблицы (с фильтрами)
+        period_orders_qs = (
+            Order.objects
+            .filter(user=user, created_at__range=(period_start, period_end))
+            .select_related('bank_detail')
+            .order_by('-created_at')
         )
         if exchange:
-            period_orders = period_orders.filter(exchange_type__icontains=exchange)
+            period_orders_qs = period_orders_qs.filter(exchange_type__icontains=exchange)
         if bank_id:
-            period_orders = period_orders.filter(bank_detail_id=bank_id)
+            period_orders_qs = period_orders_qs.filter(bank_detail_id=bank_id)
 
-        buy_orders  = period_orders.filter(operation_type='BUY').order_by('-created_at')
-        sell_orders = period_orders.filter(operation_type='SELL').order_by('-created_at')
+        buy_orders  = [o for o in period_orders_qs if o.operation_type == 'BUY']
+        sell_orders = [o for o in period_orders_qs if o.operation_type == 'SELL']
 
-        buy_sum  = float(buy_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
-        sell_sum = float(sell_orders.aggregate(Sum('cost'))['cost__sum'] or 0)
+        buy_sum  = sum(float(o.cost or 0) for o in buy_orders)
+        sell_sum = sum(float(o.cost or 0) for o in sell_orders)
 
-        period_buy_crypto  = float(buy_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
-        period_sell_crypto = float(sell_orders.aggregate(Sum('amount'))['amount__sum'] or 0)
+        period_buy_crypto  = sum(float(o.amount or 0) for o in buy_orders)
+        period_sell_crypto = sum(float(o.amount or 0) for o in sell_orders)
         crypto_delta       = period_buy_crypto - period_sell_crypto
 
-        def serialize(qs, is_sell=False):
+        tax_label = 'УСН' if tax_type in ('USN_INCOME', 'USN_INCOME_OUTCOME') else 'НДФЛ'
+
+        def serialize(orders, is_sell=False):
             res = []
-            for o in qs:
+            for o in orders:
                 display_id = o.external_id if o.external_id else str(o.id)
                 comm_val   = float(o.commission or 0)
-                bank_comm  = float(o.cost or 0) * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
-                exch_comm  = float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100 if is_sell else 0.0
+                bank_comm  = (float(o.cost or 0) * comm_val / 100
+                              if o.commission_type == 'PERCENT' else comm_val)
+                exch_comm  = (float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+                              if is_sell else 0.0)
                 res.append({
                     'id':            o.id,
                     'external_id':   display_id,
@@ -884,33 +772,30 @@ def user_profit_view(request):
             return res
 
         return JsonResponse({
-            'buy_sum':            buy_sum,
-            'buy_count':          buy_orders.count(),
-            'sell_sum':           sell_sum,
-            'sell_count':         sell_orders.count(),
-            'prev_balance_qty':   round(calc['prev_balance_qty'],       2),
-            'prev_balance_cost':  round(calc['prev_balance_cost'],      2),
-            'total_buy_qty':      round(calc['total_buy_qty'],          2),
-            'total_buy_cost':     round(calc['total_buy_cost'],         2),
-            'remainder_qty':      round(calc['remainder_qty_display'],  2),
-            'remainder_cost':     round(calc['remainder_cost'],         2),
-            'eq_buy_cost':        round(calc['eq_buy_cost'],            2),
-            'gross':              round(gross,         2),
-            'ndfl':               round(ndfl,          2),
-            'after_ndfl':         round(after_ndfl,    2),
-            'share_percent':      share_percent,
-            'share_amount':       round(share_amount,  2),
-            'month_expenses':     round(month_expenses, 2),
-            'net_profit':         round(net_profit,    2),
-            'crypto_balance':     round(crypto_balance, 2),   # общий (обратная совместимость)
-            'usdt_balance':       round(usdt_balance,   2),   # НОВОЕ
-            'ton_balance':        round(ton_balance,    2),   # НОВОЕ
-            'crypto_delta':       round(crypto_delta,   2),
-            'buy_orders':         serialize(buy_orders,  is_sell=False),
-            'sell_orders':        serialize(sell_orders, is_sell=True),
-            'user_shares':        user_shares,
+            'buy_sum':        round(buy_sum,  2),
+            'buy_count':      len(buy_orders),
+            'sell_sum':       round(sell_sum, 2),
+            'sell_count':     len(sell_orders),
+            'gross':          round(gross_all,    2),
+            'tax_label':      tax_label,
+            'ndfl':           round(ndfl_all,     2),
+            'after_ndfl':     round(after_all,    2),
+            'share_percent':  share_percent,
+            'share_amount':   round(share_all,    2),
+            'month_expenses': round(month_expenses, 2),
+            'net_profit':     round(net_all,      2),
+            'usdt_balance':   round(usdt_balance, 4),
+            'ton_balance':    round(ton_balance,  4),
+            'crypto_balance': round(usdt_balance + ton_balance, 4),
+            'crypto_delta':   round(crypto_delta, 4),
+            'buy_orders':     serialize(buy_orders,  is_sell=False),
+            'sell_orders':    serialize(sell_orders, is_sell=True),
+            'user_shares':    user_shares,
         })
 
+    # =====================================================================
+    # РЕНДЕР СТРАНИЦЫ
+    # =====================================================================
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
 
@@ -2247,6 +2132,7 @@ def admin_profit_view(request):
     )
 
     print(f"[profit_view] {time.time() - t0:.2f}s", flush=True)
+    
     return render(request, 'custom_admin/profit_list.html', {
         'user_stats':          user_stats,
         'summary':             summary,
