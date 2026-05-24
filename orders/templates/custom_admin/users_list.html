@@ -70,9 +70,9 @@
                         </button>
 
                         {# НОВАЯ КНОПКА — ручной ввод грязной прибыли за месяц #}
-                        <button class="btn btn-sm btn-outline-warning ms-1"
+                        <button class="btn btn-sm {% if u.has_manual_entries %}btn-outline-success{% else %}btn-outline-warning{% endif %} ms-1"
                                 onclick="openProfitModal('{{ u.id }}', '{{ u.username }}')">
-                            💰
+                            {% if u.has_manual_entries %}✅ 💰{% else %}💰{% endif %}
                         </button>
                         
                         <button class="btn btn-sm btn-outline-secondary ms-1" 

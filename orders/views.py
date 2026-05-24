@@ -949,10 +949,6 @@ def admin_users_list(request):
         return redirect('admin_users')
 
     # === 3. Корректировка начального остатка ===
-    # Создаёт или обновляет один специальный BUY-ордер
-    # с exchange_type="Остаток (до 1 фев)" датой 01.02.2026.
-    # Этот ордер автоматически учитывается в FIFO-расчёте прибыли
-    # в user_profit_view как обычная покупка.
     if request.method == 'POST' and request.POST.get('action') == 'edit_balance':
         user_id        = request.POST.get('user_id')
         adjustment_str = request.POST.get('balance_adjustment', '0')
@@ -964,14 +960,12 @@ def admin_users_list(request):
             amount_val = float(str(adjustment_str).replace(',', '.'))
             rate_val   = float(str(rate_str).replace(',', '.'))
 
-            # Ищем существующий исторический ордер этого пользователя
             init_order = Order.objects.filter(
                 user=user_to_edit,
                 exchange_type="Остаток (до 1 фев)"
             ).first()
 
             if amount_val == 0:
-                # Ввели 0 — удаляем исторический ордер
                 if init_order:
                     init_order.delete()
                 messages.success(
@@ -988,7 +982,6 @@ def admin_users_list(request):
                 cost       = abs_amount * rate_val
 
                 if init_order:
-                    # Ордер уже есть — обновляем
                     init_order.operation_type = op_type
                     init_order.amount         = abs_amount
                     init_order.price          = rate_val
@@ -1001,7 +994,6 @@ def admin_users_list(request):
                         f"(= {cost:,.2f} ₽)."
                     )
                 else:
-                    # Ордера нет — создаём новый датой 01.02.2026 00:00
                     feb_first = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
                     Order.objects.create(
                         user=user_to_edit,
@@ -1035,12 +1027,9 @@ def admin_users_list(request):
         try:
             user_to_edit = User.objects.get(id=user_id)
 
-            # Инициализируем словарь если он пустой или некорректный
             if not isinstance(user_to_edit.profit_shares, dict):
                 user_to_edit.profit_shares = {}
 
-            # Собираем доли за все 12 месяцев из формы
-            # Ключ: '2026-01', '2026-02' и т.д.
             for i in range(1, 13):
                 month_str = f"{i:02d}"
                 key       = f"{year}-{month_str}"
@@ -1064,26 +1053,42 @@ def admin_users_list(request):
     # === 5. Вывод списка пользователей ===
     users = User.objects.all().order_by('id')
 
-    for u in users:
-        bought = float(
-            Order.objects.filter(user=u, operation_type='BUY')
-            .aggregate(Sum('amount'))['amount__sum'] or 0
-        )
-        sold = float(
-            Order.objects.filter(user=u, operation_type='SELL')
-            .aggregate(Sum('amount'))['amount__sum'] or 0
-        )
+    # Один запрос — все user_id у которых есть manual entries
+    users_with_manual = set(
+        MonthlyManualEntry.objects
+        .values_list('user_id', flat=True)
+        .distinct()
+    )
 
-        # Реальный баланс = все BUY (включая "Остаток (до 1 фев)") минус все SELL.
-        # initial_crypto_balance НЕ прибавляем — остаток живёт как ордер.
+    # Один запрос — все user_id у которых есть init_order
+    init_orders_map = {
+        o.user_id: o
+        for o in Order.objects.filter(exchange_type="Остаток (до 1 фев)")
+    }
+
+    # Один запрос — суммы BUY и SELL по всем пользователям
+    from django.db.models import Sum, Case, When, FloatField
+    balance_qs = (
+        Order.objects
+        .values('user_id')
+        .annotate(
+            total_buy=Sum(
+                Case(When(operation_type='BUY',  then='amount'), default=0, output_field=FloatField())
+            ),
+            total_sell=Sum(
+                Case(When(operation_type='SELL', then='amount'), default=0, output_field=FloatField())
+            ),
+        )
+    )
+    balance_map = {row['user_id']: row for row in balance_qs}
+
+    for u in users:
+        bal = balance_map.get(u.id, {})
+        bought = float(bal.get('total_buy',  0) or 0)
+        sold   = float(bal.get('total_sell', 0) or 0)
         u.real_balance = bought - sold
 
-        # Данные исторического ордера для модалки корректировки
-        init_order = Order.objects.filter(
-            user=u,
-            exchange_type="Остаток (до 1 фев)"
-        ).first()
-
+        init_order = init_orders_map.get(u.id)
         if init_order:
             u.has_initial_balance = True
             u.init_amount = (
@@ -1097,11 +1102,10 @@ def admin_users_list(request):
             u.init_amount = 0
             u.init_rate   = 0
 
-        # JSON долей — передаём в атрибут HTML-кнопки для модалки
-        u.shares_json = json.dumps(u.profit_shares) if u.profit_shares else "{}"
+        u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
+        u.has_manual_entries = u.id in users_with_manual
 
     return render(request, 'custom_admin/users_list.html', {'users': users})
-
 
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
