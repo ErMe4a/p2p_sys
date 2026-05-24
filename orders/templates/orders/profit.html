@@ -17,24 +17,13 @@
 
     .form-section { background:#111520; border-radius:10px; padding:20px; margin-bottom:20px; border:1px solid var(--border); }
     
-    .form-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:16px; }
+    .form-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:16px; }
     .form-group label { display:block; margin-bottom:6px; color:var(--muted); font-size:12px; font-weight:500; }
 
     .quick-dates { display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
     .quick-date-btn { background:#111520; border:1px solid var(--border); color:var(--muted); padding:8px 14px; font-size:13px; border-radius:8px; cursor:pointer; transition:all .15s ease; }
     .quick-date-btn:hover { border-color:#2e3650; color:var(--text); }
     .quick-date-btn.active { background:rgba(108,140,255,.15); border-color:rgba(108,140,255,.3); color:var(--accent); font-weight: 500;}
-
-    .currency-switcher { display:flex; gap:6px; align-items:center; }
-    .currency-btn { 
-        padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; 
-        cursor: pointer; border: 1px solid var(--border); background: transparent;
-        transition: all .15s ease; color: var(--muted);
-    }
-    .currency-btn:hover { color: var(--text); }
-    .currency-btn.active-all  { background: rgba(108,140,255,.15); border-color: rgba(108,140,255,.4); color: var(--accent); }
-    .currency-btn.active-usdt { background: rgba(88,214,141,.12); border-color: rgba(88,214,141,.35); color: var(--ok); }
-    .currency-btn.active-ton  { background: rgba(61,154,245,.12); border-color: rgba(61,154,245,.35); color: var(--ton); }
 
     .btn-add-expense { background: var(--accent); color: #fff; border: none; padding: 9px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.2s; display: inline-flex; align-items: center; gap: 6px;}
     .btn-add-expense:hover { background: #5a78e6; }
@@ -91,12 +80,8 @@
     .btn-delete-expense { background: rgba(255,108,108,0.1); color: var(--danger); border: 1px solid rgba(255,108,108,0.2); border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; transition: 0.2s;}
     .btn-delete-expense:hover { background: var(--danger); color: #fff; }
 
-    @media (max-width: 1200px) { 
-        .tables-container { grid-template-columns:1fr; }
-    }
-    @media (max-width: 768px) {
-        .form-row { grid-template-columns:1fr; }
-    }
+    @media (max-width: 1200px) { .tables-container { grid-template-columns:1fr; } }
+    @media (max-width: 768px)  { .form-row { grid-template-columns:1fr; } }
 </style>
 
 <div class="profit-container">
@@ -107,11 +92,12 @@
         </div>
 
         <div class="quick-dates">
-            <button type="button" class="quick-date-btn active" id="btnToday" onclick="setView('today')">Детально за сегодня</button>
-            <button type="button" class="quick-date-btn" id="btnMonth" onclick="setView('month')">Сводка по месяцам</button>
-            <button type="button" class="quick-date-btn" id="btnExpenses" onclick="setView('expenses')">💸 Мои расходы</button>
+            <button type="button" class="quick-date-btn active" id="btnToday"    onclick="setView('today')">Детально за сегодня</button>
+            <button type="button" class="quick-date-btn"        id="btnMonth"    onclick="setView('month')">Сводка по месяцам</button>
+            <button type="button" class="quick-date-btn"        id="btnExpenses" onclick="setView('expenses')">💸 Мои расходы</button>
         </div>
 
+        <!-- Фильтры: биржа + банк + валюта -->
         <div class="form-row" id="filtersRow">
             <div class="form-group" style="margin-bottom:0;">
                 <label for="exchangeSelect">Биржа</label>
@@ -127,7 +113,6 @@
                     <option value="BingX">BingX</option>
                 </select>
             </div>
-            
             <div class="form-group" style="margin-bottom:0;">
                 <label for="bankSelect">Банк</label>
                 <select class="input-profit" id="bankSelect" onchange="handleFilterChange()">
@@ -137,14 +122,13 @@
                     {% endfor %}
                 </select>
             </div>
-        </div>
-
-        <div id="currencySwitcherRow" class="hidden" style="margin-top:16px; display:flex; align-items:center; gap:12px;">
-            <span style="font-size:12px; color:var(--muted); font-weight:500;">Остаток:</span>
-            <div class="currency-switcher">
-                <button class="currency-btn active-all" id="btnCurrAll"  onclick="setCurrency('all')">Все</button>
-                <button class="currency-btn"            id="btnCurrUsdt" onclick="setCurrency('usdt')">USDT</button>
-                <button class="currency-btn"            id="btnCurrTon"  onclick="setCurrency('ton')">TON</button>
+            <div class="form-group" style="margin-bottom:0;">
+                <label for="currencySelect">Валюта</label>
+                <select class="input-profit" id="currencySelect" onchange="handleCurrencyChange()">
+                    <option value="all">Все</option>
+                    <option value="usdt">USDT</option>
+                    <option value="ton">TON</option>
+                </select>
             </div>
         </div>
     </div>
@@ -156,17 +140,17 @@
             <div class="summary-card buy">
                 <div class="summary-title">Покупки (BUY)</div>
                 <div class="summary-value" id="buyTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="buyCount">0</span> операций за сегодня</div>
+                <div class="summary-count"><span id="buyCount">0</span> операций</div>
             </div>
             <div class="summary-card sell">
                 <div class="summary-title">Продажи (SELL)</div>
                 <div class="summary-value" id="sellTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="sellCount">0</span> операций за сегодня</div>
+                <div class="summary-count"><span id="sellCount">0</span> операций</div>
             </div>
             <div class="summary-card gross">
                 <div class="summary-title">Прибыль (до вычета)</div>
                 <div class="summary-value" id="grossProfitValue">0.00 ₽</div>
-                <div class="summary-count" id="grossProfitSubtitle">За сегодня (Оборот - Комиссии)</div>
+                <div class="summary-count" id="grossProfitSubtitle">Оборот − Комиссии − Расходы</div>
             </div>
             <div class="summary-card net">
                 <div class="summary-title" style="color: #e879f9;">Прибыль (после вычета)</div>
@@ -175,7 +159,7 @@
             </div>
             <div class="summary-card balance-all" id="balanceCard">
                 <div class="summary-title" id="balanceCardTitle">Текущий остаток</div>
-                <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">0.00</div>
+                <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;"></div>
                 <div class="summary-count" id="balanceCardSub" style="font-weight:500;"></div>
                 <div style="font-size: 10px; color: var(--muted); margin-top: 4px;" id="balanceCardHint">Глобальный остаток крипты</div>
             </div>
@@ -185,7 +169,7 @@
             <div class="table-section">
                 <div class="table-header buy">
                     <div class="table-title">↗️ Покупки (BUY)</div>
-                    <span class="badge ok" style="background:rgba(88,214,141,.15); color:var(--ok); padding:4px 8px; border-radius:20px; font-size:11px;" id="buyTableCount">0 записей</span>
+                    <span style="background:rgba(88,214,141,.15); color:var(--ok); padding:4px 8px; border-radius:20px; font-size:11px;" id="buyTableCount">0 записей</span>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
@@ -194,11 +178,10 @@
                     </table>
                 </div>
             </div>
-
             <div class="table-section">
                 <div class="table-header sell">
                     <div class="table-title">↘️ Продажи (SELL)</div>
-                    <span class="badge danger" style="background:rgba(255,108,108,.15); color:var(--danger); padding:4px 8px; border-radius:20px; font-size:11px;" id="sellTableCount">0 записей</span>
+                    <span style="background:rgba(255,108,108,.15); color:var(--danger); padding:4px 8px; border-radius:20px; font-size:11px;" id="sellTableCount">0 записей</span>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="table-profit">
@@ -221,7 +204,7 @@
                                 <th>Месяц</th>
                                 <th>Остаток</th>
                                 <th>Движение (RUB)</th>
-                                <th>Комиссии</th>
+                                <th>Расходы</th>
                                 <th>Прибыль (до вычета)</th>
                                 <th>Налог</th>
                                 <th>Доля системы</th>
@@ -238,7 +221,6 @@
     <div id="expensesView" class="hidden">
         <div class="form-section" style="background: rgba(255,193,7,0.05); border-color: rgba(255,193,7,0.2);">
             <h5 style="margin-top: 0; margin-bottom: 16px; color: var(--warn); font-size: 15px;">➕ Добавить новый расход</h5>
-            
             <div style="margin-bottom: 14px;">
                 <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Быстрый выбор</label>
                 <select class="input-profit" id="expPreset" onchange="applyPreset()">
@@ -248,10 +230,9 @@
                     <option value="Подписка Сбер на 750к|1190">Подписка Сбер на 750к — 1 190 ₽</option>
                 </select>
             </div>
-
             <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end;">
                 <div>
-                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Наименование (напр: Подписка TG)</label>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Наименование</label>
                     <input type="text" id="expName" class="input-profit" placeholder="На что потратили?">
                 </div>
                 <div>
@@ -267,7 +248,6 @@
                 </div>
             </div>
         </div>
-
         <div class="table-section" style="margin-top: 20px;">
             <div class="table-header">
                 <div class="table-title" style="color:var(--text);">💸 Журнал расходов по месяцам</div>
@@ -280,56 +260,59 @@
 </div>
 
 <script>
-    let currentStart = '';
-    let currentEnd = '';
-    let currentView = 'today';
-    let currentCurrency = 'all';
-    let lastData = null;
+    let currentStart   = '';
+    let currentEnd     = '';
+    let currentView    = 'today';
+    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton'
+    let lastTurnover   = null;   // кэш get_turnover
+    let lastMonths     = null;   // кэш get_months
 
     function getCookie(name) {
         const v = document.cookie.match('(^|;) ?' + name + '=([^;]*)(;|$)');
         return v ? v[2] : null;
     }
-
     function safeFloat(val) {
-        if (!val) return 0;
-        let str = String(val).replace(/\s/g, '').replace(',', '.');
-        return parseFloat(str) || 0;
+        if (!val && val !== 0) return 0;
+        return parseFloat(String(val).replace(/\s/g, '').replace(',', '.')) || 0;
     }
-
     function formatMoney(amount) {
-        return safeFloat(amount).toLocaleString('ru-RU', {
-            minimumFractionDigits: 2, maximumFractionDigits: 2
-        });
+        return safeFloat(amount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-
     function updateMskTime() {
         const now = new Date();
-        const options = { timeZone: 'Europe/Moscow', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-        document.getElementById('timezoneInfo').textContent = '🕐 МСК: ' + new Intl.DateTimeFormat('ru-RU', options).format(now);
+        document.getElementById('timezoneInfo').textContent = '🕐 МСК: ' +
+            new Intl.DateTimeFormat('ru-RU', { timeZone: 'Europe/Moscow', hour:'2-digit', minute:'2-digit', second:'2-digit' }).format(now);
     }
     setInterval(updateMskTime, 1000);
-
     document.getElementById('expDate').valueAsDate = new Date();
 
     // =====================================================================
-    // ПЕРЕКЛЮЧАТЕЛЬ ВАЛЮТЫ
+    // ПЕРЕКЛЮЧЕНИЕ ВАЛЮТЫ — только из кэша, без запроса к серверу
     // =====================================================================
-    function setCurrency(val) {
-        currentCurrency = val;
-        document.getElementById('btnCurrAll').className  = 'currency-btn' + (val === 'all'  ? ' active-all'  : '');
-        document.getElementById('btnCurrUsdt').className = 'currency-btn' + (val === 'usdt' ? ' active-usdt' : '');
-        document.getElementById('btnCurrTon').className  = 'currency-btn' + (val === 'ton'  ? ' active-ton'  : '');
-        if (lastData) {
-            updateBalanceCard(lastData);
-            renderDetailedTable('buyOrdersTable',  lastData.buy_orders,  'buy');
-            renderDetailedTable('sellOrdersTable', lastData.sell_orders, 'sell');
+    function handleCurrencyChange() {
+        currentCurrency = document.getElementById('currencySelect').value;
+        if (currentView === 'today' && lastTurnover) {
+            renderTurnoverCards(lastTurnover);
+            renderDetailedTable('buyOrdersTable',  lastTurnover.buy_orders,  'buy');
+            renderDetailedTable('sellOrdersTable', lastTurnover.sell_orders, 'sell');
+        } else if (currentView === 'month' && lastMonths) {
+            renderMonthsFromServer(lastMonths);
         }
     }
 
+    // Возвращает нужные поля из объекта данных в зависимости от текущей валюты
+    function pick(data, allKey, usdtKey, tonKey) {
+        if (currentCurrency === 'usdt') return safeFloat(data[usdtKey]);
+        if (currentCurrency === 'ton')  return safeFloat(data[tonKey]);
+        return safeFloat(data[allKey]);
+    }
+
+    // =====================================================================
+    // КАРТОЧКА БАЛАНСА
+    // =====================================================================
     function updateBalanceCard(data) {
-        const usdt = safeFloat(data.usdt_balance);
-        const ton  = safeFloat(data.ton_balance);
+        const usdt  = safeFloat(data.usdt_balance);
+        const ton   = safeFloat(data.ton_balance);
         const card  = document.getElementById('balanceCard');
         const title = document.getElementById('balanceCardTitle');
         const value = document.getElementById('cryptoBalance');
@@ -357,17 +340,9 @@
             title.textContent = 'Текущий остаток';
             value.style.color = '#6c8cff';
             value.textContent = '';
-            sub.innerHTML     = '<div style="color:var(--ok); line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</div>'
-                              + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</div>';
-            hint.textContent  = 'Глобальный остаток крипты';
-        }
-
-        const cryptoDelta = safeFloat(data.crypto_delta);
-        const deltaEl = document.getElementById('cryptoDelta');
-        if (deltaEl) {
-            const deltaSign = cryptoDelta > 0 ? '+' : '';
-            deltaEl.textContent = deltaSign + cryptoDelta.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' за период';
-            deltaEl.style.color = cryptoDelta > 0 ? 'var(--ok)' : (cryptoDelta < 0 ? 'var(--danger)' : 'var(--muted)');
+            sub.innerHTML = '<div style="color:var(--ok);line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</div>'
+                          + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</div>';
+            hint.textContent = 'Глобальный остаток крипты';
         }
     }
 
@@ -376,24 +351,20 @@
     // =====================================================================
     function setView(viewName) {
         currentView = viewName;
-        document.getElementById('btnToday').classList.remove('active');
-        document.getElementById('btnMonth').classList.remove('active');
-        document.getElementById('btnExpenses').classList.remove('active');
+        ['btnToday','btnMonth','btnExpenses'].forEach(function(id) {
+            document.getElementById(id).classList.remove('active');
+        });
         document.getElementById('resultsSection').classList.add('hidden');
         document.getElementById('expensesView').classList.add('hidden');
         document.getElementById('filtersRow').classList.remove('hidden');
-        document.getElementById('currencySwitcherRow').classList.add('hidden');
 
         if (viewName === 'today') {
             const today = new Date().toISOString().split('T')[0];
-            currentStart = today;
-            currentEnd = today;
+            currentStart = today; currentEnd = today;
             document.getElementById('btnToday').classList.add('active');
-            document.getElementById('currencySwitcherRow').classList.remove('hidden');
             loadTurnover();
         } else if (viewName === 'month') {
-            currentStart = '';
-            currentEnd = '';
+            currentStart = ''; currentEnd = '';
             document.getElementById('btnMonth').classList.add('active');
             loadMonths();
         } else if (viewName === 'expenses') {
@@ -423,8 +394,7 @@
 
     async function loadExpenses() {
         try {
-            const res = await fetch(window.location.pathname + '?action=get_expenses');
-            if (!res.ok) throw new Error('Network response was not ok');
+            const res  = await fetch(window.location.pathname + '?action=get_expenses');
             const data = await res.json();
             renderExpenses(data.expenses || []);
         } catch (e) {
@@ -437,68 +407,53 @@
         var amount = safeFloat(document.getElementById('expAmount').value);
         var date   = document.getElementById('expDate').value;
         if (!name || amount <= 0 || !date) { alert('Пожалуйста, заполните все поля корректно.'); return; }
-        var month = date.substring(0, 7);
-        try {
-            await fetch(window.location.pathname + '?action=add_expense', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-                body: JSON.stringify({ name: name, amount: amount, month: month })
-            });
-            document.getElementById('expName').value = '';
-            document.getElementById('expAmount').value = '';
-            loadExpenses();
-        } catch (e) {
-            alert('Произошла ошибка при добавлении расхода.');
-        }
+        await fetch(window.location.pathname + '?action=add_expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify({ name: name, amount: amount, month: date.substring(0, 7) })
+        });
+        document.getElementById('expName').value = '';
+        document.getElementById('expAmount').value = '';
+        loadExpenses();
     }
 
     async function deleteExpense(id) {
         if (!confirm('Удалить этот расход?')) return;
-        try {
-            await fetch(window.location.pathname + '?action=delete_expense', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
-                body: JSON.stringify({ id: id })
-            });
-            loadExpenses();
-        } catch (e) {
-            alert('Произошла ошибка при удалении расхода.');
-        }
+        await fetch(window.location.pathname + '?action=delete_expense', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify({ id: id })
+        });
+        loadExpenses();
     }
 
     function renderExpenses(expenses) {
         var container = document.getElementById('expensesListContainer');
-        if (expenses.length === 0) {
-            container.innerHTML = '<div class="no-data">У вас пока нет добавленных расходов</div>';
-            return;
-        }
+        if (!expenses.length) { container.innerHTML = '<div class="no-data">У вас пока нет добавленных расходов</div>'; return; }
         var monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
         var grouped = {};
         expenses.forEach(function(exp) {
-            var monthKey = exp.month;
-            var monthLabel = monthKey;
-            var parts = monthKey.split('-');
-            if (parts.length === 2) {
-                monthLabel = monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
-            }
-            if (!grouped[monthKey]) grouped[monthKey] = { label: monthLabel, total: 0, items: [] };
-            grouped[monthKey].items.push(exp);
-            grouped[monthKey].total += safeFloat(exp.amount);
+            var parts = exp.month.split('-');
+            var label = parts.length === 2 ? monthNames[parseInt(parts[1],10)-1] + ' ' + parts[0] : exp.month;
+            if (!grouped[exp.month]) grouped[exp.month] = { label: label, total: 0, items: [] };
+            grouped[exp.month].items.push(exp);
+            grouped[exp.month].total += safeFloat(exp.amount);
         });
-        var sortedKeys = Object.keys(grouped).sort(function(a, b) { return b.localeCompare(a); });
         var html = '';
-        sortedKeys.forEach(function(key) {
+        Object.keys(grouped).sort(function(a,b){return b.localeCompare(a);}).forEach(function(key) {
             var d = grouped[key];
             html += '<div class="expense-month-header"><span>🗓️ ' + d.label + '</span><span style="color:var(--warn);">Итого: ' + formatMoney(d.total) + ' ₽</span></div>';
             d.items.forEach(function(exp) {
-                html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">' + exp.name + '</span><span class="expense-date">' + d.label + '</span></div><div style="display:flex;align-items:center;gap:16px;"><span class="amount-cell expense-amount">' + formatMoney(exp.amount) + ' ₽</span><button class="btn-delete-expense" onclick="deleteExpense(' + exp.id + ')">✖</button></div></div>';
+                html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">' + exp.name + '</span><span class="expense-date">' + d.label + '</span></div>'
+                      + '<div style="display:flex;align-items:center;gap:16px;"><span class="amount-cell expense-amount">' + formatMoney(exp.amount) + ' ₽</span>'
+                      + '<button class="btn-delete-expense" onclick="deleteExpense(' + exp.id + ')">✖</button></div></div>';
             });
         });
         container.innerHTML = html;
     }
 
     // =====================================================================
-    // МЕСЯЦЫ
+    // СВОДКА ПО МЕСЯЦАМ
     // =====================================================================
     async function loadMonths() {
         var periodInfo = document.getElementById('periodInfo');
@@ -513,6 +468,7 @@
             var bank     = document.getElementById('bankSelect').value;
             var res      = await fetch(window.location.pathname + '?action=get_months&exchange=' + exchange + '&bank=' + bank);
             var data     = await res.json();
+            lastMonths   = data.months;
             periodInfo.textContent = '📅 Сводка по месяцам | Месяцев: ' + data.months.length;
             renderMonthsFromServer(data.months);
         } catch(e) {
@@ -522,72 +478,77 @@
 
     function renderMonthsFromServer(months) {
         var monthNames = ["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
-        if (!months || months.length === 0) {
+        if (!months || !months.length) {
             document.getElementById('monthlySummaryTable').innerHTML = '<tr><td colspan="8" class="no-data">Нет данных</td></tr>';
             return;
         }
 
-        var sorted = months.slice().sort(function(a, b) { return b.key.localeCompare(a.key); });
+        var cur    = currentCurrency;
+        var sorted = months.slice().sort(function(a,b){ return b.key.localeCompare(a.key); });
 
         document.getElementById('monthlySummaryTable').innerHTML = sorted.map(function(m) {
-            var label      = monthNames[m.month - 1] + ' ' + m.year;
-            var grossColor = m.gross >= 0 ? 'var(--ok)' : 'var(--danger)';
-            var netColor   = m.net_profit >= 0 ? '#e879f9' : 'var(--danger)';
-            var remColor   = m.remainder_qty >= 0 ? '#6c8cff' : 'var(--danger)';
-            var tonColor   = m.ton_remainder_qty >= 0 ? 'var(--ton)' : 'var(--danger)';
+            var label = monthNames[m.month - 1] + ' ' + m.year;
 
-            // Колонка "Остаток" — USDT + TON
-            var balanceCell = '<td>'
-                + '<div style="font-weight:600;color:' + remColor + ';">'
-                + m.remainder_qty.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})
-                + ' USDT</div>'
-                + (m.ton_remainder_qty !== 0
-                    ? '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">'
-                      + m.ton_remainder_qty.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2})
-                      + ' TON</div>'
-                    : '')
-                + '<div style="font-size:10px;color:var(--muted);">На конец месяца</div>'
-                + '</td>';
+            // Выбираем данные по текущей валюте
+            var buyCost    = cur === 'usdt' ? m.usdt_buy_cost  : cur === 'ton' ? m.ton_buy_cost  : m.buy_cost;
+            var sellCost   = cur === 'usdt' ? m.usdt_sell_cost : cur === 'ton' ? m.ton_sell_cost : m.sell_cost;
+            var bankComm   = cur === 'usdt' ? m.usdt_bank_comm : cur === 'ton' ? m.ton_bank_comm : m.bank_comm;
+            var exchComm   = cur === 'usdt' ? m.usdt_exch_comm : cur === 'ton' ? m.ton_exch_comm : m.exch_comm_rub;
+            var gross      = cur === 'usdt' ? m.usdt_gross     : cur === 'ton' ? m.ton_gross     : m.gross;
+            var ndfl       = cur === 'usdt' ? m.usdt_ndfl      : cur === 'ton' ? m.ton_ndfl      : m.ndfl;
+            var shareAmt   = cur === 'usdt' ? m.usdt_share     : cur === 'ton' ? m.ton_share     : m.share_amount;
+            var net        = cur === 'usdt' ? m.usdt_net       : cur === 'ton' ? m.ton_net       : m.net_profit;
 
-            // Колонка "Комиссии" — банк + биржа в рублях
-            var commCell = '<td style="font-size:12px;">'
-                + '<div style="color:var(--muted);">Банк: <b>' + formatMoney(m.bank_comm) + ' ₽</b></div>'
-                + '<div style="color:var(--muted);">Биржа: <b>' + formatMoney(m.exch_comm_rub) + ' ₽</b></div>'
-                + '</td>';
+            // Остаток — всегда раздельно по валютам
+            var remUsdt    = safeFloat(m.usdt_remainder);
+            var remTon     = safeFloat(m.ton_remainder_qty);
+            var remColor   = remUsdt >= 0 ? '#6c8cff' : 'var(--danger)';
+            var tonColor   = remTon  >= 0 ? 'var(--ton)' : 'var(--danger)';
 
-            // Колонка "Налог" — динамический тип (УСН/НДФЛ) из tax_label
-            var taxCell = '<td style="color:var(--warn);">'
-                + '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">' + m.tax_label + '</div>'
-                + formatMoney(m.ndfl) + ' ₽'
-                + '</td>';
+            var balanceCell = '<td>';
+            if (cur === 'ton') {
+                balanceCell += '<div style="font-weight:600;color:' + tonColor + ';">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+            } else if (cur === 'usdt') {
+                balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
+            } else {
+                balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
+                if (remTon !== 0) balanceCell += '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+            }
+            balanceCell += '<div style="font-size:10px;color:var(--muted);">На конец месяца</div></td>';
 
-            // Колонка "Доля системы"
-            var shareCell = '<td style="color:var(--accent);">'
-                + m.share_percent + '%'
-                + '<span style="color:var(--muted);font-size:11px;"> (' + formatMoney(m.share_amount) + ' ₽)</span>'
-                + (m.month_expenses > 0
-                    ? '<div style="color:var(--warn);font-size:11px;margin-top:2px;">Расходы: ' + formatMoney(m.month_expenses) + ' ₽</div>'
-                    : '')
+            var grossColor = gross >= 0 ? 'var(--ok)' : 'var(--danger)';
+            var netColor   = net   >= 0 ? '#e879f9'   : 'var(--danger)';
+
+            // Колонка "Расходы" — банк + биржа + прочие
+            var expCell = '<td style="font-size:12px;">'
+                + '<div style="color:var(--muted);">Банк: <b>' + formatMoney(bankComm) + ' ₽</b></div>'
+                + '<div style="color:var(--muted);">Биржа: <b>' + formatMoney(exchComm) + ' ₽</b></div>'
+                + (m.month_expenses > 0 ? '<div style="color:var(--warn);">Прочие: <b>' + formatMoney(m.month_expenses) + ' ₽</b></div>' : '')
                 + '</td>';
 
             return '<tr>'
                 + '<td style="font-weight:600;color:var(--text);">' + label + '</td>'
                 + balanceCell
                 + '<td style="font-weight:500;">'
-                +   '<div style="color:var(--ok);font-size:11px;">Sell: ' + formatMoney(m.sell_cost) + ' ₽</div>'
-                +   '<div style="color:var(--danger);font-size:11px;">Buy: ' + formatMoney(m.buy_cost) + ' ₽</div>'
+                +   '<div style="color:var(--ok);font-size:11px;">Sell: ' + formatMoney(sellCost) + ' ₽</div>'
+                +   '<div style="color:var(--danger);font-size:11px;">Buy: ' + formatMoney(buyCost) + ' ₽</div>'
                 + '</td>'
-                + commCell
-                + '<td style="color:' + grossColor + ';font-weight:600;">' + (m.gross >= 0 ? '+' : '') + formatMoney(m.gross) + ' ₽</td>'
-                + taxCell
-                + shareCell
-                + '<td class="amount-cell" style="color:' + netColor + ';font-size:14px;">' + (m.net_profit >= 0 ? '+' : '') + formatMoney(m.net_profit) + ' ₽</td>'
+                + expCell
+                + '<td style="color:' + grossColor + ';font-weight:600;">' + (gross >= 0 ? '+' : '') + formatMoney(gross) + ' ₽</td>'
+                + '<td style="color:var(--warn);">'
+                +   '<div style="font-size:10px;color:var(--muted);margin-bottom:2px;">' + m.tax_label + '</div>'
+                +   formatMoney(ndfl) + ' ₽'
+                + '</td>'
+                + '<td style="color:var(--accent);">' + m.share_percent + '%'
+                +   '<span style="color:var(--muted);font-size:11px;"> (' + formatMoney(shareAmt) + ' ₽)</span>'
+                + '</td>'
+                + '<td class="amount-cell" style="color:' + netColor + ';font-size:14px;">' + (net >= 0 ? '+' : '') + formatMoney(net) + ' ₽</td>'
                 + '</tr>';
         }).join('');
     }
 
     // =====================================================================
-    // СЕГОДНЯ
+    // ДЕТАЛЬНО ЗА СЕГОДНЯ
     // =====================================================================
     async function loadTurnover() {
         var exchange   = document.getElementById('exchangeSelect').value;
@@ -600,108 +561,93 @@
 
         try {
             var url = window.location.pathname + '?action=get_turnover&start=' + currentStart + '&end=' + currentEnd + '&exchange=' + exchange + '&bank=' + bank;
-            var response = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
-            if (!response.ok) throw new Error('Ошибка связи с сервером');
-            var data = await response.json();
-            lastData = data;
-            renderData(data);
+            var res  = await fetch(url, { headers: {'X-Requested-With': 'XMLHttpRequest'} });
+            if (!res.ok) throw new Error();
+            var data = await res.json();
+            lastTurnover = data;
+            renderTurnoverCards(data);
+            renderDetailedTable('buyOrdersTable',  data.buy_orders,  'buy');
+            renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
+            document.getElementById('buyTableCount').textContent  = data.buy_count  + ' записей';
+            document.getElementById('sellTableCount').textContent = data.sell_count + ' записей';
         } catch (e) {
-            periodInfo.textContent = '❌ Ошибка загрузки данных. Попробуйте обновить страницу.';
+            periodInfo.textContent = '❌ Ошибка загрузки данных.';
             periodInfo.style.color = 'var(--danger)';
         }
     }
 
-    function renderData(data) {
-        var totalCount = parseInt(data.buy_count) + parseInt(data.sell_count);
+    function renderTurnoverCards(data) {
+        var totalCount = safeFloat(data.buy_count) + safeFloat(data.sell_count);
         var periodInfo = document.getElementById('periodInfo');
-        periodInfo.style.color = 'var(--warn)';
-        periodInfo.textContent = '📅 Отчетный период: СЕГОДНЯ | Всего сделок: ' + totalCount;
+        periodInfo.style.color  = 'var(--warn)';
+        periodInfo.textContent  = '📅 Отчетный период: СЕГОДНЯ | Всего сделок: ' + totalCount;
 
         document.getElementById('summaryCards').classList.remove('hidden');
         document.getElementById('monthView').classList.add('hidden');
         document.getElementById('todayView').classList.remove('hidden');
 
-        document.getElementById('buyTotal').textContent  = formatMoney(data.buy_sum)  + ' ₽';
+        // Покупки / продажи
+        var buySumVal  = pick(data, 'buy_sum',  'usdt_buy_sum',  'ton_buy_sum');
+        var sellSumVal = pick(data, 'sell_sum', 'usdt_sell_sum', 'ton_sell_sum');
+        document.getElementById('buyTotal').textContent  = formatMoney(buySumVal)  + ' ₽';
+        document.getElementById('sellTotal').textContent = formatMoney(sellSumVal) + ' ₽';
         document.getElementById('buyCount').textContent  = data.buy_count;
-        document.getElementById('sellTotal').textContent = formatMoney(data.sell_sum) + ' ₽';
         document.getElementById('sellCount').textContent = data.sell_count;
 
-        var grossProfit  = safeFloat(data.gross);
-        var ndfl         = safeFloat(data.ndfl);
-        var shareAmount  = safeFloat(data.share_amount);
-        var netProfit    = safeFloat(data.net_profit);
-        var sharePercent = safeFloat(data.share_percent);
-        var taxLabel     = data.tax_label || 'Налог';
+        // Gross
+        var grossVal = pick(data, 'gross', 'usdt_gross', 'ton_gross');
+        var grossEl  = document.getElementById('grossProfitValue');
+        grossEl.textContent = (grossVal > 0 ? '+' : '') + formatMoney(grossVal) + ' ₽';
+        grossEl.style.color = grossVal >= 0 ? 'var(--ok)' : 'var(--danger)';
 
-        var grossEl = document.getElementById('grossProfitValue');
-        grossEl.textContent = (grossProfit > 0 ? '+' : '') + formatMoney(grossProfit) + ' ₽';
-        grossEl.style.color = grossProfit >= 0 ? 'var(--ok)' : 'var(--danger)';
+        // Net
+        var ndflVal  = pick(data, 'ndfl',         'usdt_ndfl',  'ton_ndfl');
+        var shareVal = pick(data, 'share_amount',  'usdt_share', 'ton_share');
+        var netVal   = pick(data, 'net_profit',    'usdt_net',   'ton_net');
+        var netEl    = document.getElementById('netProfitValue');
+        netEl.textContent = (netVal > 0 ? '+' : '') + formatMoney(netVal) + ' ₽';
+        netEl.style.color = netVal >= 0 ? '#e879f9' : 'var(--danger)';
 
-        var netEl = document.getElementById('netProfitValue');
-        netEl.textContent = (netProfit > 0 ? '+' : '') + formatMoney(netProfit) + ' ₽';
-        netEl.style.color = netProfit >= 0 ? '#e879f9' : 'var(--danger)';
-
-        // Подпись под карточкой "после вычета" — динамический тип налога
         document.getElementById('netProfitDeductions').innerHTML =
-            taxLabel + ': <b style="color:var(--warn)">' + formatMoney(ndfl) + ' ₽</b> | '
-            + 'Доля (' + sharePercent + '%): <b style="color:var(--accent)">' + formatMoney(shareAmount) + ' ₽</b>';
+            (data.tax_label || 'Налог') + ': <b style="color:var(--warn)">' + formatMoney(ndflVal) + ' ₽</b> | '
+            + 'Доля (' + safeFloat(data.share_percent) + '%): <b style="color:var(--accent)">' + formatMoney(shareVal) + ' ₽</b>';
 
         updateBalanceCard(data);
-
-        renderDetailedTable('buyOrdersTable',  data.buy_orders,  'buy');
-        renderDetailedTable('sellOrdersTable', data.sell_orders, 'sell');
-        document.getElementById('buyTableCount').textContent  = data.buy_count  + ' записей';
-        document.getElementById('sellTableCount').textContent = data.sell_count + ' записей';
     }
 
     function renderDetailedTable(elementId, orders, type) {
         var tbody = document.getElementById(elementId);
-        if (!orders || orders.length === 0) {
+        if (!orders || !orders.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="no-data">Сделок не найдено</td></tr>';
             return;
         }
-
         var filtered = orders;
-        if (currentCurrency === 'usdt') {
-            filtered = orders.filter(function(o) { return (o.currency || 'USDT') === 'USDT'; });
-        } else if (currentCurrency === 'ton') {
-            filtered = orders.filter(function(o) { return (o.currency || 'USDT') === 'TON'; });
-        }
+        if (currentCurrency === 'usdt') filtered = orders.filter(function(o){ return (o.currency||'USDT') === 'USDT'; });
+        if (currentCurrency === 'ton')  filtered = orders.filter(function(o){ return (o.currency||'USDT') === 'TON'; });
 
-        if (filtered.length === 0) {
+        if (!filtered.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="no-data">Нет сделок по выбранной валюте</td></tr>';
             return;
         }
 
         var amountClass = type === 'buy' ? 'buy-amount' : 'sell-amount';
         tbody.innerHTML = filtered.map(function(o) {
-            var rate = safeFloat(o.price);
-            if (rate === 0 && safeFloat(o.amount) > 0) rate = safeFloat(o.cost) / safeFloat(o.amount);
-            var ex = o.exchange ? o.exchange.toUpperCase() : 'БИРЖА';
-            var bk = o.bank ? o.bank.toUpperCase() : 'БАНК';
-            var totalComm = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
-            var commText  = totalComm > 0 ? formatMoney(totalComm) + ' ₽' : '0.00 ₽';
+            var rate       = safeFloat(o.price) || (safeFloat(o.amount) > 0 ? safeFloat(o.cost)/safeFloat(o.amount) : 0);
             var currency   = o.currency || 'USDT';
             var badgeClass = currency === 'TON' ? 'badge-ton' : 'badge-usdt';
-            var amountLabel = currency === 'TON' ? 'TON' : 'USDT';
-
+            var totalComm  = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
             return '<tr>'
-                + '<td>'
-                + '<div style="font-family:monospace;font-size:12px;color:var(--text);">' + o.external_id + '</div>'
-                + '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:2px;">' + ex + ' • ' + bk + '</div>'
-                + '<div style="font-size:10px;color:var(--muted);">' + o.date + '</div>'
-                + '</td>'
-                + '<td style="font-weight:500;">' + rate.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + '</td>'
-                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU', {maximumFractionDigits:4}) + ' <span class="badge-currency ' + badgeClass + '">' + amountLabel + '</span></td>'
-                + '<td class="amount-cell ' + amountClass + '">' + safeFloat(o.cost).toLocaleString('ru-RU', {minimumFractionDigits:2}) + ' ₽</td>'
-                + '<td style="color:var(--muted);font-size:12px;">' + commText + '</td>'
+                + '<td><div style="font-family:monospace;font-size:12px;">' + o.external_id + '</div>'
+                + '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:2px;">' + (o.exchange||'').toUpperCase() + ' • ' + (o.bank||'').toUpperCase() + '</div>'
+                + '<div style="font-size:10px;color:var(--muted);">' + o.date + '</div></td>'
+                + '<td style="font-weight:500;">' + rate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
+                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU',{maximumFractionDigits:4}) + ' <span class="badge-currency ' + badgeClass + '">' + currency + '</span></td>'
+                + '<td class="amount-cell ' + amountClass + '">' + safeFloat(o.cost).toLocaleString('ru-RU',{minimumFractionDigits:2}) + ' ₽</td>'
+                + '<td style="color:var(--muted);font-size:12px;">' + (totalComm > 0 ? formatMoney(totalComm) + ' ₽' : '0.00 ₽') + '</td>'
                 + '</tr>';
         }).join('');
     }
 
-    window.onload = function() {
-        updateMskTime();
-        setView('today');
-    };
+    window.onload = function() { updateMskTime(); setView('today'); };
 </script>
 {% endblock %}
