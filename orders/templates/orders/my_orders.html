@@ -60,8 +60,15 @@
 
     .table { margin-bottom: 0; color: var(--text-main); font-size: 13px; }
     .table thead th { background: rgba(255,255,255,0.02); color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding: 12px 15px; font-size: 11px; text-transform: uppercase; vertical-align: middle; }
-    .table td { border-bottom: 1px solid var(--border-color); padding: 10px 15px; vertical-align: middle; }
-
+    .table td { 
+        border-bottom: 1px solid var(--border-color);
+        padding: 10px 15px;
+        vertical-align: middle;
+        max-width: 150px; 
+        overflow: hidden; 
+        text-overflow: ellipsis; 
+        white-space: nowrap; 
+    }
     .btn-create {
         background-color: var(--accent-blue); color: #fff; border: none; height: 42px;
         border-radius: 6px; width: 100%; font-weight: 600; margin-top: 23px;
@@ -231,7 +238,7 @@
         </thead>
         <tbody>
             {% for order in orders %}
-            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
+            {% with ... formatted_price=order.price|floatformat:2|unlocalize formatted_amount=order.amount|floatformat:4|unlocalize formatted_cost=order.cost|floatformat:2|unlocalize formatted_comm=order.commission|floatformat:2|unlocalize %}
             <tr>
                 <td class="fw-bold">{{ order.id }}</td>
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
