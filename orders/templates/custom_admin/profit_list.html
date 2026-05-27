@@ -13,47 +13,18 @@
     .month-tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
 
-    /* ===== Базовый блок строки ===== */
-    .finance-block {
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-        font-size: 0.82rem;
-    }
-    .finance-row {
-        display: flex;
-        align-items: baseline;
-        gap: 6px;
-        white-space: nowrap;
-    }
+    .finance-block { display: flex; flex-direction: column; gap: 5px; font-size: 0.82rem; }
+    .finance-row   { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 
-    /* ===== Метка (label): фиксированная ширина + выравнивание вправо ===== */
     .val-label {
-        display: inline-block;
-        min-width: 52px;
-        width: 52px;
-        text-align: right;
-        color: var(--text-muted);
-        font-size: 0.78rem;
-        flex-shrink: 0;
+        display: inline-block; min-width: 52px; width: 52px;
+        text-align: right; color: var(--text-muted); font-size: 0.78rem; flex-shrink: 0;
     }
-    /* Для колонки "Доход и налог" — чуть шире под "Доход:" */
     .val-label-lg {
-        display: inline-block;
-        min-width: 58px;
-        width: 58px;
-        text-align: right;
-        color: var(--text-muted);
-        font-size: 0.78rem;
-        flex-shrink: 0;
+        display: inline-block; min-width: 58px; width: 58px;
+        text-align: right; color: var(--text-muted); font-size: 0.78rem; flex-shrink: 0;
     }
-
-    /* ===== Числа ===== */
-    .val-money {
-        font-family: 'Inter', monospace;
-        font-weight: 500;
-        font-size: 0.85rem;
-    }
+    .val-money { font-family: 'Inter', monospace; font-weight: 500; font-size: 0.85rem; }
 
     .balance-positive { color: #6c8cff; }
     .balance-negative { color: #ff6c6c; }
@@ -65,28 +36,20 @@
     .search-wrapper input { width: 220px !important; padding-right: 30px !important; }
     .search-wrapper .search-icon {
         position: absolute; right: 8px; top: 50%;
-        transform: translateY(-50%); color: var(--text-muted);
-        pointer-events: none; font-size: 14px;
+        transform: translateY(-50%); color: var(--text-muted); pointer-events: none; font-size: 14px;
     }
 
     .text-net-profit { color: #e879f9 !important; }
     .inactive-row { opacity: 0.4; }
 
     .summary-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 15px;
-        margin-bottom: 25px;
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 15px; margin-bottom: 25px;
     }
     .summary-card {
-        background: rgba(255,255,255,0.02);
-        border: 1px solid var(--border-color);
-        padding: 16px;
-        border-radius: 12px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        transition: transform 0.2s;
+        background: rgba(255,255,255,0.02); border: 1px solid var(--border-color);
+        padding: 16px; border-radius: 12px; display: flex; flex-direction: column;
+        gap: 8px; transition: transform 0.2s;
     }
     .summary-card:hover { transform: translateY(-2px); background: rgba(255,255,255,0.06); }
     .summary-card .label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; white-space: nowrap; }
@@ -104,23 +67,18 @@
         display: none; position: absolute; right: 0; top: 100%;
         background: #1a2035; border: 1px solid var(--border-color);
         border-radius: 8px; padding: 10px 14px; min-width: 220px;
-        z-index: 999; box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        font-size: 12px; white-space: nowrap;
+        z-index: 999; box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-size: 12px; white-space: nowrap;
     }
     .expense-tooltip:hover .tooltip-box { display: block; }
     .tooltip-row { display: flex; justify-content: space-between; gap: 16px; padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
     .tooltip-row:last-child { border-bottom: none; }
     .tooltip-total { display: flex; justify-content: space-between; gap: 16px; padding: 6px 0 0 0; font-weight: 700; color: #ffc107; }
 
-    .currency-badge {
-        display: inline-block; padding: 3px 12px; border-radius: 20px;
-        font-size: 13px; font-weight: 700; margin-left: 10px; vertical-align: middle;
-    }
+    .currency-badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; margin-left: 10px; vertical-align: middle; }
     .currency-badge-all  { background: rgba(108,140,255,.2);  color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
     .currency-badge-usdt { background: rgba(88,214,141,.15);  color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
     .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
 
-    /* ===== Сортировка ===== */
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .sortable:hover { color: #fff; }
     .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
@@ -128,35 +86,19 @@
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
     .sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: ' ⇅'; }
 
-    /* ===== Колонка "Доход и налог" — горизонтально в одну строку ===== */
-    .income-tax-col {
-        display: flex;
-        flex-direction: row;
-        align-items: baseline;
-        gap: 16px;
-        flex-wrap: nowrap;
-        white-space: nowrap;
-    }
-    .income-tax-col .finance-row {
-        white-space: nowrap;
-        flex-shrink: 0;
-    }
-
-    /* ===== Фиксированные минимальные ширины колонок ===== */
+    /* ===== Колонки "Доход" и "Налог" — раздельно ===== */
     th:nth-child(1), td:nth-child(1) { min-width: 110px; }
     th:nth-child(2), td:nth-child(2) { min-width: 140px; }
     th:nth-child(3), td:nth-child(3) { min-width: 160px; }
     th:nth-child(4), td:nth-child(4) { min-width: 170px; }
-    th:nth-child(5), td:nth-child(5) { min-width: 200px; }
-    th:nth-child(6), td:nth-child(6) { min-width: 110px; }
-    th:nth-child(7), td:nth-child(7) { min-width: 130px; }
+    th:nth-child(5), td:nth-child(5) { min-width: 160px; }
+    th:nth-child(6), td:nth-child(6) { min-width: 130px; }
+    th:nth-child(7), td:nth-child(7) { min-width: 110px; }
+    th:nth-child(8), td:nth-child(8) { min-width: 130px; }
 
-    /* ===== Единый размер шрифта таблицы ===== */
     #statsTableBody td {
-        font-size: 0.82rem;
-        vertical-align: middle;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        font-size: 0.82rem; vertical-align: middle;
+        padding-top: 10px; padding-bottom: 10px;
     }
 </style>
 {% endblock %}
@@ -264,7 +206,8 @@
                     <th class="sortable" id="thBalance" onclick="sortTable('balance')">Остаток<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('turnover')">Движение (RUB)<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('comm')">Прочие<span class="sort-icon"></span></th>
-                    <th class="sortable" onclick="sortTable('gross')">Доход и налог<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('gross')">Доход<span class="sort-icon"></span></th>
+                    <th class="sortable" onclick="sortTable('ndfl')">Налог<span class="sort-icon"></span></th>
                     <th class="sortable" onclick="sortTable('share')">Доля<span class="sort-icon"></span></th>
                     <th class="sortable text-end" onclick="sortTable('net')">Чистая прибыль<span class="sort-icon"></span></th>
                 </tr>
@@ -347,17 +290,19 @@
                             <div class="finance-row">
                                 <span class="val-label">Банк:</span>
                                 <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span>
+                                <span style="font-size:10px;color:var(--text-muted);">₽</span>
                             </div>
                             <div class="finance-row">
                                 <span class="val-label">Биржа:</span>
                                 <span class="val-money text-muted money row-exch">{{ stat.all_exch_comm_rub }}</span>
-                                <span class="row-exch-label" style="font-size: 10px; color: var(--text-muted);">₽</span>
+                                <span class="row-exch-label" style="font-size:10px;color:var(--text-muted);">₽</span>
                             </div>
                             {% if stat.month_expenses > 0 %}
                             <div class="expense-tooltip">
                                 <div class="finance-row">
                                     <span class="val-label">Прочие:</span>
                                     <span class="val-money text-warning money">{{ stat.month_expenses }}</span>
+                                    <span style="font-size:10px;color:var(--text-muted);">₽</span>
                                 </div>
                                 <div class="tooltip-box">
                                     <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">📋 Расходы за месяц</div>
@@ -377,18 +322,19 @@
                         </div>
                     </td>
 
-                    <!-- Доход и налог -->
+                    <!-- Доход -->
                     <td>
-                        <div class="income-tax-col">
-                            <div class="finance-row">
-                                <span class="val-label-lg">Доход:</span>
-                                <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
-                            </div>
-                            <div class="finance-row">
-                                <span class="val-label-lg">{% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН:{% else %}НДФЛ:{% endif %}</span>
-                                <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
-                            </div>
+                        <span class="val-money money row-gross {% if stat.gross_profit_positive %}text-success{% else %}text-danger{% endif %}">{{ stat.gross }}</span>
+                        <span style="font-size:10px;color:var(--text-muted);"> ₽</span>
+                    </td>
+
+                    <!-- Налог -->
+                    <td>
+                        <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:3px;">
+                            {% if stat.tax_type in 'USN_INCOME,USN_INCOME_OUTCOME' %}УСН{% else %}НДФЛ{% endif %}
                         </div>
+                        <span class="val-money text-warning money row-ndfl">{{ stat.ndfl }}</span>
+                        <span style="font-size:10px;color:var(--text-muted);"> ₽</span>
                     </td>
 
                     <!-- Доля -->
@@ -421,7 +367,6 @@
     var selectedUserId   = null;
     var selectedUsername = null;
 
-    // ── Утилиты ──────────────────────────────────────────────────
     function fmt(val) {
         return parseFloat(val || 0).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
@@ -443,23 +388,14 @@
             if (row.style.display === 'none') return;
             var d = row.dataset;
             if (currentCurrency === 'ton') {
-                sell  += parseFloat(d.tonSell  || 0);
-                buy   += parseFloat(d.tonBuy   || 0);
-                gross += parseFloat(d.tonGross || 0);
-                share += parseFloat(d.tonShare || 0);
-                net   += parseFloat(d.tonNet   || 0);
+                sell  += parseFloat(d.tonSell  || 0); buy   += parseFloat(d.tonBuy   || 0);
+                gross += parseFloat(d.tonGross || 0); share += parseFloat(d.tonShare || 0); net += parseFloat(d.tonNet || 0);
             } else if (currentCurrency === 'usdt') {
-                sell  += parseFloat(d.usdtSell  || 0);
-                buy   += parseFloat(d.usdtBuy   || 0);
-                gross += parseFloat(d.usdtGross || 0);
-                share += parseFloat(d.usdtShare || 0);
-                net   += parseFloat(d.usdtNet   || 0);
+                sell  += parseFloat(d.usdtSell  || 0); buy   += parseFloat(d.usdtBuy   || 0);
+                gross += parseFloat(d.usdtGross || 0); share += parseFloat(d.usdtShare || 0); net += parseFloat(d.usdtNet || 0);
             } else {
-                sell  += parseFloat(d.allSell  || 0);
-                buy   += parseFloat(d.allBuy   || 0);
-                gross += parseFloat(d.allGross || 0);
-                share += parseFloat(d.allShare || 0);
-                net   += parseFloat(d.allNet   || 0);
+                sell  += parseFloat(d.allSell  || 0); buy   += parseFloat(d.allBuy   || 0);
+                gross += parseFloat(d.allGross || 0); share += parseFloat(d.allShare || 0); net += parseFloat(d.allNet || 0);
             }
         });
         document.getElementById('sum-sell').textContent   = fmt(sell);
@@ -486,31 +422,24 @@
     document.getElementById('userSearch').addEventListener('input', function() {
         var query = this.value.trim();
         clearTimeout(searchTimeout);
-
         if (query.length < 1) {
             dropdown.style.display = 'none';
             if (selectedUserId) clearUserFilter();
             return;
         }
-
         searchTimeout = setTimeout(function() {
             fetch('/p2p-admin/api/search-users/?q=' + encodeURIComponent(query))
                 .then(function(r) { return r.json(); })
                 .then(function(users) {
                     dropdown.innerHTML = '';
-                    if (!users.length) {
-                        dropdown.style.display = 'none';
-                        return;
-                    }
+                    if (!users.length) { dropdown.style.display = 'none'; return; }
                     users.forEach(function(u) {
                         var item = document.createElement('div');
                         item.textContent = u.username;
                         item.style.cssText = 'padding:8px 14px; cursor:pointer; font-size:0.85rem; border-bottom:1px solid rgba(255,255,255,0.05);';
                         item.addEventListener('mouseenter', function() { this.style.background = 'rgba(108,140,255,0.15)'; });
                         item.addEventListener('mouseleave', function() { this.style.background = ''; });
-                        item.addEventListener('click', function() {
-                            selectUser(u.id, u.username);
-                        });
+                        item.addEventListener('click', function() { selectUser(u.id, u.username); });
                         dropdown.appendChild(item);
                     });
                     dropdown.style.display = 'block';
@@ -518,35 +447,24 @@
         }, 250);
     });
 
-    // Закрыть дропдаун при клике вне
     document.addEventListener('click', function(e) {
-        if (!e.target.closest('.search-wrapper')) {
-            dropdown.style.display = 'none';
-        }
+        if (!e.target.closest('.search-wrapper')) dropdown.style.display = 'none';
     });
 
-    // ── Выбор пользователя — загрузка данных за год ───────────────
     function selectUser(userId, username) {
-        selectedUserId   = userId;
-        selectedUsername = username;
+        selectedUserId = userId; selectedUsername = username;
         dropdown.style.display = 'none';
         document.getElementById('userSearch').value = username;
         document.getElementById('btnClearUser').style.display = '';
-
-        var year = document.getElementById('filterYear').value;
-        loadUserYearlyData(userId, year);
+        loadUserYearlyData(userId, document.getElementById('filterYear').value);
     }
 
     function loadUserYearlyData(userId, year) {
         var tableWrap = document.querySelector('.table-responsive');
         tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">⏳ Загрузка...</div>';
-
         fetch('/p2p-admin/api/user-yearly-profit/?user_id=' + userId + '&year=' + year)
             .then(function(r) { return r.json(); })
-            .then(function(data) {
-                setSummaryFromData(data.summary);
-                renderYearlyTable(data);
-            })
+            .then(function(data) { setSummaryFromData(data.summary); renderYearlyTable(data); })
             .catch(function() {
                 tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#ff6c6c;">Ошибка загрузки данных</div>';
             });
@@ -560,77 +478,55 @@
             return;
         }
 
-        var html = '';
-
-        html += '<div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);padding:0 0 12px 0;letter-spacing:0.5px;">'
-            + '👤 ' + data.username + ' — ' + data.year + ' год</div>';
+        var html = '<div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);padding:0 0 12px 0;letter-spacing:0.5px;">👤 ' + data.username + ' — ' + data.year + ' год</div>';
 
         html += '<table class="table table-hover align-middle" style="color:var(--text-main);border-color:var(--border-color);">';
         html += '<thead style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:rgba(255,255,255,0.02);">';
-        html += '<tr>';
-        html += '<th>Месяц</th>';
-        html += '<th>Остаток</th>';
-        html += '<th>Движение (RUB)</th>';
-        html += '<th>Прочие</th>';
-        html += '<th>Доход</th>';
-        html += '<th>Налог</th>';
-        html += '<th>Доля</th>';
-        html += '<th class="text-end">Чистая прибыль</th>';
-        html += '</tr></thead><tbody>';
+        html += '<tr><th>Месяц</th><th>Остаток</th><th>Движение (RUB)</th><th>Прочие</th><th>Доход</th><th>Налог</th><th>Доля</th><th class="text-end">Чистая прибыль</th></tr>';
+        html += '</thead><tbody>';
 
         data.months.forEach(function(m) {
             html += '<tr>';
 
             // Месяц
-            html += '<td>'
-                + '<div class="fw-bold" style="font-size:0.9rem;color:var(--text-main);">📅 ' + m.month_name + '</div>'
-                + '<div style="font-size:0.7rem;color:var(--text-muted);">' + data.year + '</div>'
-                + '</td>';
+            html += '<td><div class="fw-bold" style="font-size:0.9rem;color:var(--text-main);">📅 ' + m.month_name + '</div>'
+                  + '<div style="font-size:0.7rem;color:var(--text-muted);">' + data.year + '</div></td>';
 
             // Остаток
-            html += '<td>'
-                + '<div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
-                + (m.ton_balance !== 0
-                    ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>'
-                    : '')
-                + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div>'
-                + '</td>';
+            html += '<td><div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
+                  + (m.ton_balance !== 0 ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>' : '')
+                  + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div></td>';
 
             // Движение
             html += '<td><div class="finance-block">'
-                + '<div class="finance-row"><span class="val-label">Buy:</span><span class="val-money text-success">' + fmt(m.buy) + '</span></div>'
-                + '<div class="finance-row"><span class="val-label">Sell:</span><span class="val-money text-danger">' + fmt(m.sell) + '</span></div>'
-                + '</div></td>';
+                  + '<div class="finance-row"><span class="val-label">Buy:</span><span class="val-money text-success">' + fmt(m.buy) + '</span></div>'
+                  + '<div class="finance-row"><span class="val-label">Sell:</span><span class="val-money text-danger">' + fmt(m.sell) + '</span></div>'
+                  + '</div></td>';
 
-            // Прочие — с val-label для выравнивания
+            // Прочие
             html += '<td><div class="finance-block">'
-                + '<div class="finance-row"><span class="val-label">Банк:</span><span class="val-money text-muted">' + fmt(m.bank_comm) + ' ₽</span></div>'
-                + '<div class="finance-row"><span class="val-label">Биржа:</span><span class="val-money text-muted">' + fmt(m.exch_comm) + ' ₽</span></div>'
-                + (m.expenses > 0
-                    ? '<div class="finance-row"><span class="val-label">Прочие:</span><span class="val-money text-warning">' + fmt(m.expenses) + ' ₽</span></div>'
-                    : '')
-                + '</div></td>';
+                  + '<div class="finance-row"><span class="val-label">Банк:</span><span class="val-money text-muted">' + fmt(m.bank_comm) + '</span><span style="font-size:10px;color:var(--text-muted);">₽</span></div>'
+                  + '<div class="finance-row"><span class="val-label">Биржа:</span><span class="val-money text-muted">' + fmt(m.exch_comm) + '</span><span style="font-size:10px;color:var(--text-muted);">₽</span></div>'
+                  + (m.expenses > 0 ? '<div class="finance-row"><span class="val-label">Прочие:</span><span class="val-money text-warning">' + fmt(m.expenses) + '</span><span style="font-size:10px;color:var(--text-muted);">₽</span></div>' : '')
+                  + '</div></td>';
 
-            // Доход — отдельная колонка
-            html += '<td>'
-                + '<span class="val-money ' + (m.gross_positive ? 'text-success' : 'text-danger') + '">' + fmt(m.gross) + ' ₽</span>'
-                + '</td>';
+            // Доход
+            html += '<td><span class="val-money ' + (m.gross_positive ? 'text-success' : 'text-danger') + '">' + fmt(m.gross) + '</span>'
+                  + '<span style="font-size:10px;color:var(--text-muted);"> ₽</span></td>';
 
-            // Налог — отдельная колонка
-            html += '<td>'
-                + '<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:2px;">' + m.tax_label + '</div>'
-                + '<span class="val-money text-warning">' + fmt(m.ndfl) + ' ₽</span>'
-                + '</td>';
+            // Налог
+            html += '<td><div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:3px;">' + m.tax_label + '</div>'
+                  + '<span class="val-money text-warning">' + fmt(m.ndfl) + '</span>'
+                  + '<span style="font-size:10px;color:var(--text-muted);"> ₽</span></td>';
 
             // Доля
-            html += '<td><div class="finance-block">'
-                + '<div class="finance-row"><span class="val-label">' + m.share_percent + '%:</span><span class="val-money" style="color:var(--accent-blue);">' + fmt(m.share) + ' ₽</span></div>'
-                + '</div></td>';
+            html += '<td><div class="finance-block"><div class="finance-row">'
+                  + '<span class="val-label">' + m.share_percent + '%:</span>'
+                  + '<span class="val-money" style="color:var(--accent-blue);">' + fmt(m.share) + '</span>'
+                  + '</div></div></td>';
 
             // Чистая прибыль
-            html += '<td class="text-end">'
-                + '<div class="fw-bold ' + (m.net_positive ? 'text-net-profit' : 'text-danger') + '" style="font-size:1rem;">' + fmt(m.net) + ' ₽</div>'
-                + '</td>';
+            html += '<td class="text-end"><div class="fw-bold ' + (m.net_positive ? 'text-net-profit' : 'text-danger') + '" style="font-size:1rem;">' + fmt(m.net) + ' ₽</div></td>';
 
             html += '</tr>';
         });
@@ -638,35 +534,24 @@
         html += '</tbody></table>';
         tableWrap.innerHTML = html;
     }
-    // ── Сброс фильтра пользователя ────────────────────────────────
+
     function clearUserFilter() {
-        selectedUserId   = null;
-        selectedUsername = null;
+        selectedUserId = null; selectedUsername = null;
         document.getElementById('userSearch').value = '';
         document.getElementById('btnClearUser').style.display = 'none';
-
-        // Восстанавливаем оригинальную таблицу
         location.reload();
     }
 
     // ── Переключение валюты ───────────────────────────────────────
     function setCurrency(val) {
         currentCurrency = val;
-
         var sel = document.getElementById('currencySelect');
         if (sel) sel.value = val;
 
         var badge = document.getElementById('currencyBadge');
-        if (val === 'usdt') {
-            badge.className = 'currency-badge currency-badge-usdt';
-            badge.textContent = 'USDT';
-        } else if (val === 'ton') {
-            badge.className = 'currency-badge currency-badge-ton';
-            badge.textContent = 'TON';
-        } else {
-            badge.className = 'currency-badge currency-badge-all';
-            badge.textContent = 'ВСЕ';
-        }
+        if (val === 'usdt')      { badge.className = 'currency-badge currency-badge-usdt'; badge.textContent = 'USDT'; }
+        else if (val === 'ton')  { badge.className = 'currency-badge currency-badge-ton';  badge.textContent = 'TON'; }
+        else                     { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
 
         var thBal = document.getElementById('thBalance');
         if (thBal) {
@@ -677,28 +562,23 @@
 
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
-
             var usdtBal   = parseFloat(d.usdtBalance || 0);
             var tonBal    = parseFloat(d.tonBalance  || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
             var tonBalEl  = row.querySelector('.row-balance-ton');
-
             if (!usdtBalEl || !tonBalEl) return;
 
             if (val === 'usdt') {
-                usdtBalEl.style.display = '';
-                tonBalEl.style.display  = 'none';
+                usdtBalEl.style.display = ''; tonBalEl.style.display = 'none';
                 usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
             } else if (val === 'ton') {
-                usdtBalEl.style.display = 'none';
-                tonBalEl.style.display  = '';
-                tonBalEl.className  = 'fw-bold row-balance-ton';
+                usdtBalEl.style.display = 'none'; tonBalEl.style.display = '';
+                tonBalEl.className = 'fw-bold row-balance-ton';
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             } else {
-                usdtBalEl.style.display = '';
-                tonBalEl.style.display  = '';
+                usdtBalEl.style.display = ''; tonBalEl.style.display = '';
                 usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
-                tonBalEl.className  = 'fw-bold row-balance-ton';
+                tonBalEl.className = 'fw-bold row-balance-ton';
                 tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
             }
 
@@ -712,23 +592,12 @@
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
-            var ndflVal, shareVal, netVal;
-            if (val === 'ton') {
-                ndflVal  = cleanNdflValue(d.tonNdfl);
-                shareVal = parseFloat(d.tonShare || 0);
-                netVal   = parseFloat(d.tonNet   || 0);
-            } else if (val === 'usdt') {
-                ndflVal  = cleanNdflValue(d.usdtNdfl);
-                shareVal = parseFloat(d.usdtShare || 0);
-                netVal   = parseFloat(d.usdtNet   || 0);
-            } else {
-                ndflVal  = cleanNdflValue(d.allNdfl);
-                shareVal = parseFloat(d.allShare || 0);
-                netVal   = parseFloat(d.allNet   || 0);
-            }
+            var ndflVal  = val === 'ton' ? cleanNdflValue(d.tonNdfl)  : val === 'usdt' ? cleanNdflValue(d.usdtNdfl)  : cleanNdflValue(d.allNdfl);
+            var shareVal = val === 'ton' ? parseFloat(d.tonShare || 0) : val === 'usdt' ? parseFloat(d.usdtShare || 0) : parseFloat(d.allShare || 0);
+            var netVal   = val === 'ton' ? parseFloat(d.tonNet   || 0) : val === 'usdt' ? parseFloat(d.usdtNet   || 0) : parseFloat(d.allNet   || 0);
 
-            row.querySelector('.row-ndfl').textContent    = fmt(ndflVal);
-            row.querySelector('.row-share').textContent   = fmt(shareVal);
+            row.querySelector('.row-ndfl').textContent      = fmt(ndflVal);
+            row.querySelector('.row-share').textContent     = fmt(shareVal);
             row.querySelector('.row-share-pct').textContent = (d.sharePercent || '20') + '%:';
 
             var netEl = row.querySelector('.row-net');
@@ -746,15 +615,10 @@
         var bank     = document.getElementById('filterBank').value;
         var currentUrl  = new URL(window.location.href);
         var oldExchange = currentUrl.searchParams.get('exchange') || '';
-        if (exchange !== oldExchange) {
-            bank = '';
-            document.getElementById('filterBank').value = '';
-        }
+        if (exchange !== oldExchange) { bank = ''; document.getElementById('filterBank').value = ''; }
         currentUrl.searchParams.set('year', year);
-        if (exchange) currentUrl.searchParams.set('exchange', exchange);
-        else          currentUrl.searchParams.delete('exchange');
-        if (bank)     currentUrl.searchParams.set('bank', bank);
-        else          currentUrl.searchParams.delete('bank');
+        if (exchange) currentUrl.searchParams.set('exchange', exchange); else currentUrl.searchParams.delete('exchange');
+        if (bank)     currentUrl.searchParams.set('bank', bank);         else currentUrl.searchParams.delete('bank');
         window.location.href = currentUrl.toString();
     }
 
@@ -769,55 +633,33 @@
         sortState.dir = (sortState.key === key) ? sortState.dir * -1 : -1;
         sortState.key = key;
 
-        document.querySelectorAll('.sortable').forEach(function(th) {
-            th.classList.remove('sort-asc', 'sort-desc');
-        });
-        var keyMap = { name: 0, balance: 1, turnover: 2, comm: 3, gross: 4, share: 5, net: 6 };
+        document.querySelectorAll('.sortable').forEach(function(th) { th.classList.remove('sort-asc', 'sort-desc'); });
+        var keyMap = { name: 0, balance: 1, turnover: 2, comm: 3, gross: 4, ndfl: 5, share: 6, net: 7 };
         var idx = keyMap[key];
         var ths = document.querySelectorAll('.sortable');
-        if (idx !== undefined && ths[idx]) {
-            ths[idx].classList.add(sortState.dir === -1 ? 'sort-desc' : 'sort-asc');
-        }
+        if (idx !== undefined && ths[idx]) ths[idx].classList.add(sortState.dir === -1 ? 'sort-desc' : 'sort-asc');
 
         var cur = currentCurrency;
-
         rows.sort(function(a, b) {
             var d = a.dataset, e = b.dataset;
             var va, vb;
-
             if (key === 'name') {
                 va = a.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
                 vb = b.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
                 return sortState.dir * va.localeCompare(vb);
             }
-
             function pick(row, usdt, ton, all) {
                 return parseFloat(cur === 'ton' ? row[ton] : cur === 'usdt' ? row[usdt] : row[all]) || 0;
             }
-
-            if (key === 'balance') {
-                va = pick(d, 'usdtBalance', 'tonBalance', 'allBalance');
-                vb = pick(e, 'usdtBalance', 'tonBalance', 'allBalance');
-            } else if (key === 'turnover') {
-                va = pick(d, 'usdtSell', 'tonSell', 'allSell') + pick(d, 'usdtBuy', 'tonBuy', 'allBuy');
-                vb = pick(e, 'usdtSell', 'tonSell', 'allSell') + pick(e, 'usdtBuy', 'tonBuy', 'allBuy');
-            } else if (key === 'comm') {
-                va = pick(d, 'usdtBank', 'tonBank', 'allBank');
-                vb = pick(e, 'usdtBank', 'tonBank', 'allBank');
-            } else if (key === 'gross') {
-                va = pick(d, 'usdtGross', 'tonGross', 'allGross');
-                vb = pick(e, 'usdtGross', 'tonGross', 'allGross');
-            } else if (key === 'share') {
-                va = pick(d, 'usdtShare', 'tonShare', 'allShare');
-                vb = pick(e, 'usdtShare', 'tonShare', 'allShare');
-            } else if (key === 'net') {
-                va = pick(d, 'usdtNet', 'tonNet', 'allNet');
-                vb = pick(e, 'usdtNet', 'tonNet', 'allNet');
-            }
-
+            if      (key === 'balance')  { va = pick(d,'usdtBalance','tonBalance','allBalance'); vb = pick(e,'usdtBalance','tonBalance','allBalance'); }
+            else if (key === 'turnover') { va = pick(d,'usdtSell','tonSell','allSell')+pick(d,'usdtBuy','tonBuy','allBuy'); vb = pick(e,'usdtSell','tonSell','allSell')+pick(e,'usdtBuy','tonBuy','allBuy'); }
+            else if (key === 'comm')     { va = pick(d,'usdtBank','tonBank','allBank'); vb = pick(e,'usdtBank','tonBank','allBank'); }
+            else if (key === 'gross')    { va = pick(d,'usdtGross','tonGross','allGross'); vb = pick(e,'usdtGross','tonGross','allGross'); }
+            else if (key === 'ndfl')     { va = pick(d,'usdtNdfl','tonNdfl','allNdfl'); vb = pick(e,'usdtNdfl','tonNdfl','allNdfl'); }
+            else if (key === 'share')    { va = pick(d,'usdtShare','tonShare','allShare'); vb = pick(e,'usdtShare','tonShare','allShare'); }
+            else if (key === 'net')      { va = pick(d,'usdtNet','tonNet','allNet'); vb = pick(e,'usdtNet','tonNet','allNet'); }
             return sortState.dir * (va - vb);
         });
-
         rows.forEach(function(r) { tbody.appendChild(r); });
     }
 
@@ -826,9 +668,7 @@
         document.querySelectorAll('.money').forEach(function(el) {
             var raw = el.innerText.replace(/\s/g, '').replace(',', '.');
             var val = parseFloat(raw);
-            if (!isNaN(val)) {
-                el.innerText = val.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            }
+            if (!isNaN(val)) el.innerText = val.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         });
         setCurrency('all');
     });
