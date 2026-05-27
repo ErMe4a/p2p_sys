@@ -85,117 +85,143 @@
     .btn-cancel-modal { background-color: var(--bg-input); color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
     .badge-receipt-ok { background:#0d2b1a; color:#4caf50; border:1px solid #2d6a4f; font-size:11px; padding:3px 8px; border-radius:4px; }
     .badge-receipt-no { background:#2b1a0d; color:#ff9800; border:1px solid #5a3d0d; font-size:11px; padding:3px 8px; border-radius:4px; }
+    /* Адаптив для маленьких экранов */
+    .form-section, .table-container {
+        overflow-x: auto;
+    }
+    .table-container {
+        min-width: 0;
+    }
+    .table {
+        min-width: 900px;
+    }
+    /* Форма создания — перенос на маленьких экранах */
+    @media (max-width: 1200px) {
+        .row.g-3 .col-md-2,
+        .row.g-3 .col-md-3,
+        .row.g-3 .col-md-6 {
+            flex: 0 0 auto;
+            width: 50%;
+        }
+    }
+    @media (max-width: 768px) {
+        .row.g-3 .col-md-2,
+        .row.g-3 .col-md-3,
+        .row.g-3 .col-md-6 {
+            width: 100%;
+        }
+    }
 </style>
-
-<div class="form-section">
-    {% if request.session.order_error %}
-        <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
-            <strong>Ошибка!</strong> {{ request.session.order_error }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
-        </div>
-    {% endif %}
-
-    <form method="post" enctype="multipart/form-data" id="createOrderForm">
-        {% csrf_token %}
-
-        <div class="row mb-3">
-            <div class="col-12">
-                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
+<div style="padding: 0 12px; max-width: 100%; overflow-x: hidden;">
+    <div class="form-section">
+        {% if request.session.order_error %}
+            <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
+                <strong>Ошибка!</strong> {{ request.session.order_error }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
             </div>
-        </div>
+        {% endif %}
 
-        <div class="row g-3 mb-3">
-            <div class="col-md-2">
-                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
-            </div>
-            <div class="col-md-2">
-                <div class="commission-group">
-                    <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
-                    <!-- Валюта сохраняется через saved_data.currency — не слетает при создании -->
-                    <select class="form-select currency-select" name="currency" id="main_currency">
-                        <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
-                        <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
-                    </select>
+        <form method="post" enctype="multipart/form-data" id="createOrderForm">
+            {% csrf_token %}
+
+            <div class="row mb-3">
+                <div class="col-12">
+                    <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
                 </div>
             </div>
-            <div class="col-md-2">
-                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
-            </div>
 
-            <div class="col-md-3">
-                <select class="form-select" name="operation_type">
-                    <option value="BUY"  {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
-                    <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
-                </select>
-            </div>
-            <div class="col-md-3">
-                <select class="form-select" name="exchange">
-                    <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
-                    <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
-                    <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
-                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
-                    <option value="Bitget"   {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
-                    <option value="Gate"     {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
-                    <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
-                    <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
-                </select>
-            </div>
-        </div>
+            <div class="row g-3 mb-3">
+                <div class="col-md-2">
+                    <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
+                </div>
+                <div class="col-md-2">
+                    <div class="commission-group">
+                        <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
+                        <!-- Валюта сохраняется через saved_data.currency — не слетает при создании -->
+                        <select class="form-select currency-select" name="currency" id="main_currency">
+                            <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
+                            <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
+                </div>
 
-        <div class="row g-3 align-items-start">
-            <div class="col-md-3">
-                <select class="form-select" name="details" required>
-                    <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
-                    {% for bank in default_banks %}
-                        <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="col-md-2">
-                <div class="commission-group">
-                    <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
-                    <select class="form-select commission-select" name="commission_type">
-                        <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
-                        <option value="RUB"     {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
+                <div class="col-md-3">
+                    <select class="form-select" name="operation_type">
+                        <option value="BUY"  {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
+                        <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" name="exchange">
+                        <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                        <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                        <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                        <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                        <option value="Bitget"   {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                        <option value="Gate"     {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                        <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                        <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
                     </select>
                 </div>
             </div>
 
-            <div class="col-md-3">
-                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
-            </div>
+            <div class="row g-3 align-items-start">
+                <div class="col-md-3">
+                    <select class="form-select" name="details" required>
+                        <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
+                        {% for bank in default_banks %}
+                            <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
 
-            <div class="col-md-2 pt-4">
-                <div class="d-flex gap-3 align-items-center h-100 ps-2">
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
-                        <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
+                <div class="col-md-2">
+                    <div class="commission-group">
+                        <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
+                        <select class="form-select commission-select" name="commission_type">
+                            <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
+                            <option value="RUB"     {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
+                        </select>
                     </div>
-                    <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
-                        <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
+                </div>
+
+                <div class="col-md-3">
+                    <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
+                </div>
+
+                <div class="col-md-2 pt-4">
+                    <div class="d-flex gap-3 align-items-center h-100 ps-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
+                            <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
+                            <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
+                        </div>
                     </div>
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
                 </div>
             </div>
 
-            <div class="col-md-2">
-                <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
+            <div id="emailInputWrapper" class="mt-3" style="display: none;">
+                <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
+                <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
             </div>
-        </div>
 
-        <div id="emailInputWrapper" class="mt-3" style="display: none;">
-            <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
-            <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
-        </div>
-
-        <div id="fileInputWrapper" class="mt-3" style="display: none;">
-            <label class="form-label">Прикрепить скриншот</label>
-            <input type="file" name="screenshot" class="form-control">
-        </div>
-    </form>
+            <div id="fileInputWrapper" class="mt-3" style="display: none;">
+                <label class="form-label">Прикрепить скриншот</label>
+                <input type="file" name="screenshot" class="form-control">
+            </div>
+        </form>
+    </div>
 </div>
-
 <div class="table-container shadow-sm" style="overflow-x: auto;">
     <table class="table" style="min-width: 900px;">
         <thead>
