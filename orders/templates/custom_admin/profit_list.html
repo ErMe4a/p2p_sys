@@ -553,88 +553,91 @@
     }
 
     function renderYearlyTable(data) {
-    var tableWrap = document.querySelector('.table-responsive');
+        var tableWrap = document.querySelector('.table-responsive');
 
-    if (!data.months || !data.months.length) {
-        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Нет данных за ' + data.year + ' год</div>';
-        return;
-    }
+        if (!data.months || !data.months.length) {
+            tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-muted);">Нет данных за ' + data.year + ' год</div>';
+            return;
+        }
 
-    var html = '';
+        var html = '';
 
-    // Заголовок — имя пользователя
-    html += '<div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);padding:0 0 12px 0;letter-spacing:0.5px;">'
-          + '👤 ' + data.username + ' — ' + data.year + ' год</div>';
+        html += '<div style="font-size:0.85rem;font-weight:700;color:var(--text-muted);padding:0 0 12px 0;letter-spacing:0.5px;">'
+            + '👤 ' + data.username + ' — ' + data.year + ' год</div>';
 
-    // Одна таблица на все месяцы
-    html += '<table class="table table-hover align-middle" style="color:var(--text-main);border-color:var(--border-color);">';
-    html += '<thead style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:rgba(255,255,255,0.02);">';
-    html += '<tr>';
-    html += '<th>Месяц</th>';
-    html += '<th>Остаток</th>';
-    html += '<th>Движение (RUB)</th>';
-    html += '<th>Прочие</th>';
-    html += '<th>Доход и налог</th>';
-    html += '<th>Доля</th>';
-    html += '<th class="text-end">Чистая прибыль</th>';
-    html += '</tr></thead><tbody>';
-
-    data.months.forEach(function(m) {
+        html += '<table class="table table-hover align-middle" style="color:var(--text-main);border-color:var(--border-color);">';
+        html += '<thead style="font-size:0.75rem;text-transform:uppercase;color:var(--text-muted);background:rgba(255,255,255,0.02);">';
         html += '<tr>';
+        html += '<th>Месяц</th>';
+        html += '<th>Остаток</th>';
+        html += '<th>Движение (RUB)</th>';
+        html += '<th>Прочие</th>';
+        html += '<th>Доход</th>';
+        html += '<th>Налог</th>';
+        html += '<th>Доля</th>';
+        html += '<th class="text-end">Чистая прибыль</th>';
+        html += '</tr></thead><tbody>';
 
-        // Месяц
-        html += '<td>'
-              + '<div class="fw-bold" style="font-size:0.9rem;color:var(--text-main);">📅 ' + m.month_name + '</div>'
-              + '<div style="font-size:0.7rem;color:var(--text-muted);">' + data.year + '</div>'
-              + '</td>';
+        data.months.forEach(function(m) {
+            html += '<tr>';
 
-        // Остаток
-        html += '<td>'
-              + '<div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
-              + (m.ton_balance !== 0
-                  ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>'
-                  : '')
-              + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div>'
-              + '</td>';
+            // Месяц
+            html += '<td>'
+                + '<div class="fw-bold" style="font-size:0.9rem;color:var(--text-main);">📅 ' + m.month_name + '</div>'
+                + '<div style="font-size:0.7rem;color:var(--text-muted);">' + data.year + '</div>'
+                + '</td>';
 
-        // Движение
-        html += '<td><div class="finance-block">'
-              + '<div class="finance-row"><span class="val-label">Buy:</span><span class="val-money text-success">' + fmt(m.buy) + '</span></div>'
-              + '<div class="finance-row"><span class="val-label">Sell:</span><span class="val-money text-danger">' + fmt(m.sell) + '</span></div>'
-              + '</div></td>';
+            // Остаток
+            html += '<td>'
+                + '<div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
+                + (m.ton_balance !== 0
+                    ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>'
+                    : '')
+                + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div>'
+                + '</td>';
 
-        // Прочие
-        html += '<td><div class="finance-block">'
-              + '<div class="finance-row"><span class="val-label">Банк:</span><span class="val-money text-muted">' + fmt(m.bank_comm) + '</span></div>'
-              + '<div class="finance-row"><span class="val-label">Биржа:</span><span class="val-money text-muted">' + fmt(m.exch_comm) + '</span></div>'
-              + (m.expenses > 0
-                  ? '<div class="finance-row"><span class="val-label">Прочие:</span><span class="val-money text-warning">' + fmt(m.expenses) + '</span></div>'
-                  : '')
-              + '</div></td>';
+            // Движение
+            html += '<td><div class="finance-block">'
+                + '<div class="finance-row"><span class="val-label">Buy:</span><span class="val-money text-success">' + fmt(m.buy) + '</span></div>'
+                + '<div class="finance-row"><span class="val-label">Sell:</span><span class="val-money text-danger">' + fmt(m.sell) + '</span></div>'
+                + '</div></td>';
 
-        // Доход и налог
-        html += '<td><div class="income-tax-col">'
-              + '<div class="finance-row"><span class="val-label-lg">Доход:</span><span class="val-money ' + (m.gross_positive ? 'text-success' : 'text-danger') + '">' + fmt(m.gross) + '</span></div>'
-              + '<div class="finance-row"><span class="val-label-lg">' + m.tax_label + ':</span><span class="val-money text-warning">' + fmt(m.ndfl) + '</span></div>'
-              + '</div></td>';
+            // Прочие — с val-label для выравнивания
+            html += '<td><div class="finance-block">'
+                + '<div class="finance-row"><span class="val-label">Банк:</span><span class="val-money text-muted">' + fmt(m.bank_comm) + ' ₽</span></div>'
+                + '<div class="finance-row"><span class="val-label">Биржа:</span><span class="val-money text-muted">' + fmt(m.exch_comm) + ' ₽</span></div>'
+                + (m.expenses > 0
+                    ? '<div class="finance-row"><span class="val-label">Прочие:</span><span class="val-money text-warning">' + fmt(m.expenses) + ' ₽</span></div>'
+                    : '')
+                + '</div></td>';
 
-        // Доля
-        html += '<td><div class="finance-block">'
-              + '<div class="finance-row"><span class="val-label">' + m.share_percent + '%:</span><span class="val-money" style="color:var(--accent-blue);">' + fmt(m.share) + '</span></div>'
-              + '</div></td>';
+            // Доход — отдельная колонка
+            html += '<td>'
+                + '<span class="val-money ' + (m.gross_positive ? 'text-success' : 'text-danger') + '">' + fmt(m.gross) + ' ₽</span>'
+                + '</td>';
 
-        // Чистая прибыль
-        html += '<td class="text-end">'
-              + '<div class="fw-bold ' + (m.net_positive ? 'text-net-profit' : 'text-danger') + '" style="font-size:1rem;">' + fmt(m.net) + ' ₽</div>'
-              + '</td>';
+            // Налог — отдельная колонка
+            html += '<td>'
+                + '<div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:2px;">' + m.tax_label + '</div>'
+                + '<span class="val-money text-warning">' + fmt(m.ndfl) + ' ₽</span>'
+                + '</td>';
 
-        html += '</tr>';
-    });
+            // Доля
+            html += '<td><div class="finance-block">'
+                + '<div class="finance-row"><span class="val-label">' + m.share_percent + '%:</span><span class="val-money" style="color:var(--accent-blue);">' + fmt(m.share) + ' ₽</span></div>'
+                + '</div></td>';
 
-    html += '</tbody></table>';
-    tableWrap.innerHTML = html;
-}
+            // Чистая прибыль
+            html += '<td class="text-end">'
+                + '<div class="fw-bold ' + (m.net_positive ? 'text-net-profit' : 'text-danger') + '" style="font-size:1rem;">' + fmt(m.net) + ' ₽</div>'
+                + '</td>';
 
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        tableWrap.innerHTML = html;
+    }
     // ── Сброс фильтра пользователя ────────────────────────────────
     function clearUserFilter() {
         selectedUserId   = null;
