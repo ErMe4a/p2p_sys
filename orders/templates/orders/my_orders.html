@@ -238,13 +238,13 @@
         </thead>
         <tbody>
             {% for order in orders %}
-            {% with ... formatted_price=order.price|floatformat:2|unlocalize formatted_amount=order.amount|floatformat:4|unlocalize formatted_cost=order.cost|floatformat:2|unlocalize formatted_comm=order.commission|floatformat:2|unlocalize %}
+            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
             <tr>
                 <td class="fw-bold">{{ order.id }}</td>
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
                 <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
-                <td>{{ formatted_price }}</td>
-                <td>{{ formatted_amount }}</td>
+                <td>{{ order.price|floatformat:"-2" }}</td>
+                <td>{{ order.amount|floatformat:"-4" }}</td>
                 <td>
                     {% if order.currency == 'TON' %}
                         <span style="color:#3d9af5; font-weight:600; font-size:11px;">TON</span>
@@ -252,8 +252,8 @@
                         <span style="color:var(--success); font-weight:600; font-size:11px;">USDT</span>
                     {% endif %}
                 </td>
-                <td>{{ formatted_cost }}</td>
-                <td>{{ formatted_comm }}</td>
+                <td>{{ order.cost|floatformat:"-2" }}</td>
+                <td>{{ order.commission|floatformat:"-2" }}</td>
                 <td class="text-muted">{% if order.commission_type == 'PERCENT' %}%{% else %}₽{% endif %}</td>
                 <td class="text-muted small">{{ order.external_id|truncatechars:15 }}</td>
                 <td class="small text-muted" style="line-height: 1.2;">{{ order_date }}<br>{{ order_time }}</td>
