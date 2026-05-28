@@ -2540,7 +2540,8 @@ def admin_orders_editor(request):
                         bank_detail=bank_instance,
                         commission_type=request.POST.get('commission_type'),
                         exchange_commission_rate=user_comm_rate,
-                        created_at=order_date
+                        created_at=order_date,
+                        currency=request.POST.get('currency', 'USDT'),  # ← добавить эту строку
                     )
 
                     # Запоминаем последнего пользователя
