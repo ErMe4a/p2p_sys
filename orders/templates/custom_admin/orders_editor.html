@@ -54,6 +54,23 @@
         cursor: pointer; transition: background 0.2s;
     }
     .btn-create-admin:hover { background: #304ffe; }
+
+    .commission-select-admin {
+        width: 75px; flex-shrink: 0;
+        background: rgba(61,90,254,0.1) !important; 
+        border: 1px solid var(--border-color) !important;
+        color: #6c8cff !important; font-weight: bold;
+        border-top-left-radius: 0 !important; 
+        border-bottom-left-radius: 0 !important;
+        padding-left: 6px !important;
+        padding-right: 20px !important;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%236c8cff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e") !important;
+        background-repeat: no-repeat !important;
+        background-position: right 3px center !important;
+        background-size: 10px !important;
+        -webkit-appearance: none;
+        appearance: none;
+    }
 </style>
 {% endblock %}
 
@@ -106,7 +123,7 @@
                     <label>Количество</label>
                     <div class="commission-group-admin">
                         <input type="text" name="amount" class="form-control" placeholder="0.00000000" required>
-                        <select class="form-select commission-select-admin" name="currency" style="width:90px; flex-shrink:0;">
+                        <select class="form-select commission-select-admin" name="currency">
                             <option value="USDT">USDT</option>
                             <option value="TON">TON</option>
                         </select>
