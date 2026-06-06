@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "mininp2p.ru",
-  "version": "1.4",
+  "version": "1.4.2",
   "description": "Adds an analytics dropdown menu to Bybit P2P order pages.",
   "permissions": ["activeTab", "storage", "downloads", "tabs", "tabCapture"],
   "host_permissions": [

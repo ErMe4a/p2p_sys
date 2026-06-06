@@ -76,65 +76,56 @@ function isColorGreen(colorStr) {
 function detectOrderType() {
     console.log('P2P Analytics MEXC: Detecting order type...');
 
-    // --- СТРАТЕГИЯ 1: Поиск явного поля "Тип" или "Type" в деталях ордера ---
+    // СТРАТЕГИЯ 1: Читаем subtitle заголовка
+    // Пример: "You have successfully sold 12.0481 USDT"
+    // Пример: "You have successfully bought 12.0481 USDT"
     try {
-        const candidates = document.querySelectorAll('span, div, p, label');
-        
-        for (const el of candidates) {
-            const text = (el.textContent || '').trim().toLowerCase();
-            // Ищем лейблы типа
-            if (/^(type|тип|направление|direction|side)$/.test(text)) {
-                let valueEl = el.nextElementSibling;
-                // Пробуем найти значение рядом или в родителе
-                if (!valueEl && el.parentElement) {
-                    const siblings = el.parentElement.querySelectorAll('span, div');
-                    if (siblings.length > 1) valueEl = siblings[siblings.length - 1];
-                }
-
-                if (valueEl) {
-                    const val = (valueEl.textContent || '').trim().toLowerCase();
-                    if (/buy|покупка|купить|покупке/.test(val)) return 'buy';
-                    if (/sell|продажа|продать|продаже/.test(val)) return 'sell';
-                }
+        const subtitle = document.querySelector('.OrderHeader_subtitle__qT2KE');
+        if (subtitle) {
+            const text = (subtitle.textContent || '').toLowerCase();
+            if (text.includes('sold')) {
+                console.log('P2P Analytics MEXC: Detected SELL via subtitle:', text);
+                return 'sell';
+            }
+            if (text.includes('bought') || text.includes('purchased')) {
+                console.log('P2P Analytics MEXC: Detected BUY via subtitle:', text);
+                return 'buy';
             }
         }
-    } catch (e) { console.error('P2P Analytics MEXC: Strategy 1 failed', e); }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy 1 (subtitle) failed', e);
+    }
 
-    // --- СТРАТЕГИЯ 2: Анализ цвета элемента с суммой ---
+    // СТРАТЕГИЯ 2: Читаем title заголовка
     try {
-        const amountCandidates = document.querySelectorAll('span, div');
-        for (const el of amountCandidates) {
-            const text = el.textContent || '';
-            // Ищем элемент, где есть цифры и валюта (USDT/RUB)
-            if (/[\d,]+\.?\d*/.test(text) && (text.includes('USDT') || text.includes('RUB')) && text.length < 35) {
-                
-                const style = window.getComputedStyle(el);
-                const color = style.color; 
-                
-                // Красный = Продажа/Приход
-                if (isColorRed(color)) {
-                    console.log('P2P Analytics MEXC: Detected SELL via RED color:', text);
-                    return 'sell';
-                }
-                
-                // Зеленый = Покупка/Расход
-                if (isColorGreen(color)) {
-                    console.log('P2P Analytics MEXC: Detected BUY via GREEN color:', text);
-                    return 'buy';
-                }
+        const header = document.querySelector('.OrderHeader_title__Q7z_0');
+        if (header) {
+            const text = (header.textContent || '').toLowerCase();
+            if (text.includes('sell') || text.includes('продажа')) return 'sell';
+            if (text.includes('buy') || text.includes('покупка')) return 'buy';
+        }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy 2 (title) failed', e);
+    }
+
+    // СТРАТЕГИЯ 3: Поиск по data-testid строк в InfoLayout
+    try {
+        const rows = document.querySelectorAll('[data-testid^="info-row-"]');
+        for (const row of rows) {
+            const label = row.querySelector('.InfoRow_label__z3ivC');
+            const value = row.querySelector('.InfoRow_value__9xKf4');
+            if (!label || !value) continue;
+
+            const labelText = (label.textContent || '').toLowerCase().trim();
+            if (/^(type|тип|side|направление)$/.test(labelText)) {
+                const valText = (value.textContent || '').toLowerCase();
+                if (/sell|продажа|продать/.test(valText)) return 'sell';
+                if (/buy|покупка|купить/.test(valText)) return 'buy';
             }
         }
-    } catch (e) { console.error('P2P Analytics MEXC: Strategy 2 failed', e); }
-
-    // --- СТРАТЕГИЯ 3: Поиск в заголовках ---
-    try {
-        const headers = document.querySelectorAll('h1, h2, .title');
-        for (const h of headers) {
-            const text = (h.textContent || '').toLowerCase();
-            if (text.includes('купить') || text.includes('buy')) return 'buy';
-            if (text.includes('продать') || text.includes('sell')) return 'sell';
-        }
-    } catch (e) { /* ignore */ }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy 3 (info-rows) failed', e);
+    }
 
     console.warn('P2P Analytics MEXC: Order type detection failed -> unknown');
     return 'unknown';
@@ -1189,38 +1180,67 @@ function extractNumberMEXC(text) {
 // Parse order info from MEXC page
 function parseOrderInfo() {
     const orderInfo = {};
-    
-    // Try to find order date
+
     let dateFound = false;
+
+    // Новый дизайн: дата прямо в DOM
+    // [data-testid="info-row-timeCreated"] → "2026-01-28 14:52:29"
     try {
-        // Look for date in time elements or timestamps
-        const timeElements = document.querySelectorAll('time, [class*="time"], [class*="date"]');
-        for (const el of timeElements) {
-            const text = el.textContent || '';
-            // Try different date formats
-            const dateMatch = text.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
-            if (dateMatch) {
-                const parsedDate = new Date(dateMatch[1]);
-                orderInfo.createdAt = parsedDate.toISOString();
-                console.log('P2P Analytics MEXC: Parsed order date from page:', orderInfo.createdAt);
-                dateFound = true;
-                break;
+        const timeRow = document.querySelector('[data-testid="info-row-timeCreated"]');
+        if (timeRow) {
+            const valueEl = timeRow.querySelector('.InfoRow_value__9xKf4');
+            if (valueEl) {
+                const text = (valueEl.textContent || '').trim();
+                console.log('P2P Analytics MEXC [parseOrderInfo] raw date text:', text);
+
+                const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+                if (dateMatch) {
+                    const isoString = `${dateMatch[1]}T${dateMatch[2]}`;
+                    const parsedDate = new Date(isoString);
+                    if (!isNaN(parsedDate.getTime())) {
+                        orderInfo.createdAt = parsedDate.toISOString();
+                        console.log('P2P Analytics MEXC: Parsed order date from page:', orderInfo.createdAt);
+                        dateFound = true;
+                    }
+                }
             }
         }
     } catch (e) {
-        console.warn('P2P Analytics MEXC: Error parsing date:', e);
+        console.warn('P2P Analytics MEXC: Error parsing date from new DOM:', e);
     }
-    
-    // If date not found, use current time
+
+    // Fallback: поиск по time-элементам
+    if (!dateFound) {
+        try {
+            const timeElements = document.querySelectorAll('time, [class*="time"], [class*="date"]');
+            for (const el of timeElements) {
+                const text = el.textContent || '';
+                const dateMatch = text.match(/(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/);
+                if (dateMatch) {
+                    const parsedDate = new Date(dateMatch[1]);
+                    if (!isNaN(parsedDate.getTime())) {
+                        orderInfo.createdAt = parsedDate.toISOString();
+                        console.log('P2P Analytics MEXC: Parsed order date from fallback:', orderInfo.createdAt);
+                        dateFound = true;
+                        break;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('P2P Analytics MEXC: Fallback date parsing failed:', e);
+        }
+    }
+
+    // Если совсем ничего не нашли — текущее время
     if (!dateFound) {
         orderInfo.createdAt = new Date().toISOString();
         console.log('P2P Analytics MEXC: Using current time as order date:', orderInfo.createdAt);
     }
-    
-    // Determine order type from page
+
+    // Тип ордера
     orderInfo.type = detectOrderType().toUpperCase();
     console.log('P2P Analytics MEXC: Order type:', orderInfo.type);
-    
+
     return orderInfo;
 }
 
@@ -1228,36 +1248,22 @@ function parseOrderInfo() {
 function parsePriceFromPage() {
     try {
         console.log('P2P Analytics MEXC: Parsing price from page...');
-        
-        // Strategy: Find all <p> tags and look for one containing "Цена" or "Price"
-        // Then get the value from the sibling element
-        const allParagraphs = document.querySelectorAll('p');
-        
-        for (const p of allParagraphs) {
-            const text = normalizeText(p.textContent || '');
-            
-            // Check if this paragraph contains "price" in any language
-            if (/цена|price|precio|prix|preço|preis/i.test(text)) {
-                // Try to find the value in the parent container
-                const container = p.parentElement;
-                if (!container) continue;
-                
-                // Look for a span that contains numbers (the price value)
-                const spans = container.querySelectorAll('span');
-                for (const span of spans) {
-                    const spanText = span.textContent.trim();
-                    // Skip if it's the currency label
-                    if (/^(RUB|USD|EUR|USDT)$/i.test(spanText)) continue;
-                    
-                    const price = extractNumberMEXC(spanText);
-                    if (price !== null && price > 0) {
-                        console.log('P2P Analytics MEXC: Found price:', price);
-                        return price.toString();
-                    }
+
+        const row = document.querySelector('[data-testid="info-row-price"]');
+        if (row) {
+            const valueEl = row.querySelector('.InfoRow_value__9xKf4');
+            if (valueEl) {
+                const text = (valueEl.textContent || '').trim();
+                console.log('P2P Analytics MEXC [parsePriceFromPage] raw text:', text);
+
+                const price = extractNumberMEXC(text);
+                if (price !== null && price > 0) {
+                    console.log('P2P Analytics MEXC: Found price:', price);
+                    return price.toString();
                 }
             }
         }
-        
+
         console.warn('P2P Analytics MEXC: Could not find price');
         return '';
     } catch (error) {
@@ -1270,42 +1276,22 @@ function parsePriceFromPage() {
 function parseQuantityFromPage() {
     try {
         console.log('P2P Analytics MEXC: Parsing quantity from page...');
-        
-        // Strategy: Find all <p> tags and look for one containing "Количество" or "Quantity"
-        // Then get the value from the sibling element
-        const allParagraphs = document.querySelectorAll('p');
-        
-        for (const p of allParagraphs) {
-            const text = normalizeText(p.textContent || '');
-            
-            // Check if this paragraph contains "quantity" or "amount" in any language
-            if (/количество|quantity|cantidad|quantité|quantidade|menge|amount/i.test(text)) {
-                // Try to find the value in the parent container
-                const container = p.parentElement;
-                if (!container) continue;
-                
-                // Look for a span that contains numbers and USDT (the quantity value)
-                const spans = container.querySelectorAll('span');
-                for (const span of spans) {
-                    const spanText = span.textContent.trim();
-                    // Skip if it's just the currency label
-                    if (/^(USDT|BTC|ETH)$/i.test(spanText)) continue;
-                    
-                    // Look for spans containing USDT (crypto quantity)
-                    if (/USDT|BTC|ETH/i.test(spanText)) {
-                        console.log('P2P Analytics MEXC [parseQuantityFromPage] processing span:', spanText);
-                        const quantity = extractNumberMEXC(spanText);
-                        if (quantity !== null && quantity > 0) {
-                            // Don't truncate quantity - keep full precision
-                            const stringResult = quantity.toString();
-                            console.log('P2P Analytics MEXC [parseQuantityFromPage] quantity:', quantity, '→ string:', stringResult);
-                            return stringResult;
-                        }
-                    }
+
+        const row = document.querySelector('[data-testid="info-row-quantity"]');
+        if (row) {
+            const valueEl = row.querySelector('.CouponQuantity_quantityValue__5hj2c');
+            if (valueEl) {
+                const text = (valueEl.textContent || '').trim();
+                console.log('P2P Analytics MEXC [parseQuantityFromPage] raw text:', text);
+
+                const quantity = extractNumberMEXC(text);
+                if (quantity !== null && quantity > 0) {
+                    console.log('P2P Analytics MEXC: Found quantity:', quantity);
+                    return quantity.toString();
                 }
             }
         }
-        
+
         console.warn('P2P Analytics MEXC: Could not find quantity');
         return '';
     } catch (error) {
@@ -1318,40 +1304,22 @@ function parseQuantityFromPage() {
 function parseAmountFromPage() {
     try {
         console.log('P2P Analytics MEXC: Parsing amount from page...');
-        
-        // Strategy: Find all <p> tags and look for one containing "Сумма" or "Amount"
-        // Then get the value from the sibling element
-        const allParagraphs = document.querySelectorAll('p');
-        
-        for (const p of allParagraphs) {
-            const text = normalizeText(p.textContent || '');
-            
-            // Check if this paragraph contains "amount" or "sum" in any language
-            // Important: we want the FIAT amount (RUB), not crypto quantity
-            if (/сумма|amount|suma|montant|betrag|total/i.test(text) && !/количество|quantity/i.test(text)) {
-                // Try to find the value in the parent container
-                const container = p.parentElement;
-                if (!container) continue;
-                
-                // Look for a span that contains numbers and RUB (the fiat amount)
-                const spans = container.querySelectorAll('span');
-                for (const span of spans) {
-                    const spanText = span.textContent.trim();
-                    // Skip if it's just the currency label
-                    if (/^(RUB|USD|EUR)$/i.test(spanText)) continue;
-                    
-                    // Look for spans containing RUB or other fiat currency
-                    if (/RUB|USD|EUR/i.test(spanText)) {
-                        const amount = extractNumberMEXC(spanText);
-                        if (amount !== null && amount > 0) {
-                            console.log('P2P Analytics MEXC: Found amount:', amount);
-                            return amount.toString();
-                        }
-                    }
+
+        const row = document.querySelector('[data-testid="info-row-amount"]');
+        if (row) {
+            const valueEl = row.querySelector('.CouponAmount_amount__eC1N0');
+            if (valueEl) {
+                const text = (valueEl.textContent || '').trim();
+                console.log('P2P Analytics MEXC [parseAmountFromPage] raw text:', text);
+
+                const amount = extractNumberMEXC(text);
+                if (amount !== null && amount > 0) {
+                    console.log('P2P Analytics MEXC: Found amount:', amount);
+                    return amount.toString();
                 }
             }
         }
-        
+
         console.warn('P2P Analytics MEXC: Could not find amount');
         return '';
     } catch (error) {
