@@ -1222,24 +1222,33 @@ def export_excel_report(request):
 
     # =====================================================================
     # LIFO расчёт курса остатка
+    # prev_carry — (qty, price) перенос остатка с прошлого месяца
     # =====================================================================
-    def _calc_lifo_price(month_orders_list, remainder_qty):
+    def _calc_lifo_price(month_orders_list, remainder_qty, prev_carry=None):
         """
         Считает средневзвешенный курс остатка по методу LIFO.
-        Идём с конца списка покупок и набираем нужное количество.
+        Идём с конца списка покупок текущего месяца, если не хватает —
+        берём из переноса остатка прошлого месяца (prev_carry).
         """
         if remainder_qty <= 0:
             return 0.0
 
-        # Берём только BUY ордера в порядке от последнего к первому
+        # Только BUY ордера текущего месяца — от последнего к первому
         buys = []
         for o in reversed(month_orders_list):
             if o.operation_type == 'BUY':
-                qty  = float(o.amount or 0)
-                cost = float(o.cost   or 0)
-                price = float(o.price or 0)
+                qty   = float(o.amount or 0)
+                cost  = float(o.cost   or 0)
+                price = float(o.price  or 0)
                 unit_price = cost / qty if qty > 0 else price
                 buys.append((qty, unit_price))
+
+        # Если не хватает покупок текущего месяца — добавляем перенос остатка
+        # prev_carry = (qty, price) — количество и курс переноса
+        if prev_carry is not None:
+            carry_qty, carry_price = prev_carry
+            if carry_qty > 0 and carry_price > 0:
+                buys.append((carry_qty, carry_price))
 
         total_cost = 0.0
         need = remainder_qty
@@ -1257,12 +1266,10 @@ def export_excel_report(request):
     # Запись строки ордера
     # =====================================================================
     def _get_cv_name(o):
-        # Если фильтр задан — используем его
         if currency == 'TON':
             return 'TON'
         elif currency == 'USDT':
             return 'USDT'
-        # Иначе берём из поля currency ордера
         if getattr(o, 'currency', '') == 'TON':
             return 'TON'
         return 'USDT'
@@ -1327,15 +1334,18 @@ def export_excel_report(request):
     # =====================================================================
     # Итоговые строки после блока ордеров
     # =====================================================================
-    def write_summary(label_suffix, data_start, data_end, last_sell_price=0.0, month_orders_list=None):
+    def write_summary(label_suffix, data_start, data_end,
+                      last_sell_price=0.0,
+                      month_orders_list=None,
+                      prev_carry=None):
         ws.append([])  # разделитель
 
         tr = ws.max_row + 1
         ws.append([
             f"Торговый результат{label_suffix}:", "", "", "",
-            f"=SUM(E{data_start}:E{data_end})",   # E{tr} — суммарный BUY кол-во
+            f"=SUM(E{data_start}:E{data_end})",
             "",
-            f"=SUM(G{data_start}:G{data_end})",   # G{tr} — суммарный BUY стоимость
+            f"=SUM(G{data_start}:G{data_end})",
             f"=SUM(H{data_start}:H{data_end})",
             f"=SUM(I{data_start}:I{data_end})",
             "",
@@ -1353,8 +1363,10 @@ def export_excel_report(request):
                 float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
                 for o in month_orders_list if o.operation_type == 'SELL'
             )
-            remainder_qty = total_buy_qty - total_sell_qty - total_exch
-            lifo_price    = _calc_lifo_price(month_orders_list, remainder_qty)
+            # Добавляем перенос остатка к покупкам
+            carry_qty = float(prev_carry[0]) if prev_carry else 0.0
+            remainder_qty = total_buy_qty + carry_qty - total_sell_qty - total_exch
+            lifo_price    = _calc_lifo_price(month_orders_list, remainder_qty, prev_carry=prev_carry)
         else:
             lifo_price = None
         # ──────────────────────────────────────────────────────────────
@@ -1362,9 +1374,9 @@ def export_excel_report(request):
         ost = ws.max_row + 1
         ws.append([
             f"Остаток (нереализованная ЦВ){label_suffix}:", "", "", "",
-            f"=E{tr}-I{tr}-M{tr}",                                              # кол-во остатка
-            lifo_price if lifo_price is not None else f"=IFERROR(G{tr}/E{tr},0)",  # LIFO курс
-            f"=E{ost}*F{ost}",                                                  # себестоимость остатка
+            f"=E{tr}-I{tr}-M{tr}",
+            lifo_price if lifo_price is not None else f"=IFERROR(G{tr}/E{tr},0)",
+            f"=E{ost}*F{ost}",
             0, "", "", "", "", ""
         ])
         ost = ws.max_row
@@ -1399,6 +1411,7 @@ def export_excel_report(request):
     idx             = 0
     last_sell_price = 0.0
     prev_ost_row    = None
+    prev_carry      = None  # (qty, price) перенос остатка с прошлого месяца
 
     def get_month_key(o):
         dt_msk = o.created_at.astimezone(MSK)
@@ -1433,8 +1446,24 @@ def export_excel_report(request):
                 f" за {_month_name(mo)} {yr}",
                 data_start, data_end,
                 last_sell_price,
-                month_orders_list=month_list  # ← LIFO
+                month_orders_list=month_list,
+                prev_carry=prev_carry  # ← передаём перенос
             )
+
+            # Сохраняем перенос для следующего месяца
+            # qty берём из формулы остатка, price — LIFO курс который только что посчитали
+            if month_list is not None:
+                total_buy_qty  = sum(float(o.amount or 0) for o in month_list if o.operation_type == 'BUY')
+                total_sell_qty = sum(float(o.amount or 0) for o in month_list if o.operation_type == 'SELL')
+                total_exch     = sum(
+                    float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+                    for o in month_list if o.operation_type == 'SELL'
+                )
+                carry_qty_prev = float(prev_carry[0]) if prev_carry else 0.0
+                new_remainder  = total_buy_qty + carry_qty_prev - total_sell_qty - total_exch
+                new_price      = _calc_lifo_price(month_list, new_remainder, prev_carry=prev_carry)
+                prev_carry     = (new_remainder, new_price)
+
             is_first_month = False
 
     else:
@@ -1457,7 +1486,8 @@ def export_excel_report(request):
             "",
             data_start, data_end,
             last_sell_price,
-            month_orders_list=orders_list  # ← LIFO
+            month_orders_list=orders_list,
+            prev_carry=None
         )
 
     # =====================================================================
@@ -1491,7 +1521,6 @@ def export_excel_report(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     wb.save(response)
     return response
-
 
 def admin_login(request):
     """Вход в админку"""
