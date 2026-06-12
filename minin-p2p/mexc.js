@@ -1131,46 +1131,47 @@ function cleanupResources() {
  */
 function extractNumberMEXC(text) {
     if (!text) return null;
-    
-    // Remove all spaces (including non-breaking spaces) and currency labels
+
     const cleaned = text
         .replace(/\s+/g, '')
         .replace(/\u00A0/g, '')
         .replace(/USDT|BTC|ETH|RUB|USD|EUR/gi, '');
-    
-    // Match number with possible separators
+
     const match = cleaned.match(/[\d.,]+/);
     if (!match) return null;
-    
+
     let numberStr = match[0];
-    
-    // MEXC uses European format:
-    // - Space or period as thousands separator (e.g., "4 000" or "4.000")
-    // - Comma as decimal separator (e.g., "45,977")
-    
-    // Count occurrences of each separator
+
     const commaCount = (numberStr.match(/,/g) || []).length;
     const periodCount = (numberStr.match(/\./g) || []).length;
-    
-    console.log('P2P Analytics MEXC [extractNumberMEXC] input:', text, '→ numberStr:', numberStr, '→ commas:', commaCount, 'periods:', periodCount);
-    
+
+    console.log('P2P Analytics MEXC [extractNumberMEXC] input:', text,
+        '→ numberStr:', numberStr,
+        '→ commas:', commaCount,
+        '→ periods:', periodCount);
+
     if (commaCount > 0 && periodCount > 0) {
-        // Both separators present - European format: period = thousands, comma = decimal
-        // Example: "1.234,56" → 1234.56
+        // "1.234,56" → период=тысячи, запятая=десятичная
         numberStr = numberStr.replace(/\./g, '').replace(/,/g, '.');
-    } else if (commaCount > 0) {
-        // Only comma present - it's ALWAYS the decimal separator in MEXC (European format)
-        // Example: "45,977" → 45.977, "457,317" → 457.317
-        numberStr = numberStr.replace(/,/g, '.');
+    } else if (commaCount === 1) {
+        const afterComma = numberStr.split(',')[1] || '';
+        if (afterComma.length === 3) {
+            // "1,000" или "17,000" → тысячи, убираем запятую
+            numberStr = numberStr.replace(/,/g, '');
+        } else {
+            // "45,97" → десятичная
+            numberStr = numberStr.replace(/,/g, '.');
+        }
+    } else if (commaCount > 1) {
+        // "1,000,000" → все запятые это тысячи
+        numberStr = numberStr.replace(/,/g, '');
     } else if (periodCount > 1) {
-        // Multiple periods - they are thousands separators (European style)
-        // Example: "1.234.567" → 1234567
+        // "1.234.567" → все точки это тысячи
         numberStr = numberStr.replace(/\./g, '');
     }
-    // If only one period - assume it's decimal separator (already correct format)
-    
+
     console.log('P2P Analytics MEXC [extractNumberMEXC] after replacement:', numberStr);
-    
+
     const num = parseFloat(numberStr);
     const result = isFinite(num) ? num : null;
     console.log('P2P Analytics MEXC [extractNumberMEXC] final result:', result);
@@ -1362,6 +1363,26 @@ function createInput(labelText, inputId, placeholder) {
     inputWrapper.appendChild(input);
 
     return inputWrapper;
+}
+
+function waitForElement(selector, maxAttempts = 20, delayMs = 300) {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const check = () => {
+            const el = document.querySelector(selector);
+            if (el) {
+                resolve(el);
+                return;
+            }
+            attempts++;
+            if (attempts >= maxAttempts) {
+                resolve(null);
+                return;
+            }
+            setTimeout(check, delayMs);
+        };
+        check();
+    });
 }
 
 function createCheckContent() {
@@ -1610,15 +1631,9 @@ function createCheckContent() {
                 if (orderResult.success && orderResult.exists && orderResult.data) {
                     const order = orderResult.data;
 
-                    // Данные из БД приоритетнее страницы
-                    rateInput.value = order.price || parsePriceFromPage();
-                    quantityInput.value = order.quantity || parseQuantityFromPage();
-                    if (costInput) costInput.value = order.amount || parseAmountFromPage();
-
                     if (order.type === 'SELL') radioSell.checked = true;
                     else if (order.type === 'BUY') radioBuy.checked = true;
 
-                    // Восстанавливаем состояние галочки редактирования из БД
                     if (order.isManual) {
                         editCheckbox.checked = true;
                         unlockFinancialFields();
@@ -1628,12 +1643,28 @@ function createCheckContent() {
                         lockFinancialFields();
                     }
 
+                    // Данные из БД приоритетнее страницы
+                    if (order.price) rateInput.value = order.price;
+                    if (order.quantity) quantityInput.value = order.quantity;
+                    if (order.amount && costInput) costInput.value = order.amount;
+
+                    // Если каких-то данных нет в БД — ждём DOM и берём со страницы
+                    if (!order.price || !order.quantity || !order.amount) {
+                        waitForElement('[data-testid="info-row-price"]').then(() => {
+                            if (!rateInput.value) rateInput.value = parsePriceFromPage();
+                            if (!quantityInput.value) quantityInput.value = parseQuantityFromPage();
+                            if (costInput && !costInput.value) costInput.value = parseAmountFromPage();
+                        });
+                    }
+
                 } else {
-                    // Ордера в БД нет — берём со страницы, поля заблокированы
-                    rateInput.value = parsePriceFromPage();
-                    quantityInput.value = parseQuantityFromPage();
-                    if (costInput) costInput.value = parseAmountFromPage();
-                    lockFinancialFields();
+                    // Ордера в БД нет — ждём DOM и берём со страницы
+                    waitForElement('[data-testid="info-row-price"]').then(() => {
+                        rateInput.value = parsePriceFromPage();
+                        quantityInput.value = parseQuantityFromPage();
+                        if (costInput) costInput.value = parseAmountFromPage();
+                        lockFinancialFields();
+                    });
                 }
 
                 // Контакт всегда доступен

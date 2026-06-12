@@ -38,7 +38,6 @@
         cursor: pointer;
     }
 
-    /* Фикс стрелки в селекте валюты — не перекрывает текст */
     .currency-select {
         width: 80px !important;
         background-color: rgba(61, 90, 254, 0.1) !important;
@@ -89,33 +88,40 @@
     .btn-cancel-modal { background-color: var(--bg-input); color: var(--text-main); border-radius: 6px; border: 1px solid var(--border-color); font-weight: 600; }
     .badge-receipt-ok { background:#0d2b1a; color:#4caf50; border:1px solid #2d6a4f; font-size:11px; padding:3px 8px; border-radius:4px; }
     .badge-receipt-no { background:#2b1a0d; color:#ff9800; border:1px solid #5a3d0d; font-size:11px; padding:3px 8px; border-radius:4px; }
-    /* Адаптив для маленьких экранов */
-    .form-section, .table-container {
-        overflow-x: auto;
-    }
-    .table-container {
-        min-width: 0;
-    }
-    .table {
-        min-width: 900px;
-    }
-    /* Форма создания — перенос на маленьких экранах */
+
+    .form-section, .table-container { overflow-x: auto; }
+    .table-container { min-width: 0; }
+    .table { min-width: 900px; }
+
     @media (max-width: 1200px) {
         .row.g-3 .col-md-2,
         .row.g-3 .col-md-3,
-        .row.g-3 .col-md-6 {
-            flex: 0 0 auto;
-            width: 50%;
-        }
+        .row.g-3 .col-md-6 { flex: 0 0 auto; width: 50%; }
     }
     @media (max-width: 768px) {
         .row.g-3 .col-md-2,
         .row.g-3 .col-md-3,
-        .row.g-3 .col-md-6 {
-            width: 100%;
-        }
+        .row.g-3 .col-md-6 { width: 100%; }
     }
+
+    /* Фильтры */
+    .filter-section { background: var(--bg-card); padding: 16px 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px; }
+    .filter-section .form-control, .filter-section .form-select { height: 36px; font-size: 13px; padding: 6px 10px; }
+    .btn-filter { background: var(--accent-blue); color: #fff; border: none; height: 36px; border-radius: 6px; padding: 0 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-filter:hover { background: #304ffe; }
+    .btn-filter-reset { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border-color); height: 36px; border-radius: 6px; padding: 0 16px; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+    .btn-filter-reset:hover { color: var(--text-main); }
+
+    /* Пагинация */
+    .pagination-wrap { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--border-color); }
+    .pagination { display: flex; gap: 4px; margin: 0; list-style: none; padding: 0; }
+    .pagination .page-item .page-link { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 5px 11px; font-size: 13px; text-decoration: none; transition: 0.15s; }
+    .pagination .page-item .page-link:hover { background: var(--border-color); }
+    .pagination .page-item.active .page-link { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+    .pagination .page-item.disabled .page-link { opacity: 0.4; pointer-events: none; }
+    .pagination-info { font-size: 12px; color: var(--text-muted); }
 </style>
+
 <div style="padding: 0 12px; max-width: 100%; overflow-x: hidden;">
     <div class="form-section">
         {% if request.session.order_error %}
@@ -141,7 +147,6 @@
                 <div class="col-md-2">
                     <div class="commission-group">
                         <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
-                        <!-- Валюта сохраняется через saved_data.currency — не слетает при создании -->
                         <select class="form-select currency-select" name="currency" id="main_currency">
                             <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
                             <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
@@ -151,7 +156,6 @@
                 <div class="col-md-2">
                     <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
                 </div>
-
                 <div class="col-md-3">
                     <select class="form-select" name="operation_type">
                         <option value="BUY"  {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
@@ -182,7 +186,6 @@
                         {% endfor %}
                     </select>
                 </div>
-
                 <div class="col-md-2">
                     <div class="commission-group">
                         <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
@@ -192,11 +195,9 @@
                         </select>
                     </div>
                 </div>
-
                 <div class="col-md-3">
                     <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
                 </div>
-
                 <div class="col-md-2 pt-4">
                     <div class="d-flex gap-3 align-items-center h-100 ps-2">
                         <div class="form-check">
@@ -209,7 +210,6 @@
                         </div>
                     </div>
                 </div>
-
                 <div class="col-md-2">
                     <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
                 </div>
@@ -226,7 +226,74 @@
             </div>
         </form>
     </div>
+
+    <!-- ================================================================ -->
+    <!-- ФИЛЬТРЫ                                                           -->
+    <!-- ================================================================ -->
+    <div class="filter-section">
+        <form method="get" id="filterForm">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <label class="form-label">Дата от</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ filter_date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Дата до</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ filter_date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Биржа</label>
+                    <select class="form-select" name="exchange">
+                        <option value="">Все биржи</option>
+                        <option value="Bybit"    {% if filter_exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                        <option value="HTX"      {% if filter_exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                        <option value="MEXC"     {% if filter_exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                        <option value="Telegram" {% if filter_exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                        <option value="Bitget"   {% if filter_exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                        <option value="Gate"     {% if filter_exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                        <option value="EMCD"     {% if filter_exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                        <option value="BingX"    {% if filter_exchange == 'BingX' %}selected{% endif %}>BingX</option>
+                        <option value="Rapira"   {% if filter_exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Банк</label>
+                    <select class="form-select" name="bank">
+                        <option value="">Все банки</option>
+                        {% for bank in default_banks %}
+                            <option value="{{ bank.id }}" {% if filter_bank|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Тип</label>
+                    <select class="form-select" name="op_type">
+                        <option value="">Все</option>
+                        <option value="BUY"  {% if filter_op_type == 'BUY' %}selected{% endif %}>BUY</option>
+                        <option value="SELL" {% if filter_op_type == 'SELL' %}selected{% endif %}>SELL</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">Валюта</label>
+                    <select class="form-select" name="currency">
+                        <option value="">Все</option>
+                        <option value="USDT" {% if filter_currency == 'USDT' %}selected{% endif %}>USDT</option>
+                        <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>TON</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label">№ Ордера</label>
+                    <input type="text" name="order_id" class="form-control" placeholder="Поиск..." value="{{ filter_order_id }}">
+                </div>
+                <div class="col-md-1 d-flex gap-2">
+                    <button type="submit" class="btn-filter">Найти</button>
+                    <a href="?" class="btn-filter-reset">✕</a>
+                </div>
+            </div>
+        </form>
+    </div>
 </div>
+
 <div class="table-container shadow-sm" style="overflow-x: auto;">
     <table class="table" style="min-width: 900px;">
         <thead>
@@ -264,7 +331,6 @@
                 </td>
                 <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
-                        <!-- Добавлен 12-й аргумент: currency ордера -->
                         <button class="btn btn-action"
                             onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}')">
                             Изм.
@@ -285,6 +351,50 @@
             {% endfor %}
         </tbody>
     </table>
+
+    <!-- ================================================================ -->
+    <!-- ПАГИНАЦИЯ                                                         -->
+    <!-- ================================================================ -->
+    <div class="pagination-wrap">
+        <span class="pagination-info">
+            Показано {{ page_obj.start_index }}–{{ page_obj.end_index }} из {{ total_count }} ордеров
+        </span>
+        <ul class="pagination">
+            {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">«</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">‹</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">«</span></li>
+                <li class="page-item disabled"><span class="page-link">‹</span></li>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">{{ num }}</a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">›</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">»</a>
+                </li>
+            {% else %}
+                <li class="page-item disabled"><span class="page-link">›</span></li>
+                <li class="page-item disabled"><span class="page-link">»</span></li>
+            {% endif %}
+        </ul>
+    </div>
 </div>
 
 <!-- Модальное окно редактирования -->
@@ -299,7 +409,6 @@
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="row g-3">
-
                         <div class="col-md-6">
                             <label class="form-label">Тип операции</label>
                             <select class="form-select" name="operation_type" id="modal_op_type">
@@ -307,7 +416,6 @@
                                 <option value="SELL">Продажа</option>
                             </select>
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label">Биржа</label>
                             <select class="form-select" name="exchange" id="modal_exchange">
@@ -322,7 +430,6 @@
                                 <option value="Rapira">Rapira</option>
                             </select>
                         </div>
-
                         <div class="col-12">
                             <label class="form-label">Реквизиты</label>
                             <select class="form-select" name="details" id="modal_details">
@@ -332,13 +439,10 @@
                                 {% endfor %}
                             </select>
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label">Курс</label>
                             <input type="text" name="price" id="modal_price" class="form-control" required>
                         </div>
-
-                        <!-- Количество + валюта (аналогично форме создания) -->
                         <div class="col-md-6">
                             <label class="form-label">Количество</label>
                             <div class="commission-group">
@@ -349,12 +453,10 @@
                                 </select>
                             </div>
                         </div>
-
                         <div class="col-12">
                             <label class="form-label">Стоимость</label>
                             <input type="text" name="cost" id="modal_cost" class="form-control" required>
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label">Комиссия</label>
                             <div class="commission-group">
@@ -365,17 +467,14 @@
                                 </select>
                             </div>
                         </div>
-
                         <div class="col-md-6">
                             <label class="form-label">Номер ордера</label>
                             <input type="text" name="external_id" id="modal_ext_id" class="form-control" required>
                         </div>
-
                         <div class="col-12">
                             <label class="form-label">Дата и время</label>
                             <input type="datetime-local" name="created_at" id="modal_date" class="form-control" required>
                         </div>
-
                     </div>
                 </div>
                 <div class="modal-footer pb-3 pt-3 justify-content-between">
@@ -431,10 +530,9 @@
         }
     });
 
-    // 12-й аргумент — currency
     function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency) {
-        document.getElementById('editForm').action    = '/edit/' + id + '/';
-        document.getElementById('display_id').innerText = id;
+        document.getElementById('editForm').action       = '/edit/' + id + '/';
+        document.getElementById('display_id').innerText  = id;
         document.getElementById('modal_details').value   = bankId;
         document.getElementById('modal_op_type').value   = opType;
         document.getElementById('modal_exchange').value  = exchange;
