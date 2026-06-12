@@ -41,9 +41,6 @@ from collections import defaultdict
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
-
-
-
 def safe_decimal(value):
     """
     Превращает '1,4' -> 1.4, '1 000' -> 1000.0
@@ -162,7 +159,6 @@ def my_orders_list(request):
             screenshot=request.FILES.get('screenshot'),
             created_at=order_date,
             currency=request.POST.get('currency', 'USDT').strip().upper(),
-
         )
 
         # 5. Удаляем из необработанных
@@ -181,8 +177,6 @@ def my_orders_list(request):
             currency = request.POST.get('currency', 'USDT').strip().upper()
             if currency not in ('USDT', 'TON'):
                 currency = 'USDT'
-            # Эвотор не принимает больше 3 знаков после запятой.
-            # ОБРЕЗАЕМ (не округляем) только для чека — в БД данные полные.
             receipt_data = {
                 "contact": contact_email,
                 "sum":    truncate(order.cost,   2),
@@ -190,14 +184,53 @@ def my_orders_list(request):
                 "amount": truncate(order.amount, 3),
                 "purpose": f"Цифровая валюта {currency}",
             }
-
             create_or_update_and_send_receipt(order, receipt_data)
 
         return redirect('my_orders')
 
+    # =====================================================================
+    # ФИЛЬТРЫ — читаем из GET параметров
+    # =====================================================================
+    filter_date_from  = request.GET.get('date_from', '')
+    filter_date_to    = request.GET.get('date_to', '')
+    filter_exchange   = request.GET.get('exchange', '')
+    filter_bank       = request.GET.get('bank', '')
+    filter_op_type    = request.GET.get('op_type', '')
+    filter_currency   = request.GET.get('currency', '')
+    filter_order_id   = request.GET.get('order_id', '')
+
     orders = Order.objects.filter(user=request.user).order_by('-created_at')
 
+    if filter_date_from:
+        orders = orders.filter(created_at__date__gte=filter_date_from)
+    if filter_date_to:
+        orders = orders.filter(created_at__date__lte=filter_date_to)
+    if filter_exchange:
+        orders = orders.filter(exchange_type__icontains=filter_exchange)
+    if filter_bank:
+        orders = orders.filter(bank_detail_id=filter_bank)
+    if filter_op_type:
+        orders = orders.filter(operation_type=filter_op_type)
+    if filter_currency:
+        orders = orders.filter(currency=filter_currency)
+    if filter_order_id:
+        orders = orders.filter(external_id__icontains=filter_order_id)
+
+    # Общее кол-во после фильтрации
+    total_count = orders.count()
+
+    # =====================================================================
+    # ПАГИНАЦИЯ — 50 ордеров на страницу
+    # =====================================================================
+    from django.core.paginator import Paginator
+
+    paginator    = Paginator(orders, 50)
+    page_number  = request.GET.get('page', 1)
+    page_obj     = paginator.get_page(page_number)
+
+    # =====================================================================
     # Достаём сохранённые настройки формы
+    # =====================================================================
     saved_data = request.session.get('saved_order_form', {})
 
     if not saved_data:
@@ -213,11 +246,22 @@ def my_orders_list(request):
         current_time = timezone.now().strftime('%Y-%m-%dT%H:%M')
 
     return render(request, 'orders/my_orders.html', {
-        'orders':        orders,
-        'default_banks': default_banks,
-        'current_time':  current_time,
-        'saved_data':    saved_data
+        'orders':           page_obj,          # теперь page_obj вместо всех ордеров
+        'page_obj':         page_obj,
+        'total_count':      total_count,
+        'default_banks':    default_banks,
+        'current_time':     current_time,
+        'saved_data':       saved_data,
+        # фильтры обратно в шаблон чтобы форма не сбрасывалась
+        'filter_date_from': filter_date_from,
+        'filter_date_to':   filter_date_to,
+        'filter_exchange':  filter_exchange,
+        'filter_bank':      filter_bank,
+        'filter_op_type':   filter_op_type,
+        'filter_currency':  filter_currency,
+        'filter_order_id':  filter_order_id,
     })
+
 
 @login_required
 def edit_order(request, order_id):
