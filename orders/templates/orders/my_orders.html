@@ -4,7 +4,7 @@
 {% block content %}
 
 <style>
-    .form-section { background: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 20px; }
+    .form-section { background: var(--bg-card); padding: 24px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px; }
     .table-container { background: var(--bg-card); border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
 
     .form-label { color: var(--text-muted); font-size: 12px; margin-bottom: 6px; display: block; }
@@ -59,7 +59,7 @@
 
     .table { margin-bottom: 0; color: var(--text-main); font-size: 13px; }
     .table thead th { background: rgba(255,255,255,0.02); color: var(--text-muted); border-bottom: 1px solid var(--border-color); padding: 12px 15px; font-size: 11px; text-transform: uppercase; vertical-align: middle; }
-    .table td { 
+    .table td {
         border-bottom: 1px solid var(--border-color);
         padding: 10px 15px;
         vertical-align: middle;
@@ -89,8 +89,7 @@
     .badge-receipt-ok { background:#0d2b1a; color:#4caf50; border:1px solid #2d6a4f; font-size:11px; padding:3px 8px; border-radius:4px; }
     .badge-receipt-no { background:#2b1a0d; color:#ff9800; border:1px solid #5a3d0d; font-size:11px; padding:3px 8px; border-radius:4px; }
 
-    .form-section, .table-container { overflow-x: auto; }
-    .table-container { min-width: 0; }
+    .table-container { min-width: 0; overflow-x: auto; }
     .table { min-width: 900px; }
 
     @media (max-width: 1200px) {
@@ -104,197 +103,266 @@
         .row.g-3 .col-md-6 { width: 100%; }
     }
 
-    /* Фильтры */
-    .filter-section { background: var(--bg-card); padding: 16px 20px; border-radius: 12px; border: 1px solid var(--border-color); margin-bottom: 16px; }
-    .filter-section .form-control, .filter-section .form-select { height: 36px; font-size: 13px; padding: 6px 10px; }
-    .btn-filter { background: var(--accent-blue); color: #fff; border: none; height: 36px; border-radius: 6px; padding: 0 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    /* ── Фильтры ──────────────────────────────────────────────────── */
+    .filter-section {
+        background: var(--bg-card);
+        padding: 16px 20px;
+        border-radius: 12px;
+        border: 1px solid var(--border-color);
+        margin-bottom: 16px;
+    }
+    .filter-section .form-control,
+    .filter-section .form-select {
+        height: 36px;
+        font-size: 13px;
+        padding: 6px 10px;
+    }
+    .btn-filter {
+        background: var(--accent-blue);
+        color: #fff;
+        border: none;
+        height: 36px;
+        border-radius: 6px;
+        padding: 0 18px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        white-space: nowrap;
+    }
     .btn-filter:hover { background: #304ffe; }
-    .btn-filter-reset { background: var(--bg-input); color: var(--text-muted); border: 1px solid var(--border-color); height: 36px; border-radius: 6px; padding: 0 16px; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
-    .btn-filter-reset:hover { color: var(--text-main); }
 
-    /* Пагинация */
-    .pagination-wrap { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-top: 1px solid var(--border-color); }
-    .pagination { display: flex; gap: 4px; margin: 0; list-style: none; padding: 0; }
-    .pagination .page-item .page-link { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 5px 11px; font-size: 13px; text-decoration: none; transition: 0.15s; }
-    .pagination .page-item .page-link:hover { background: var(--border-color); }
-    .pagination .page-item.active .page-link { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
-    .pagination .page-item.disabled .page-link { opacity: 0.4; pointer-events: none; }
+    /* Кнопка сброса — стилизованная */
+    .btn-filter-reset {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 36px;
+        width: 36px;
+        border-radius: 6px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-input);
+        color: var(--text-muted);
+        font-size: 14px;
+        text-decoration: none;
+        transition: all 0.15s;
+        flex-shrink: 0;
+    }
+    .btn-filter-reset:hover {
+        background: rgba(255, 80, 80, 0.12);
+        border-color: rgba(255, 80, 80, 0.4);
+        color: #ff6060;
+    }
+
+    /* ── Пагинация ────────────────────────────────────────────────── */
+    .pagination-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-top: 1px solid var(--border-color);
+        flex-wrap: wrap;
+        gap: 8px;
+    }
     .pagination-info { font-size: 12px; color: var(--text-muted); }
+    .pagination { display: flex; gap: 3px; margin: 0; list-style: none; padding: 0; }
+    .pagination .page-link {
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        color: var(--text-main);
+        border-radius: 6px;
+        padding: 4px 10px;
+        font-size: 12px;
+        text-decoration: none;
+        transition: 0.15s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 30px;
+        height: 28px;
+    }
+    .pagination .page-link:hover { background: var(--border-color); }
+    .pagination .page-item.active .page-link { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+    .pagination .page-item.disabled .page-link { opacity: 0.35; pointer-events: none; }
 </style>
 
-<div style="padding: 0 12px; max-width: 100%; overflow-x: hidden;">
-    <div class="form-section">
-        {% if request.session.order_error %}
-            <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
-                <strong>Ошибка!</strong> {{ request.session.order_error }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+<!-- ================================================================ -->
+<!-- ФОРМА СОЗДАНИЯ ОРДЕРА                                             -->
+<!-- ================================================================ -->
+<div class="form-section">
+    {% if request.session.order_error %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert" style="border-radius: 8px;">
+            <strong>Ошибка!</strong> {{ request.session.order_error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+        </div>
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data" id="createOrderForm">
+        {% csrf_token %}
+
+        <div class="row mb-3">
+            <div class="col-12">
+                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
             </div>
-        {% endif %}
+        </div>
 
-        <form method="post" enctype="multipart/form-data" id="createOrderForm">
-            {% csrf_token %}
-
-            <div class="row mb-3">
-                <div class="col-12">
-                    <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
+        <div class="row g-3 mb-3">
+            <div class="col-md-2">
+                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
+            </div>
+            <div class="col-md-2">
+                <div class="commission-group">
+                    <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
+                    <select class="form-select currency-select" name="currency" id="main_currency">
+                        <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
+                        <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
+                    </select>
                 </div>
             </div>
+            <div class="col-md-2">
+                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="operation_type">
+                    <option value="BUY"  {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
+                    <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select class="form-select" name="exchange">
+                    <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                    <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                    <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="Bitget"   {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                    <option value="Gate"     {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                    <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                    <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
+                    <option value="Rapira"   {% if saved_data.exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
+                </select>
+            </div>
+        </div>
 
-            <div class="row g-3 mb-3">
-                <div class="col-md-2">
-                    <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
+        <div class="row g-3 align-items-start">
+            <div class="col-md-3">
+                <select class="form-select" name="details" required>
+                    <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
+                    {% for bank in default_banks %}
+                        <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="commission-group">
+                    <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
+                    <select class="form-select commission-select" name="commission_type">
+                        <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
+                        <option value="RUB"     {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
+                    </select>
                 </div>
-                <div class="col-md-2">
-                    <div class="commission-group">
-                        <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
-                        <select class="form-select currency-select" name="currency" id="main_currency">
-                            <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
-                            <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
-                        </select>
+            </div>
+            <div class="col-md-3">
+                <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
+            </div>
+            <div class="col-md-2 pt-4">
+                <div class="d-flex gap-3 align-items-center h-100 ps-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
+                        <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
+                        <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
                     </div>
                 </div>
-                <div class="col-md-2">
-                    <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
-                </div>
-                <div class="col-md-3">
-                    <select class="form-select" name="operation_type">
-                        <option value="BUY"  {% if saved_data.operation_type == 'BUY' %}selected{% endif %}>Покупка</option>
-                        <option value="SELL" {% if saved_data.operation_type == 'SELL' %}selected{% endif %}>Продажа</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <select class="form-select" name="exchange">
-                        <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
-                        <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
-                        <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
-                        <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
-                        <option value="Bitget"   {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
-                        <option value="Gate"     {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
-                        <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
-                        <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
-                        <option value="Rapira"   {% if saved_data.exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
-                    </select>
-                </div>
             </div>
+            <div class="col-md-2">
+                <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
+            </div>
+        </div>
 
-            <div class="row g-3 align-items-start">
-                <div class="col-md-3">
-                    <select class="form-select" name="details" required>
-                        <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
-                        {% for bank in default_banks %}
-                            <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <div class="commission-group">
-                        <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
-                        <select class="form-select commission-select" name="commission_type">
-                            <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
-                            <option value="RUB"     {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <input type="datetime-local" name="created_at" class="form-control" value="{{ current_time }}" required>
-                </div>
-                <div class="col-md-2 pt-4">
-                    <div class="d-flex gap-3 align-items-center h-100 ps-2">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
-                            <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="checkScreen" name="use_screen">
-                            <label class="form-check-label small text-muted" for="checkScreen">Скрин</label>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2">
-                    <button type="submit" name="create_order" class="btn btn-create">Создать ордер</button>
-                </div>
-            </div>
+        <div id="emailInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
+            <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
+        </div>
 
-            <div id="emailInputWrapper" class="mt-3" style="display: none;">
-                <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
-                <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
-            </div>
-
-            <div id="fileInputWrapper" class="mt-3" style="display: none;">
-                <label class="form-label">Прикрепить скриншот</label>
-                <input type="file" name="screenshot" class="form-control">
-            </div>
-        </form>
-    </div>
-
-    <!-- ================================================================ -->
-    <!-- ФИЛЬТРЫ                                                           -->
-    <!-- ================================================================ -->
-    <div class="filter-section">
-        <form method="get" id="filterForm">
-            <div class="row g-2 align-items-end">
-                <div class="col-md-2">
-                    <label class="form-label">Дата от</label>
-                    <input type="date" name="date_from" class="form-control" value="{{ filter_date_from }}">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Дата до</label>
-                    <input type="date" name="date_to" class="form-control" value="{{ filter_date_to }}">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Биржа</label>
-                    <select class="form-select" name="exchange">
-                        <option value="">Все биржи</option>
-                        <option value="Bybit"    {% if filter_exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
-                        <option value="HTX"      {% if filter_exchange == 'HTX' %}selected{% endif %}>HTX</option>
-                        <option value="MEXC"     {% if filter_exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
-                        <option value="Telegram" {% if filter_exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
-                        <option value="Bitget"   {% if filter_exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
-                        <option value="Gate"     {% if filter_exchange == 'Gate' %}selected{% endif %}>Gate</option>
-                        <option value="EMCD"     {% if filter_exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
-                        <option value="BingX"    {% if filter_exchange == 'BingX' %}selected{% endif %}>BingX</option>
-                        <option value="Rapira"   {% if filter_exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
-                    </select>
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label">Банк</label>
-                    <select class="form-select" name="bank">
-                        <option value="">Все банки</option>
-                        {% for bank in default_banks %}
-                            <option value="{{ bank.id }}" {% if filter_bank|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-md-1">
-                    <label class="form-label">Тип</label>
-                    <select class="form-select" name="op_type">
-                        <option value="">Все</option>
-                        <option value="BUY"  {% if filter_op_type == 'BUY' %}selected{% endif %}>BUY</option>
-                        <option value="SELL" {% if filter_op_type == 'SELL' %}selected{% endif %}>SELL</option>
-                    </select>
-                </div>
-                <div class="col-md-1">
-                    <label class="form-label">Валюта</label>
-                    <select class="form-select" name="currency">
-                        <option value="">Все</option>
-                        <option value="USDT" {% if filter_currency == 'USDT' %}selected{% endif %}>USDT</option>
-                        <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>TON</option>
-                    </select>
-                </div>
-                <div class="col-md-1">
-                    <label class="form-label">№ Ордера</label>
-                    <input type="text" name="order_id" class="form-control" placeholder="Поиск..." value="{{ filter_order_id }}">
-                </div>
-                <div class="col-md-1 d-flex gap-2">
-                    <button type="submit" class="btn-filter">Найти</button>
-                    <a href="?" class="btn-filter-reset">✕</a>
-                </div>
-            </div>
-        </form>
-    </div>
+        <div id="fileInputWrapper" class="mt-3" style="display: none;">
+            <label class="form-label">Прикрепить скриншот</label>
+            <input type="file" name="screenshot" class="form-control">
+        </div>
+    </form>
 </div>
 
-<div class="table-container shadow-sm" style="overflow-x: auto;">
+<!-- ================================================================ -->
+<!-- ФИЛЬТРЫ                                                           -->
+<!-- ================================================================ -->
+<div class="filter-section">
+    <form method="get" id="filterForm">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-2">
+                <label class="form-label">Дата от</label>
+                <input type="date" name="date_from" class="form-control" value="{{ filter_date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Дата до</label>
+                <input type="date" name="date_to" class="form-control" value="{{ filter_date_to }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Биржа</label>
+                <select class="form-select" name="exchange">
+                    <option value="">Все биржи</option>
+                    <option value="Bybit"    {% if filter_exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
+                    <option value="HTX"      {% if filter_exchange == 'HTX' %}selected{% endif %}>HTX</option>
+                    <option value="MEXC"     {% if filter_exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
+                    <option value="Telegram" {% if filter_exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
+                    <option value="Bitget"   {% if filter_exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
+                    <option value="Gate"     {% if filter_exchange == 'Gate' %}selected{% endif %}>Gate</option>
+                    <option value="EMCD"     {% if filter_exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
+                    <option value="BingX"    {% if filter_exchange == 'BingX' %}selected{% endif %}>BingX</option>
+                    <option value="Rapira"   {% if filter_exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Банк</label>
+                <select class="form-select" name="bank">
+                    <option value="">Все банки</option>
+                    {% for bank in default_banks %}
+                        <option value="{{ bank.id }}" {% if filter_bank|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Тип</label>
+                <select class="form-select" name="op_type">
+                    <option value="">Все</option>
+                    <option value="BUY"  {% if filter_op_type == 'BUY' %}selected{% endif %}>BUY</option>
+                    <option value="SELL" {% if filter_op_type == 'SELL' %}selected{% endif %}>SELL</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">Валюта</label>
+                <select class="form-select" name="currency">
+                    <option value="">Все</option>
+                    <option value="USDT" {% if filter_currency == 'USDT' %}selected{% endif %}>USDT</option>
+                    <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>TON</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label">№ Ордера</label>
+                <input type="text" name="order_id" class="form-control" placeholder="Поиск..." value="{{ filter_order_id }}">
+            </div>
+            <div class="col-md-1 d-flex gap-2 align-items-end">
+                <button type="submit" class="btn-filter">Найти</button>
+                <a href="?" class="btn-filter-reset" title="Сбросить фильтры">✕</a>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- ================================================================ -->
+<!-- ТАБЛИЦА ОРДЕРОВ                                                   -->
+<!-- ================================================================ -->
+<div class="table-container shadow-sm">
     <table class="table" style="min-width: 900px;">
         <thead>
             <tr>
@@ -352,21 +420,15 @@
         </tbody>
     </table>
 
-    <!-- ================================================================ -->
-    <!-- ПАГИНАЦИЯ                                                         -->
-    <!-- ================================================================ -->
+    <!-- ── Пагинация ──────────────────────────────────────────────── -->
     <div class="pagination-wrap">
         <span class="pagination-info">
             Показано {{ page_obj.start_index }}–{{ page_obj.end_index }} из {{ total_count }} ордеров
         </span>
         <ul class="pagination">
             {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page=1{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">«</a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">‹</a>
-                </li>
+                <li class="page-item"><a class="page-link" href="?page=1{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">«</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">‹</a></li>
             {% else %}
                 <li class="page-item disabled"><span class="page-link">«</span></li>
                 <li class="page-item disabled"><span class="page-link">‹</span></li>
@@ -376,19 +438,13 @@
                 {% if page_obj.number == num %}
                     <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                 {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">{{ num }}</a>
-                    </li>
+                    <li class="page-item"><a class="page-link" href="?page={{ num }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">{{ num }}</a></li>
                 {% endif %}
             {% endfor %}
 
             {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">›</a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">»</a>
-                </li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.next_page_number }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">›</a></li>
+                <li class="page-item"><a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if filter_date_from %}&date_from={{ filter_date_from }}{% endif %}{% if filter_date_to %}&date_to={{ filter_date_to }}{% endif %}{% if filter_exchange %}&exchange={{ filter_exchange }}{% endif %}{% if filter_bank %}&bank={{ filter_bank }}{% endif %}{% if filter_op_type %}&op_type={{ filter_op_type }}{% endif %}{% if filter_currency %}&currency={{ filter_currency }}{% endif %}{% if filter_order_id %}&order_id={{ filter_order_id }}{% endif %}">»</a></li>
             {% else %}
                 <li class="page-item disabled"><span class="page-link">›</span></li>
                 <li class="page-item disabled"><span class="page-link">»</span></li>
@@ -397,7 +453,9 @@
     </div>
 </div>
 
-<!-- Модальное окно редактирования -->
+<!-- ================================================================ -->
+<!-- МОДАЛЬНОЕ ОКНО РЕДАКТИРОВАНИЯ                                     -->
+<!-- ================================================================ -->
 <div class="modal fade" id="editModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-lg">
         <div class="modal-content shadow-lg" style="border-radius: 12px;">
@@ -494,9 +552,7 @@
     function generateRandomEmail() {
         const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
         let str = '';
-        for (let i = 0; i < 8; i++) {
-            str += chars[Math.floor(Math.random() * chars.length)];
-        }
+        for (let i = 0; i < 8; i++) str += chars[Math.floor(Math.random() * chars.length)];
         return str + '@gmail.com';
     }
 
@@ -505,9 +561,7 @@
         const emailInput   = document.getElementById('receiptContact');
         if (this.checked) {
             emailWrapper.style.display = 'block';
-            if (!emailInput.value) {
-                emailInput.value = generateRandomEmail();
-            }
+            if (!emailInput.value) emailInput.value = generateRandomEmail();
         } else {
             emailWrapper.style.display = 'none';
         }
@@ -518,11 +572,8 @@
         const amount    = document.getElementById('main_amount').value.trim().replace(',', '.');
         const cost      = document.getElementById('main_cost').value.trim().replace(',', '.');
         const checkDocs = document.getElementById('checkDocs').checked;
-
         if (checkDocs) {
-            const p = parseFloat(price);
-            const a = parseFloat(amount);
-            const c = parseFloat(cost);
+            const p = parseFloat(price), a = parseFloat(amount), c = parseFloat(cost);
             if (isNaN(p) || p <= 0 || isNaN(a) || a <= 0 || isNaN(c) || c <= 0) {
                 e.preventDefault();
                 alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
@@ -548,8 +599,7 @@
     }
 
     function triggerUpload(orderId) {
-        const fileInput = document.getElementById('file-input-' + orderId);
-        if (fileInput) fileInput.click();
+        document.getElementById('file-input-' + orderId).click();
     }
 </script>
 {% endblock %}
