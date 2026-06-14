@@ -2050,8 +2050,8 @@ def admin_profit_view(request):
 
     import time
     t0 = time.time()
-    now      = timezone.now()
-    year_str = request.GET.get('year',  str(now.year))
+    now       = timezone.now()
+    year_str  = request.GET.get('year',  str(now.year))
     month_str = request.GET.get('month', str(now.month).zfill(2))
 
     exchange_filter = request.GET.get('exchange', '')
@@ -2078,9 +2078,7 @@ def admin_profit_view(request):
     #  БЛОК ПРЕДЗАГРУЗКИ — 5 запросов на всю страницу
     # ================================================================
 
-    # 1. Все ордера: история с начала системы + весь текущий год
-    #    (для ytd_base нужна история по месяцам года, для текущего месяца — month_end)
-    #    Берём всё от SYSTEM_START до month_end одним запросом.
+    # 1. Все ордера
     raw_orders = (
         Order.objects
         .filter(created_at__gte=SYSTEM_START, created_at__lt=month_end)
@@ -2092,9 +2090,7 @@ def admin_profit_view(request):
         )
     )
 
-    # Превращаем в объекто-подобные структуры и группируем по user_id
     class _O:
-        """Лёгкая замена ORM-объекта для расчётов."""
         __slots__ = (
             'id', 'user_id', 'created_at', 'currency', 'operation_type',
             'amount', 'cost', 'price', 'commission', 'commission_type',
@@ -2111,37 +2107,55 @@ def admin_profit_view(request):
         o = _O(row)
         all_orders_by_user[o.user_id].append(o)
 
-    # 2. Все UserExpense за текущий год (все месяцы от 01 до текущего)
+    # 2. Все UserExpense за текущий год
     raw_expenses = (
         UserExpense.objects
         .filter(month__startswith=str(year))
         .values('user_id', 'month', 'name', 'amount')
     )
 
-    expenses_by_user_month = defaultdict(float)   # (user_id, mo_key) -> total float
-    expenses_list_by_user  = defaultdict(list)     # (user_id, mo_key) -> [{name, amount}]
+    expenses_by_user_month = defaultdict(float)
+    expenses_list_by_user  = defaultdict(list)
     for e in raw_expenses:
         key = (e['user_id'], e['month'])
         expenses_by_user_month[key] += float(e['amount'])
         expenses_list_by_user[key].append({'name': e['name'], 'amount': e['amount']})
 
-    # 3. Все MonthlyManualEntry за текущий год
+    # 3. Все MonthlyManualEntry за текущий год — все поля
     raw_manuals = (
         MonthlyManualEntry.objects
         .filter(month__startswith=str(year))
-        .values('user_id', 'month', 'gross')
+        .values('user_id', 'month', 'gross',
+                'buy_qty', 'buy_cost', 'buy_comm',
+                'sell_qty', 'sell_cost', 'sell_comm',
+                'exch_comm_rub', 'remainder_qty',
+                'remainder_price', 'remainder_cost', 'source')
     )
 
-    # Простая обёртка чтобы не менять логику (manual.gross)
     class _Manual:
-        __slots__ = ('gross',)
-        def __init__(self, gross): self.gross = gross
+        __slots__ = ('gross', 'buy_qty', 'buy_cost', 'buy_comm',
+                     'sell_qty', 'sell_cost', 'sell_comm',
+                     'exch_comm_rub', 'remainder_qty',
+                     'remainder_price', 'remainder_cost', 'source')
+        def __init__(self, m):
+            self.gross           = float(m.get('gross', 0) or 0)
+            self.buy_qty         = float(m.get('buy_qty', 0) or 0)
+            self.buy_cost        = float(m.get('buy_cost', 0) or 0)
+            self.buy_comm        = float(m.get('buy_comm', 0) or 0)
+            self.sell_qty        = float(m.get('sell_qty', 0) or 0)
+            self.sell_cost       = float(m.get('sell_cost', 0) or 0)
+            self.sell_comm       = float(m.get('sell_comm', 0) or 0)
+            self.exch_comm_rub   = float(m.get('exch_comm_rub', 0) or 0)
+            self.remainder_qty   = float(m.get('remainder_qty', 0) or 0)
+            self.remainder_price = float(m.get('remainder_price', 0) or 0)
+            self.remainder_cost  = float(m.get('remainder_cost', 0) or 0)
+            self.source          = m.get('source', 'manual')
 
-    manuals_by_user_month = {}   # (user_id, mo_key) -> _Manual или None
+    manuals_by_user_month = {}
     for m in raw_manuals:
-        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m['gross'])
+        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
 
-    # 4. init_order (остаток до 1 фев) — один запрос для всех пользователей
+    # 4. init_order
     init_orders = (
         Order.objects
         .filter(exchange_type="Остаток (до 1 фев)")
@@ -2149,11 +2163,11 @@ def admin_profit_view(request):
     )
     init_order_by_user = {o['user_id']: float(o['amount']) for o in init_orders}
 
-    # 5. BankDetail — уже был один запрос, оставляем
+    # 5. BankDetail
     default_banks = BankDetail.objects.all()
 
     # ================================================================
-    #  ОСНОВНОЙ ЦИКЛ — только вычисления в памяти, без запросов к БД
+    #  ОСНОВНОЙ ЦИКЛ
     # ================================================================
 
     user_stats = []
@@ -2175,7 +2189,6 @@ def admin_profit_view(request):
         if u.profit_shares and isinstance(u.profit_shares, dict):
             share_percent = float(u.profit_shares.get(share_key, 20.0))
 
-        # Расходы из кэша (два запроса → 0 запросов)
         month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
         expenses_list  = expenses_list_by_user.get((uid, share_key), [])
 
@@ -2185,20 +2198,33 @@ def admin_profit_view(request):
 
         has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
 
-        if not has_activity:
-            # Manual из кэша
-            manual = manuals_by_user_month.get((uid, share_key))
-            if manual:
-                gross_raw_all  = float(manual.gross)
-                gross_raw_usdt = gross_raw_all
-                gross_raw_ton  = 0.0
+        # Берём manual запись если есть
+        manual = manuals_by_user_month.get((uid, share_key))
 
-            # init_order из кэша
-            manual_crypto_balance = init_order_by_user.get(uid, 0.0)
+        if not has_activity:
+            if manual:
+                gross_raw_all        = manual.gross
+                gross_raw_usdt       = manual.gross
+                gross_raw_ton        = 0.0
+                manual_buy_cost      = manual.buy_cost
+                manual_sell_cost     = manual.sell_cost
+                manual_buy_comm      = manual.buy_comm
+                manual_sell_comm     = manual.sell_comm
+                manual_exch_comm_rub = manual.exch_comm_rub
+                manual_buy_qty       = manual.buy_qty
+                manual_sell_qty      = manual.sell_qty
+            else:
+                manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+                manual_sell_comm = manual_exch_comm_rub = 0.0
+                manual_buy_qty = manual_sell_qty = 0.0
+
+            manual_crypto_balance = manual.remainder_qty if manual else init_order_by_user.get(uid, 0.0)
         else:
             manual_crypto_balance = None
+            manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+            manual_sell_comm = manual_exch_comm_rub = 0.0
+            manual_buy_qty = manual_sell_qty = 0.0
 
-        # Пропорция расходов — БЕЗ ИЗМЕНЕНИЙ
         pos_usdt  = max(0.0, gross_raw_usdt)
         pos_ton   = max(0.0, gross_raw_ton)
         pos_total = pos_usdt + pos_ton
@@ -2214,7 +2240,6 @@ def admin_profit_view(request):
         gross_ton  = max(0.0, gross_raw_ton  - ton_expense_share)
         gross_all  = max(0.0, gross_raw_all  - month_expenses)
 
-        # ytd_base — из кэша, без запросов (главная оптимизация для ОСН)
         if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
             ytd_base = _get_ytd_base_from_cache(
                 uid, year, month,
@@ -2225,7 +2250,7 @@ def admin_profit_view(request):
         else:
             ytd_base = 0.0
 
-        sell_cost_all = calc['month_sell_cost']
+        sell_cost_all = calc['month_sell_cost'] if has_activity else manual_sell_cost
 
         # ── USDT ──────────────────────────────────────────────────────
         ytd_usdt  = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
@@ -2256,16 +2281,24 @@ def admin_profit_view(request):
         bank_comm_rub      = calc['month_buy_comm'] + calc['month_sell_comm']
         usdt_bank_comm     = usdt['month_buy_comm'] + usdt['month_sell_comm']
         ton_bank_comm      = ton['month_buy_comm']  + ton['month_sell_comm']
-        exchange_comm_rub  = calc['month_exch_usdt']
         usdt_exch_comm_rub = usdt['month_exch_comm_rub']
         ton_exch_comm_rub  = ton['month_exch_comm_rub']
         all_exch_comm_rub  = usdt_exch_comm_rub + ton_exch_comm_rub
 
-        # has_activity — из кэша (MonthlyManualEntry)
         has_activity_final = (
             has_activity
             or (uid, share_key) in manuals_by_user_month
         )
+
+        # Финальные значения — из расчёта если есть ордера, иначе из manual
+        final_buy_cost      = calc['month_buy_cost']  if has_activity else manual_buy_cost
+        final_sell_cost     = calc['month_sell_cost'] if has_activity else manual_sell_cost
+        final_buy_comm      = calc['month_buy_comm']  if has_activity else manual_buy_comm
+        final_sell_comm     = calc['month_sell_comm'] if has_activity else manual_sell_comm
+        final_exch_comm_rub = all_exch_comm_rub       if has_activity else manual_exch_comm_rub
+        final_bank_comm     = bank_comm_rub            if has_activity else (manual_buy_comm + manual_sell_comm)
+        final_buy_qty       = calc['month_buy_qty']   if has_activity else manual_buy_qty
+        final_sell_qty      = calc['month_sell_qty']  if has_activity else manual_sell_qty
 
         user_stats.append({
             'user':                  u,
@@ -2274,17 +2307,17 @@ def admin_profit_view(request):
                                       else calc['remainder_qty_display']),
             'prev_balance_qty':      calc['prev_balance_qty'],
             'prev_balance_cost':     calc['prev_balance_cost'],
-            'month_buy_qty':         calc['month_buy_qty'],
-            'month_buy_cost':        calc['month_buy_cost'],
-            'month_sell_qty':        calc['month_sell_qty'],
-            'month_sell_cost':       calc['month_sell_cost'],
-            'turnover':              calc['month_sell_cost'] + calc['month_buy_cost'],
+            'month_buy_qty':         final_buy_qty,
+            'month_buy_cost':        final_buy_cost,
+            'month_sell_qty':        final_sell_qty,
+            'month_sell_cost':       final_sell_cost,
+            'turnover':              final_buy_cost + final_sell_cost,
             'usdt_balance_display':  (manual_crypto_balance
                                       if manual_crypto_balance is not None
                                       else usdt['remainder_qty_display']),
-            'bank_comm_rub':         bank_comm_rub,
-            'exchange_comm_rub':     exchange_comm_rub,
-            'total_comm_rub':        bank_comm_rub,
+            'bank_comm_rub':         final_bank_comm,
+            'exchange_comm_rub':     final_exch_comm_rub,
+            'total_comm_rub':        final_bank_comm,
             'eq_buy_cost':           calc['eq_buy_cost'],
             'gross':                 gross_all,
             'gross_profit_positive': gross_all >= 0,
@@ -2301,7 +2334,7 @@ def admin_profit_view(request):
             'ton_bank_comm':         ton_bank_comm,
             'usdt_exch_comm_rub':    usdt_exch_comm_rub,
             'ton_exch_comm_rub':     ton_exch_comm_rub,
-            'all_exch_comm_rub':     all_exch_comm_rub,
+            'all_exch_comm_rub':     final_exch_comm_rub,
             # Детализация USDT
             'usdt':       usdt,
             'usdt_gross': gross_usdt,
@@ -2316,7 +2349,7 @@ def admin_profit_view(request):
             'ton_net':   net_ton,
         })
 
-    # summary — БЕЗ ИЗМЕНЕНИЙ
+    # summary
     summary = {
         'buy_sum':    sum(s['month_buy_cost']  for s in user_stats),
         'sell_sum':   sum(s['month_sell_cost'] for s in user_stats),
@@ -2352,7 +2385,7 @@ def admin_profit_view(request):
     )
 
     print(f"[profit_view] {time.time() - t0:.2f}s", flush=True)
-    
+
     return render(request, 'custom_admin/profit_list.html', {
         'user_stats':          user_stats,
         'summary':             summary,
@@ -2364,6 +2397,7 @@ def admin_profit_view(request):
         'selected_bank':       bank_filter_id,
         'default_banks':       default_banks,
     })
+
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -2389,8 +2423,7 @@ def api_user_yearly_profit(request):
         return JsonResponse({'error': 'not found'}, status=404)
 
     # ── Предзагрузка данных пользователя ──────────────────────────
-    year_start = datetime(year, 1, 1, tzinfo=MSK)
-    year_end   = datetime(year + 1, 1, 1, tzinfo=MSK)
+    year_end = datetime(year + 1, 1, 1, tzinfo=MSK)
 
     # Все ордера пользователя от SYSTEM_START до конца года
     raw_orders = (
@@ -2434,22 +2467,41 @@ def api_user_yearly_profit(request):
         expenses_by_user_month[key] += float(e['amount'])
         expenses_list_by_user[key].append({'name': e['name'], 'amount': float(e['amount'])})
 
-    # Manual entries за весь год
+    # Manual entries за весь год — все поля
     raw_manuals = (
         MonthlyManualEntry.objects
         .filter(user=u, month__startswith=str(year))
-        .values('user_id', 'month', 'gross')
+        .values('user_id', 'month', 'gross',
+                'buy_qty', 'buy_cost', 'buy_comm',
+                'sell_qty', 'sell_cost', 'sell_comm',
+                'exch_comm_rub', 'remainder_qty',
+                'remainder_price', 'remainder_cost', 'source')
     )
 
     class _Manual:
-        __slots__ = ('gross',)
-        def __init__(self, gross): self.gross = gross
+        __slots__ = ('gross', 'buy_qty', 'buy_cost', 'buy_comm',
+                     'sell_qty', 'sell_cost', 'sell_comm',
+                     'exch_comm_rub', 'remainder_qty',
+                     'remainder_price', 'remainder_cost', 'source')
+        def __init__(self, m):
+            self.gross           = float(m.get('gross', 0) or 0)
+            self.buy_qty         = float(m.get('buy_qty', 0) or 0)
+            self.buy_cost        = float(m.get('buy_cost', 0) or 0)
+            self.buy_comm        = float(m.get('buy_comm', 0) or 0)
+            self.sell_qty        = float(m.get('sell_qty', 0) or 0)
+            self.sell_cost       = float(m.get('sell_cost', 0) or 0)
+            self.sell_comm       = float(m.get('sell_comm', 0) or 0)
+            self.exch_comm_rub   = float(m.get('exch_comm_rub', 0) or 0)
+            self.remainder_qty   = float(m.get('remainder_qty', 0) or 0)
+            self.remainder_price = float(m.get('remainder_price', 0) or 0)
+            self.remainder_cost  = float(m.get('remainder_cost', 0) or 0)
+            self.source          = m.get('source', 'manual')
 
     manuals_by_user_month = {}
     for m in raw_manuals:
-        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m['gross'])
+        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
 
-    # init_order
+    # init_order — остаток до 1 фев
     init_order = Order.objects.filter(
         user=u, exchange_type="Остаток (до 1 фев)"
     ).values('amount').first()
@@ -2496,26 +2548,32 @@ def api_user_yearly_profit(request):
 
         has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
 
+        # Берём manual запись если есть
+        manual = manuals_by_user_month.get((uid, share_key))
+
         if not has_activity:
-            manual = manuals_by_user_month.get((uid, share_key))
             if manual:
-                gross_raw_all  = float(manual.gross)
-                gross_raw_usdt = gross_raw_all
-                gross_raw_ton  = 0.0
-            manual_crypto_balance = init_order_amount
+                gross_raw_all        = manual.gross
+                gross_raw_usdt       = manual.gross
+                gross_raw_ton        = 0.0
+                manual_buy_cost      = manual.buy_cost
+                manual_sell_cost     = manual.sell_cost
+                manual_buy_comm      = manual.buy_comm
+                manual_sell_comm     = manual.sell_comm
+                manual_exch_comm_rub = manual.exch_comm_rub
+                manual_buy_qty       = manual.buy_qty
+                manual_sell_qty      = manual.sell_qty
+                manual_crypto_balance = manual.remainder_qty
+            else:
+                manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+                manual_sell_comm = manual_exch_comm_rub = 0.0
+                manual_buy_qty = manual_sell_qty = 0.0
+                manual_crypto_balance = init_order_amount
         else:
             manual_crypto_balance = None
-
-        pos_usdt  = max(0.0, gross_raw_usdt)
-        pos_ton   = max(0.0, gross_raw_ton)
-        pos_total = pos_usdt + pos_ton
-
-        if pos_total > 0:
-            usdt_expense_share = (pos_usdt / pos_total) * month_expenses
-            ton_expense_share  = (pos_ton  / pos_total) * month_expenses
-        else:
-            usdt_expense_share = 0.0
-            ton_expense_share  = 0.0
+            manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+            manual_sell_comm = manual_exch_comm_rub = 0.0
+            manual_buy_qty = manual_sell_qty = 0.0
 
         gross_all = max(0.0, gross_raw_all - month_expenses)
 
@@ -2529,16 +2587,21 @@ def api_user_yearly_profit(request):
         else:
             ytd_base = 0.0
 
-        sell_cost_all = calc['month_sell_cost']
+        # Финальные значения
+        final_buy_cost      = calc['month_buy_cost']  if has_activity else manual_buy_cost
+        final_sell_cost     = calc['month_sell_cost'] if has_activity else manual_sell_cost
+        final_buy_comm      = calc['month_buy_comm']  if has_activity else manual_buy_comm
+        final_sell_comm     = calc['month_sell_comm'] if has_activity else manual_sell_comm
+        final_exch_comm_rub = (usdt['month_exch_comm_rub'] + ton['month_exch_comm_rub']) if has_activity else manual_exch_comm_rub
+        final_bank_comm     = (calc['month_buy_comm'] + calc['month_sell_comm']) if has_activity else (manual_buy_comm + manual_sell_comm)
+
+        sell_cost_all = final_sell_cost
         ndfl_all      = _calc_ndfl(gross_all, tax_type,
                                    sell_cost=sell_cost_all,
                                    ytd_base=ytd_base)
         after_all  = gross_all - ndfl_all
         share_all  = after_all * (share_percent / 100) if after_all > 0 else 0.0
         net_all    = after_all - share_all
-
-        bank_comm_rub    = calc['month_buy_comm'] + calc['month_sell_comm']
-        all_exch_comm_rub = usdt['month_exch_comm_rub'] + ton['month_exch_comm_rub']
 
         has_activity_final = (
             has_activity or (uid, share_key) in manuals_by_user_month
@@ -2551,10 +2614,10 @@ def api_user_yearly_profit(request):
         months_data.append({
             'month_num':     mo_num,
             'month_name':    mo_name,
-            'buy':           round(calc['month_buy_cost'], 2),
-            'sell':          round(calc['month_sell_cost'], 2),
-            'bank_comm':     round(bank_comm_rub, 2),
-            'exch_comm':     round(all_exch_comm_rub, 2),
+            'buy':           round(final_buy_cost, 2),
+            'sell':          round(final_sell_cost, 2),
+            'bank_comm':     round(final_bank_comm, 2),
+            'exch_comm':     round(final_exch_comm_rub, 2),
             'expenses':      round(month_expenses, 2),
             'gross':         round(gross_all, 2),
             'gross_positive': gross_all >= 0,
@@ -2568,8 +2631,8 @@ def api_user_yearly_profit(request):
             'ton_balance':   round(ton['remainder_qty_display'], 4),
         })
 
-        total_summary['sell']  += calc['month_sell_cost']
-        total_summary['buy']   += calc['month_buy_cost']
+        total_summary['sell']  += final_sell_cost
+        total_summary['buy']   += final_buy_cost
         total_summary['gross'] += gross_all
         total_summary['share'] += share_all
         total_summary['net']   += net_all
@@ -3008,28 +3071,21 @@ def export_screenshots_view(request):
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_manual_entry_save(request):
-    """
-    Сохраняет или обновляет грязную прибыль за месяц для пользователя.
-    Принимает POST с JSON: { user_id, month, gross }
-    """
     if request.method != 'POST':
         return JsonResponse({'error': 'POST only'}, status=405)
 
-    import json
+    import json, re
     try:
         body = json.loads(request.body)
     except Exception:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
     user_id = body.get('user_id')
-    month   = body.get('month')   # '2026-01'
-    gross   = body.get('gross', 0)
+    month   = body.get('month')
 
     if not user_id or not month:
         return JsonResponse({'error': 'user_id и month обязательны'}, status=400)
 
-    # Проверяем формат месяца
-    import re
     if not re.match(r'^\d{4}-\d{2}$', str(month)):
         return JsonResponse({'error': 'Формат месяца: YYYY-MM'}, status=400)
 
@@ -3037,7 +3093,20 @@ def admin_manual_entry_save(request):
         entry, created = MonthlyManualEntry.objects.update_or_create(
             user_id=user_id,
             month=month,
-            defaults={'gross': gross}
+            defaults={
+                'gross':           body.get('gross', 0),
+                'buy_qty':         body.get('buy_qty', 0),
+                'buy_cost':        body.get('buy_cost', 0),
+                'buy_comm':        body.get('buy_comm', 0),
+                'sell_qty':        body.get('sell_qty', 0),
+                'sell_cost':       body.get('sell_cost', 0),
+                'sell_comm':       body.get('sell_comm', 0),
+                'exch_comm_rub':   body.get('exch_comm_rub', 0),
+                'remainder_qty':   body.get('remainder_qty', 0),
+                'remainder_price': body.get('remainder_price', 0),
+                'remainder_cost':  body.get('remainder_cost', 0),
+                'source':          body.get('source', 'manual'),
+            }
         )
         return JsonResponse({
             'ok':      True,
@@ -3048,7 +3117,6 @@ def admin_manual_entry_save(request):
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -3068,16 +3136,167 @@ def admin_manual_entry_list(request, user_id):
 
     data = []
     for e in entries:
-        month_num  = e.month.split('-')[1]  # '2026-01' -> '01'
+        month_num  = e.month.split('-')[1]
         month_name = months_ru.get(month_num, '')
         year       = e.month.split('-')[0]
         data.append({
-            'id':         e.id,
-            'month':      e.month,
-            'month_name': f"{month_name} {year}",
-            'gross':      float(e.gross),
+            'id':              e.id,
+            'month':           e.month,
+            'month_name':      f"{month_name} {year}",
+            'source':          getattr(e, 'source', 'manual'),
+            # Покупки
+            'buy_qty':         float(getattr(e, 'buy_qty',  0) or 0),
+            'buy_cost':        float(getattr(e, 'buy_cost', 0) or 0),
+            'buy_comm':        float(getattr(e, 'buy_comm', 0) or 0),
+            # Продажи
+            'sell_qty':        float(getattr(e, 'sell_qty',  0) or 0),
+            'sell_cost':       float(getattr(e, 'sell_cost', 0) or 0),
+            'sell_comm':       float(getattr(e, 'sell_comm', 0) or 0),
+            # Комиссия биржи
+            'exch_comm_rub':   float(getattr(e, 'exch_comm_rub', 0) or 0),
+            # Остаток
+            'remainder_qty':   float(getattr(e, 'remainder_qty',   0) or 0),
+            'remainder_price': float(getattr(e, 'remainder_price', 0) or 0),
+            'remainder_cost':  float(getattr(e, 'remainder_cost',  0) or 0),
+            # Прибыль
+            'gross':           float(e.gross),
         })
 
     return JsonResponse({'entries': data})
 
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_manual_entry_upload_excel(request):
+    """
+    Массовая загрузка Excel файлов за период.
+    Имя файла = username пользователя (simonenko.xlsx).
+    Читает лист 'Табл.№1', вытаскивает итоговые строки и строки ордеров.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST only'}, status=405)
 
+    import openpyxl
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    month = request.POST.get('month', '').strip()  # '2026-01'
+    files = request.FILES.getlist('excel_files')
+
+    if not month or not files:
+        return JsonResponse({'error': 'month и файлы обязательны'}, status=400)
+
+    results = []
+
+    for f in files:
+        username = f.name.rsplit('.', 1)[0].lower()  # 'simonenko.xlsx' -> 'simonenko'
+        result   = {'file': f.name, 'username': username}
+
+        # Ищем пользователя
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            result['status'] = 'error'
+            result['message'] = f'Пользователь "{username}" не найден'
+            results.append(result)
+            continue
+
+        # Читаем Excel
+        try:
+            wb = openpyxl.load_workbook(f, read_only=True, data_only=True)
+
+            # Ищем лист Табл.№1
+            sheet = None
+            for name in wb.sheetnames:
+                if 'табл' in name.lower() and '1' in name:
+                    sheet = wb[name]
+                    break
+
+            if sheet is None:
+                result['status'] = 'error'
+                result['message'] = 'Лист "Табл.№1" не найден'
+                results.append(result)
+                continue
+
+            # Читаем все строки
+            rows = list(sheet.iter_rows(values_only=True))
+
+            buy_qty = 0.0; buy_cost = 0.0; buy_comm = 0.0
+            sell_qty = 0.0; sell_cost = 0.0; sell_comm = 0.0
+            exch_comm_rub = 0.0
+            remainder_qty = 0.0; remainder_price = 0.0; remainder_cost = 0.0
+            gross = 0.0
+
+            for row in rows:
+                if not row or len(row) < 4:
+                    continue
+
+                label = str(row[0] or '').lower().strip()
+
+                # Итоговые строки
+                if 'торговый результат' in label:
+                    buy_qty   = float(row[4] or 0)
+                    buy_cost  = float(row[6] or 0)
+                    buy_comm  = float(row[7] or 0)
+                    sell_qty  = float(row[8] or 0)
+                    sell_cost = float(row[10] or 0)
+                    sell_comm = float(row[11] or 0)
+                    continue
+
+                if 'остаток' in label and 'нереализован' in label:
+                    remainder_qty   = float(row[4] or 0)
+                    remainder_price = float(row[5] or 0)
+                    remainder_cost  = float(row[6] or 0)
+                    continue
+
+                if 'прибыль' in label and 'реализован' not in label:
+                    gross = float(row[4] or 0)
+                    continue
+
+                # Строки ордеров — считаем комиссию биржи в рублях (M * J)
+                # row[0] = №, row[8] = sell_qty, row[9] = sell_price, row[12] = exch_comm_usdt
+                try:
+                    num = row[0]
+                    if num and str(num).strip().isdigit():
+                        sell_price_row    = float(row[9]  or 0)
+                        exch_comm_usdt_row = float(row[12] or 0)
+                        if exch_comm_usdt_row > 0 and sell_price_row > 0:
+                            exch_comm_rub += exch_comm_usdt_row * sell_price_row
+                except Exception:
+                    pass
+
+            # Сохраняем
+            entry, created = MonthlyManualEntry.objects.update_or_create(
+                user=user,
+                month=month,
+                defaults={
+                    'buy_qty':         buy_qty,
+                    'buy_cost':        buy_cost,
+                    'buy_comm':        buy_comm,
+                    'sell_qty':        sell_qty,
+                    'sell_cost':       sell_cost,
+                    'sell_comm':       sell_comm,
+                    'exch_comm_rub':   round(exch_comm_rub, 2),
+                    'remainder_qty':   remainder_qty,
+                    'remainder_price': remainder_price,
+                    'remainder_cost':  remainder_cost,
+                    'gross':           gross,
+                    'source':          'excel',
+                }
+            )
+
+            result['status']  = 'ok'
+            result['message'] = f'{"Создано" if created else "Обновлено"} — gross: {gross:,.2f} ₽'
+            result['data'] = {
+                'buy_cost':  buy_cost,
+                'sell_cost': sell_cost,
+                'gross':     gross,
+                'remainder': f'{remainder_qty} USDT × {remainder_price} ₽',
+            }
+
+        except Exception as e:
+            result['status']  = 'error'
+            result['message'] = str(e)
+
+        results.append(result)
+
+    return JsonResponse({'results': results})

@@ -41,9 +41,38 @@ class BankDetail(models.Model):
         return self.name
 
 class MonthlyManualEntry(models.Model):
-    user  = models.ForeignKey(User, on_delete=models.CASCADE, related_name='manual_entries')
-    month = models.CharField(max_length=7, verbose_name="Месяц")  # '2026-01'
-    gross = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Грязная прибыль (₽)")
+    SOURCE_CHOICES = [
+        ('manual', 'Вручную'),
+        ('excel',  'Excel'),
+    ]
+
+    user             = models.ForeignKey(User, on_delete=models.CASCADE, related_name='manual_entries')
+    month            = models.CharField(max_length=7)         # '2026-01'
+    source           = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='manual')
+
+    # Покупки
+    buy_qty          = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    buy_cost         = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    buy_comm         = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    # Продажи
+    sell_qty         = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    sell_cost        = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+    sell_comm        = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    # Комиссия биржи
+    exch_comm_rub    = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    # Остаток
+    remainder_qty    = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    remainder_price  = models.DecimalField(max_digits=20, decimal_places=4, default=0)
+    remainder_cost   = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    # Прибыль (было раньше)
+    gross            = models.DecimalField(max_digits=20, decimal_places=2, default=0)
+
+    created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('user', 'month')
@@ -51,7 +80,7 @@ class MonthlyManualEntry(models.Model):
         verbose_name_plural = "Ручные записи прибыли"
 
     def __str__(self):
-        return f"{self.user.username} — {self.month}: {self.gross} ₽"
+        return f"{self.user.username} — {self.month} [{self.source}]"
 
 class Order(models.Model):
     OPERATION_CHOICES = [('BUY', 'Покупка'), ('SELL', 'Продажа')]
