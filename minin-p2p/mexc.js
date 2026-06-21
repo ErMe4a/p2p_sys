@@ -22,7 +22,9 @@ let currentSellDisplayNameTemp = '';
 let originalBuyName = '';
 let currentUrl = window.location.href;
 let urlWatchInterval = null;
-
+let currentCounterpartyName = '';      // ← добавить сюда
+let currentRealName = '';
+let counterpartyNameObserver = null;  
 // Load widget collapsed state from storage
 let widgetCollapsed = false;
 try {
@@ -1098,23 +1100,40 @@ async function createFloatingWidget() {
     }
 }
 
+
+
 function cleanupResources() {
     console.log('P2P Analytics MEXC: Cleaning up resources...');
-    
-    // Disconnect observer
+
+    // Disconnect main observer
     if (observer) {
         observer.disconnect();
         observer = null;
     }
-    
+
     // Remove existing widget
     const existingWidget = document.querySelector('.p2p-analytics-widget--mexc');
     if (existingWidget) {
         existingWidget.remove();
     }
-    
+
     // Reset flags
     isInitializing = false;
+
+
+    if (realNameObserver) {
+        realNameObserver.disconnect();
+        realNameObserver = null;
+    }
+    currentRealName = '';
+
+    // Останавливаем наблюдатель за именем контрагента
+    if (counterpartyNameObserver) {
+        counterpartyNameObserver.disconnect();
+        counterpartyNameObserver = null;
+    }
+    currentCounterpartyName = '';
+
     // Reset ephemeral SELL name on navigation
     currentSellDisplayNameTemp = '';
     // Reset captured BUY original name on navigation
@@ -1285,8 +1304,12 @@ function parseQuantityFromPage() {
                 const text = (valueEl.textContent || '').trim();
                 console.log('P2P Analytics MEXC [parseQuantityFromPage] raw text:', text);
 
-                const quantity = extractNumberMEXC(text);
-                if (quantity !== null && quantity > 0) {
+                // Для количества USDT запятая всегда десятичная
+                const cleaned = text.replace(/[^\d,\.]/g, '');
+                const normalized = cleaned.replace(',', '.');
+                const quantity = parseFloat(normalized);
+
+                if (quantity !== null && quantity > 0 && isFinite(quantity)) {
                     console.log('P2P Analytics MEXC: Found quantity:', quantity);
                     return quantity.toString();
                 }
@@ -2092,9 +2115,151 @@ if (chrome && chrome.storage && chrome.storage.onChanged) {
                 currentDisplayName = changes.displayName.newValue || '';
                 console.log('P2P Analytics MEXC: Display name changed to:', currentDisplayName);
             }
+            if (changes.sellCounterpartyName) {
+                currentCounterpartyName = changes.sellCounterpartyName.newValue || '';
+                console.log('P2P Analytics MEXC: имя контрагента изменено:', currentCounterpartyName);
+                replaceCounterpartyName();
+            }   
         }
     });
 }
+
+// ============================================
+// Замена имени контрагента
+// ============================================
+
+// Меняет только ник в шапке чата
+function replaceNickName() {
+    if (!currentCounterpartyName) return;
+    const el = document.querySelector('.ChatHeader_nickNameContent__f6nZa');
+    if (el && el.textContent !== currentCounterpartyName) {
+        el.textContent = currentCounterpartyName;
+    }
+}
+
+// Меняет реальное имя в шапке + InfoRow
+function replaceRealName() {
+    if (!currentRealName) return;
+
+    const realNameEl = document.querySelector('.ChatHeader_realName-box__5lbOA');
+    if (realNameEl && realNameEl.textContent !== currentRealName) {
+        realNameEl.textContent = currentRealName;
+    }
+
+    const nicknameRow = document.querySelector('[data-testid="info-row-buyerName"], [data-testid="info-row-sellerName"]');
+    if (nicknameRow) {
+        const val = nicknameRow.querySelector('.InfoRow_value__9xKf4');
+        if (val && val.textContent !== currentRealName) {
+            val.textContent = currentRealName;
+        }
+    }
+}
+
+function replaceCounterpartyName() {
+    replaceNickName();
+    replaceRealName();
+}
+
+let realNameObserver = null;
+
+function startRealNameObserver() {
+    if (realNameObserver) {
+        realNameObserver.disconnect();
+        realNameObserver = null;
+    }
+
+    if (!currentRealName) return;
+
+    replaceRealName();
+
+    realNameObserver = new MutationObserver(() => {
+        replaceRealName();
+    });
+
+    realNameObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+    });
+
+    console.log('P2P Analytics MEXC: наблюдатель за реальным именем запущен');
+}
+
+function startCounterpartyNameObserver() {
+    if (counterpartyNameObserver) {
+        counterpartyNameObserver.disconnect();
+        counterpartyNameObserver = null;
+    }
+
+    if (!currentCounterpartyName) return;
+
+    const chatHeader = document.querySelector('.ChatHeader_name-box__eq9Rd');
+    if (!chatHeader) {
+        setTimeout(startCounterpartyNameObserver, 500);
+        return;
+    }
+
+    replaceCounterpartyName();
+
+    counterpartyNameObserver = new MutationObserver(() => {
+        replaceCounterpartyName();
+    });
+
+    counterpartyNameObserver.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+    });
+
+    console.log('P2P Analytics MEXC: наблюдатель за именем контрагента запущен');
+}
+
+// Слушаем сообщения от popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log('P2P Analytics MEXC: получено сообщение:', message);
+
+    // Применить имя контрагента (SELL/BUY)
+    if (message.action === 'applySellName') {
+        currentCounterpartyName = message.name || '';
+        startCounterpartyNameObserver();
+        sendResponse({ success: true });
+        return true;
+    }
+
+    // Сбросить имя контрагента
+    if (message.action === 'resetSellName') {
+        currentCounterpartyName = '';
+        if (counterpartyNameObserver) {
+            counterpartyNameObserver.disconnect();
+            counterpartyNameObserver = null;
+        }
+        sendResponse({ success: true });
+        return true;
+    }
+
+    // Применить своё имя (BUY - displayName)
+    if (message.action === 'applyMyName') {
+        currentDisplayName = message.name || '';
+        sendResponse({ success: true });
+        return true;
+    }
+
+    // Сбросить своё имя (BUY)
+    if (message.action === 'resetBuyName') {
+        currentDisplayName = '';
+        sendResponse({ success: true });
+        return true;
+    }
+
+    if (message.action === 'applyRealName') {
+        currentRealName = message.name || '';
+        startRealNameObserver();
+        sendResponse({ success: true });
+        return true;
+    }
+
+    return true;
+});
 
 // Debug function to manually test the extension
 window.P2PAnalyticsMEXCDebug = {

@@ -59,6 +59,8 @@ function initPopupTheme() {
 let sellDisplayNameInput;
 let applySellDisplayNameBtn;
 
+
+
 // Utility functions
 function showError(message) {
     errorMessage.textContent = message;
@@ -375,33 +377,60 @@ function injectNameMenus() {
     const sellDetails = document.createElement('details');
     sellDetails.id = 'sellNameDetails';
     const sellSummary = document.createElement('summary');
-    sellSummary.textContent = 'Заменить имя контрагента';
+    sellSummary.textContent = 'Информация о контрагенте';
     sellDetails.appendChild(sellSummary);
 
     const sellContent = document.createElement('div');
 
     const sellFormGroup = document.createElement('div');
     sellFormGroup.className = 'form-group';
+    sellFormGroup.style.marginBottom = '0';
     const sellLabel = document.createElement('label');
     sellLabel.setAttribute('for', 'sellDisplayName');
     sellLabel.textContent = '';
     sellDisplayNameInput = document.createElement('input');
     sellDisplayNameInput.type = 'text';
     sellDisplayNameInput.id = 'sellDisplayName';
-    sellDisplayNameInput.placeholder = 'Введите имя для продажи';
+    sellDisplayNameInput.placeholder = 'Никнейм';
     sellFormGroup.appendChild(sellLabel);
     sellFormGroup.appendChild(sellDisplayNameInput);
 
+    const nameFormGroup = document.createElement('div');
+    nameFormGroup.className = 'form-group';
+    nameFormGroup.style.marginBottom = '0';
+    const nameLabel = document.createElement('label');
+    
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.id = 'sellRealName';
+    nameInput.placeholder = 'Имя';
+    nameFormGroup.appendChild(nameLabel);
+    nameFormGroup.appendChild(nameInput);
+
+    const nameActions = document.createElement('div');
+    nameActions.className = 'form-actions';
+    nameActions.style.marginTop = '2px';
+    const applyNameBtn = document.createElement('button');
+    applyNameBtn.className = 'btn';
+    applyNameBtn.id = 'applyRealNameBtn';
+    applyNameBtn.textContent = 'Применить имя';
+    nameActions.appendChild(applyNameBtn);
+
     const sellActions = document.createElement('div');
     sellActions.className = 'form-actions';
+    sellActions.style.marginTop = '4px';
+    sellActions.style.marginBottom = '16px';
     applySellDisplayNameBtn = document.createElement('button');
     applySellDisplayNameBtn.className = 'btn';
     applySellDisplayNameBtn.id = 'applySellDisplayNameBtn';
-    applySellDisplayNameBtn.textContent = 'Применить на текущей странице';
+    applySellDisplayNameBtn.textContent = 'Применить никнейм';
     sellActions.appendChild(applySellDisplayNameBtn);
 
-    sellContent.appendChild(sellFormGroup);
-    sellContent.appendChild(sellActions);
+    // Правильный порядок:
+    sellContent.appendChild(sellFormGroup);    // Никнейм
+    sellContent.appendChild(sellActions);      // Применить на текущей странице
+    sellContent.appendChild(nameFormGroup);    // Реальное имя
+    sellContent.appendChild(nameActions);      // Применить имя
     sellDetails.appendChild(sellContent);
 
     // Append details to container
@@ -450,7 +479,27 @@ function injectNameMenus() {
             }
         });
     }
+    
 
+
+    // Bind кнопку применения реального имени
+    const applyRealNameBtnEl = document.getElementById('applyRealNameBtn');
+    if (applyRealNameBtnEl) {
+        applyRealNameBtnEl.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const name = (document.getElementById('sellRealName')?.value || '').trim();
+            if (!name) { showError('Введите реальное имя'); return; }
+            const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+            const tabId = tabs?.[0]?.id;
+            if (!tabId) { showError('Не найдена активная вкладка'); return; }
+            chrome.tabs.sendMessage(tabId, { action: 'applyRealName', name }, (response) => {
+                if (chrome.runtime.lastError) { showError(chrome.runtime.lastError.message); return; }
+                if (response?.success) showStatus('Реальное имя применено');
+                else showError(response?.error || 'Ошибка');
+            });
+        });
+    }
+    
     // Bind BUY reset button
     const resetBuyBtnEl = document.getElementById('resetBuyDisplayNameBtn');
     if (resetBuyBtnEl) {

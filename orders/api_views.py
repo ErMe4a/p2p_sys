@@ -31,6 +31,8 @@ EXCHANGE_NAME_TO_ID = {
     "BingX": 5, "BINGX": 5,
 }
 
+MAX_COMMISSION_PERCENT = 5.0
+
 def get_exchange_id(name):
     return EXCHANGE_NAME_TO_ID.get(str(name), 1)
 
@@ -159,6 +161,19 @@ def order(request):
     commission      = data.get("commission") or 0
     commission_type = data.get("commissionType", "PERCENT")
     is_manual       = bool(data.get("manualEdit", False))
+
+    # ── Защита от ошибочного ввода комиссии (опечатки типа 50 вместо 0.5) ──
+    try:
+        commission_value = float(commission)
+    except (TypeError, ValueError):
+        commission_value = 0
+
+    if commission_type == "PERCENT" and commission_value > MAX_COMMISSION_PERCENT:
+        return Response({
+            "success": False,
+            "message": f"Комиссия {commission_value}% превышает максимально допустимую ({MAX_COMMISSION_PERCENT}%). Проверьте корректность ввода."
+        }, status=400)
+    # ─────────────────────────────────────────────────────────────────────
 
     created_at = None
     if "createdAt" in data:
@@ -323,7 +338,6 @@ def order(request):
             "evotorUuid": getattr(receipt_debug, "evotor_uuid", None),
         } if receipt_debug else {"enabled": False}
     })
-
 
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])

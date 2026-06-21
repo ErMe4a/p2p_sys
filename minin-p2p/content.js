@@ -97,6 +97,7 @@ function isSellPage() {
 // New: Display name replacement helpers
 let currentDisplayName = '';
 let currentSellDisplayNameTemp = '';
+let currentSellRealNameTemp = '';
 // Added: keep the original BUY page name to allow reset
 let originalBuyName = '';
 let originalOwnName = '';
@@ -164,7 +165,7 @@ function replaceSellerNameInDom(name, root = document) {
     if (!name) return false;
     let replaced = false;
 
-    // Strategy 1: Explicit "Verified" line — replace the last item (name)
+    // Только .im-container-caption__info-verified
     try {
         const verifiedLines = root.querySelectorAll('.im-container-caption__info-verified');
         verifiedLines.forEach((line) => {
@@ -177,72 +178,7 @@ function replaceSellerNameInDom(name, root = document) {
                 replaced = true;
             }
         });
-    } catch (e) {
-        // ignore
-    }
-
-    // Strategy 2: Legacy phrase-based replacement
-    try {
-        if (replacePayerNameInDom(name, root)) {
-            replaced = true;
-        }
-    } catch (e) {
-        // ignore
-    }
-
-    // Strategy 3: Broader style-based match (gold + bold)
-    try {
-        const styledCandidates = root.querySelectorAll(
-            '.moly-space-item span, .moly-space-item div, .moly-space span, .moly-space div, .moly-text, span[style*="font-weight"], span[style*="font-weight:"], span[style*="color"]'
-        );
-        
-        styledCandidates.forEach(el => {
-            try {
-                // Исключаем аватарки и ввод текста
-                if (el.closest('.by-avatar')) return;
-                if (el.closest('.im-input-textarea')) return;
-                if (el.classList && el.classList.contains('by-avatar__container__letter')) return;
-
-                const styleAttr = el.getAttribute('style') || '';
-                const cs = window.getComputedStyle(el);
-                
-                // Проверка на жирность
-                const isBold = (parseInt(cs.fontWeight, 10) || 400) >= 600 || 
-                               cs.fontWeight === 'bold' || 
-                               cs.fontWeight === '600' || 
-                               /font-weight:\s*(600|700|bold)/.test(styleAttr);
-                               
-                // Проверка на золотой цвет
-                const isGold = cs.color === GOLD_COLOR_RGB || 
-                               /var\(--bds-brand-700-normal/.test(styleAttr) || 
-                               /#f7a600/i.test(styleAttr) ||
-                               /rgb\(\s*247\s*,\s*166\s*,\s*0\s*\)/.test(cs.color);
-
-                if (isBold && isGold) {
-                    // --- ГЛАВНОЕ ИСПРАВЛЕНИЕ ---
-                    // Если мы на странице BUY, то Золотой Текст = ЭТО МЫ (Покупатель/Payer).
-                    // Мы (как функция замены Продавца) НЕ ДОЛЖНЫ его трогать.
-                    if (isBuyPage()) {
-                        return; 
-                    }
-
-                    // На странице SELL Золотой Текст = ЭТО ОН (Покупатель/Buyer).
-                    // Мы должны его заменить.
-                    
-                    const current = (el.textContent || '').trim();
-                    if (current && current !== name) {
-                        // Защита от замены служебных слов
-                        if (current.length > 2 && !/verified|name|имя|status|статус|completed|завершен/i.test(current)) {
-                             el.textContent = name;
-                             replaced = true;
-                        }
-                    }
-                }
-            } catch (_) { /* noop */ }
-        });
-    } catch (e) {
-        // ignore
-    }
+    } catch (e) { /* ignore */ }
 
     return replaced;
 }
@@ -279,118 +215,45 @@ function replaceBuyTipsName(name, root = document) {
 
 // New: Replace own name in payment method details (SELL order - your payment details)
 function replaceOwnNameInPaymentMethod(name, root = document) {
-    if (name === null || name === undefined) return false;
+    if (!name) return false;
     let replaced = false;
-    
+
     try {
-        const paymentSection = root.querySelector('#fiat-otc-order__payment');
-        if (!paymentSection) return false;
-        
-        // Find "Мой аккаунт получения" marker element
-        const allElements = paymentSection.querySelectorAll('span, div');
-        let myAccountMarker = null;
-        
-        for (const el of allElements) {
-            const text = (el.textContent || '').trim();
-            const normalized = text.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
-            if (/мой\s+аккаунт\s+получени|my\s+receiv.*account|my\s+account/i.test(normalized)) {
-                if (text.length < 200) {
-                    myAccountMarker = el;
-                    break;
-                }
-            }
-        }
-        
-        if (!myAccountMarker) {
-             for (const el of allElements) {
-                const exactText = (el.textContent || '').trim();
-                if (exactText === 'Мой аккаунт получения' || exactText === 'My receiving account' || exactText === 'My account') {
-                    myAccountMarker = el;
-                    break;
-                }
-            }
-        }
-        
-        if (!myAccountMarker) return false;
-        
-        // Find search root
-        let searchRoot = myAccountMarker.nextElementSibling;
-        if (!searchRoot) {
-            let parent = myAccountMarker.parentElement;
-            while (parent && parent !== paymentSection) {
-                searchRoot = parent.nextElementSibling;
-                if (searchRoot) break;
-                parent = parent.parentElement;
-            }
-        }
-        
-        if (!searchRoot) return false;
-        
-        const allRows = searchRoot.querySelectorAll('div[style*="display: flex"]');
-        
-        allRows.forEach(row => {
-            const children = Array.from(row.children);
-            if (children.length < 2) return;
+        const items = root.querySelectorAll('.order-detail__pay-info-item');
+        items.forEach(item => {
+            const spans = item.querySelectorAll('span.moly-text');
+            if (spans.length < 2) return;
             
-            const labelElement = children[0];
-            const valueContainer = children[1];
-            
-            if (!labelElement || !valueContainer) return;
-            
-            const labelText = (labelElement.textContent || '').trim().toLowerCase();
-            const normalizedLabel = labelText.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
-            
-            // --- ИСПРАВЛЕНИЕ: ИГНОРИРУЕМ ПОЛЯ С НАЗВАНИЕМ БАНКА ---
-            // Если лейбл содержит "bank", "банк", "method", "метод" — это не ФИО, пропускаем.
-            if (/bank|банк|branch|отделение|method|метод/i.test(normalizedLabel)) {
-                return;
-            }
+            const label = (spans[0].textContent || '').trim().toLowerCase();
+            if (label !== 'name' && label !== 'имя' && label !== 'фио') return;
 
-            const isNameField = /фамилия.*имя|full.*name|\bname\b|nombre|nome|nom|имя\s+и\s+фамилия/i.test(normalizedLabel);
-            if (!isNameField) return;
-            
-            let valueElement = valueContainer.querySelector('[class*="space-item-first"]');
-            if (!valueElement) {
-                const valueDivs = valueContainer.querySelectorAll('div');
-                for (const div of valueDivs) {
-                    const text = (div.textContent || '').trim();
-                    if (text && text.length > 0 && !div.querySelector('i')) {
-                        valueElement = div;
-                        break;
+            const valueSpan = spans[1];
+            if (!valueSpan) return;
+
+            // Берём только текстовые ноды (без SVG)
+            let currentText = '';
+            valueSpan.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    currentText += node.textContent;
+                }
+            });
+            currentText = currentText.trim();
+
+            if (currentText && currentText !== name) {
+                // Меняем только первый текстовый нод
+                valueSpan.childNodes.forEach(node => {
+                    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                        node.textContent = name;
+                        replaced = true;
                     }
-                }
-            }
-            
-            if (!valueElement) return;
-
-            // Игнорируем золотой текст (защита от случайной замены чужого имени)
-            const styleAttr = valueElement.getAttribute('style') || '';
-            const cs = window.getComputedStyle(valueElement);
-            const isGold = cs.color === GOLD_COLOR_RGB || /#f7a600/i.test(styleAttr) || /var\(--bds-brand-700-normal/.test(styleAttr);
-            
-            if (isGold) {
-                return; 
-            }
-
-            const current = (valueElement.textContent || '').trim();
-            const isPlaceholder = !current || /реквизиты\s+указаны/i.test(current);
-            
-            // Capture original Logic
-            if (!originalOwnName && !isPlaceholder && current) {
-                if (current !== name) { 
-                     originalOwnName = current;
-                }
-            }
-
-            if (name && current !== name) {
-                 valueElement.textContent = name;
-                 replaced = true;
+                });
+                console.log('P2P Analytics: меняем своё имя:', currentText, '→', name);
             }
         });
     } catch (e) {
         console.warn('P2P Analytics: Failed to replace own name:', e);
     }
-    
+
     return replaced;
 }
 
@@ -1943,34 +1806,40 @@ function initializeMutationObserver() {
         observer.disconnect();
     }
     
-    // Debounce mechanism to prevent too frequent calls
     let debounceTimer = null;
     
     observer = new MutationObserver(async (mutationsList, obs) => {
-        // Clear previous timer
         if (debounceTimer) {
             clearTimeout(debounceTimer);
         }
         
-        // Debounce the handler
         debounceTimer = setTimeout(async () => {
             // 1. Existing name replacement logic
             ensureOriginalBuyNameCaptured();
             applyDisplayNameIfNeeded();
             
-            if (currentSellDisplayNameTemp) {
-                // Пытаемся заменить имя и в стандартных полях, и "золотым" методом
-                try { replaceCounterpartyNameInPaymentMethod(currentSellDisplayNameTemp); } catch (_) { /* noop */ }
-                replaceSellerNameInDom(currentSellDisplayNameTemp);
+            
+
+            if (currentSellRealNameTemp) {
+                document.querySelectorAll('.im-container-caption__info-verified').forEach(el => {
+                    const nameContainer = el.querySelector('.moly-space-item.moly-space-item-last');
+                    if (nameContainer && nameContainer.textContent.trim() !== currentSellRealNameTemp) {
+                        nameContainer.textContent = currentSellRealNameTemp;
+                    }
+                });
+                document.querySelectorAll('.chat-info__real-name').forEach(el => {
+                    if (el.textContent.trim() !== currentSellRealNameTemp) {
+                        el.textContent = currentSellRealNameTemp;
+                    }
+                });
             }
 
-            // 2. NEW: Try to inject widget if chat appeared
+            // 2. Try to inject widget if chat appeared
             await createFloatingWidget();
 
-        }, 100); // 100ms debounce
+        }, 100);
     });
 
-    // Start observing
     observer.observe(document.body, {
         childList: true,
         subtree: true,
@@ -1978,7 +1847,6 @@ function initializeMutationObserver() {
         attributeFilter: ['class', 'style']
     });
 }
-
 // --- Main Execution ---
 async function initialize() {
     // Prevent multiple simultaneous initializations
@@ -2164,6 +2032,8 @@ if (chrome && chrome.storage && chrome.storage.onChanged) {
 // Listen for one-time SELL name application from popup
 try {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    
+        // Применить никнейм
         if (message && message.action === 'applySellName') {
             try {
                 const name = (message.name || '').trim();
@@ -2171,21 +2041,80 @@ try {
                     sendResponse({ success: false, error: 'Имя пустое' });
                     return;
                 }
-                currentSellDisplayNameTemp = name; // ephemeral, cleared on navigation
-                
-                // Apply replacement using multiple strategies
+
                 let replaced = false;
-                
-                // Запускаем все стратегии замены без проверок на тип страницы
-                replaced = replaceCounterpartyNameInPaymentMethod(name) || replaced;
-                replaced = replaceSellerNameInDom(name) || replaced;
-                
-                // Even if not replaced immediately, keep ephemeral for future DOM mutations
+
+                const chatHeader = document.querySelector('.im-container-caption, .ChatHeader, [class*="caption"]');
+                const searchRoot = chatHeader || document;
+                searchRoot.querySelectorAll('span.moly-text').forEach(el => {
+                    if (el.classList.contains('inline') && el.children.length === 0 && el.textContent.trim()) {
+                        const fw = el.getAttribute('class') || '';
+                        if (fw.includes('font-[600]') && el.textContent.trim() !== name) {
+                            console.log('P2P Analytics: меняем никнейм:', el.textContent.trim(), '→', name);
+                            el.textContent = name;
+                            replaced = true;
+                        }
+                    }
+                });
+
                 sendResponse({ success: true, replaced });
             } catch (e) {
-                sendResponse({ success: false, error: e?.message || 'Ошибка применения имени' });
+                sendResponse({ success: false, error: e?.message || 'Ошибка' });
             }
-            return true; // indicate async/sync response handled
+            return true;
+        }
+
+        // Применить имя (Verified)
+        if (message && message.action === 'applyRealName') {
+            try {
+                const name = (message.name || '').trim();
+                if (!name) {
+                    sendResponse({ success: false, error: 'Имя пустое' });
+                    return;
+                }
+                currentSellRealNameTemp = name;
+
+                let replaced = false;
+
+                document.querySelectorAll('.im-container-caption__info-verified').forEach(el => {
+                    const nameContainer = el.querySelector('.moly-space-item.moly-space-item-last');
+                    if (nameContainer && nameContainer.textContent.trim() !== name) {
+                        console.log('P2P Analytics: меняем Verified имя:', nameContainer.textContent.trim(), '→', name);
+                        nameContainer.textContent = name;
+                        replaced = true;
+                    }
+                });
+
+                document.querySelectorAll('.chat-info__real-name').forEach(el => {
+                    if (el.textContent.trim() !== name) {
+                        el.textContent = name;
+                        replaced = true;
+                    }
+                });
+
+                sendResponse({ success: true, replaced });
+            } catch (e) {
+                sendResponse({ success: false, error: e?.message || 'Ошибка' });
+            }
+            return true;
+        }
+
+        // Применить своё имя (Name в реквизитах на SELL)
+        if (message && message.action === 'applyMyName') {
+            try {
+                const name = (message.name || '').trim();
+                currentDisplayName = name;
+
+                let replaced = false;
+                if (name && isSellPage()) {
+                    replaced = replaceOwnNameInPaymentMethod(name);
+                }
+
+                sendResponse({ success: true, replaced });
+            } catch (e) {
+                sendResponse({ success: false, error: e?.message || 'Ошибка' });
+            }
+            return true;
         }
     });
 } catch (e) {
