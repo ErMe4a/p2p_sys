@@ -292,10 +292,23 @@
                     <!-- Прочие -->
                     <td>
                         <div class="finance-block">
-                            <div class="finance-row">
-                                <span class="val-label">Банк:</span>
-                                <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span>
-                                <span style="font-size:10px;color:var(--text-muted);">₽</span>
+                            <div class="expense-tooltip">
+                                <div class="finance-row">
+                                    <span class="val-label">Банк:</span>
+                                    <span class="val-money text-muted money row-bank">{{ stat.bank_comm_rub }}</span>
+                                    <span style="font-size:10px;color:var(--text-muted);">₽</span>
+                                </div>
+                                {% if stat.top_bank_comm_orders %}
+                                <div class="tooltip-box">
+                                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">🏦 Топ-3 крупнейших комиссий</div>
+                                    {% for row in stat.top_bank_comm_orders %}
+                                    <div class="tooltip-row">
+                                        <span style="color: var(--text-muted);">{{ row.op }} {{ row.date }} ({{ row.cost }}₽)</span>
+                                        <span style="color: #ffc107;"><span class="money">{{ row.comm }}</span> ₽</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
                             </div>
                             <div class="finance-row">
                                 <span class="val-label">Биржа:</span>

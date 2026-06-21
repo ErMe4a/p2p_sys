@@ -2290,6 +2290,30 @@ def admin_profit_view(request):
             or (uid, share_key) in manuals_by_user_month
         )
 
+        # Топ-3 ордера по размеру комиссии банка за месяц (для тултипа)
+        top_bank_comm_orders = []
+        if has_activity:
+            month_user_orders = [
+                o for o in all_orders_by_user.get(uid, [])
+                if month_start <= o.created_at < month_end
+                and (not exchange_filter or exchange_filter.lower() in (o.exchange_type or '').lower())
+                and (not bank_filter_id or str(o.bank_detail_id) == str(bank_filter_id))
+            ]
+            comm_rows = []
+            for o in month_user_orders:
+                cost     = float(o.cost or 0)
+                comm_val = float(o.commission or 0)
+                comm_rub = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
+                if comm_rub > 0:
+                    comm_rows.append({
+                        'date':   o.created_at.astimezone(MSK).strftime('%d.%m %H:%M'),
+                        'cost':   cost,
+                        'comm':   comm_rub,
+                        'op':     o.operation_type,
+                    })
+            comm_rows.sort(key=lambda r: r['comm'], reverse=True)
+            top_bank_comm_orders = comm_rows[:3]
+
         # Финальные значения — из расчёта если есть ордера, иначе из manual
         final_buy_cost      = calc['month_buy_cost']  if has_activity else manual_buy_cost
         final_sell_cost     = calc['month_sell_cost'] if has_activity else manual_sell_cost
@@ -2335,6 +2359,7 @@ def admin_profit_view(request):
             'usdt_exch_comm_rub':    usdt_exch_comm_rub,
             'ton_exch_comm_rub':     ton_exch_comm_rub,
             'all_exch_comm_rub':     final_exch_comm_rub,
+            'top_bank_comm_orders':  top_bank_comm_orders,
             # Детализация USDT
             'usdt':       usdt,
             'usdt_gross': gross_usdt,

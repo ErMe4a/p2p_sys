@@ -577,7 +577,16 @@
             if (isNaN(p) || p <= 0 || isNaN(a) || a <= 0 || isNaN(c) || c <= 0) {
                 e.preventDefault();
                 alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
+                return;
             }
+        }
+
+        const commVal  = parseFloat(document.querySelector('[name="commission_value"]').value.replace(',', '.'));
+        const commType = document.querySelector('[name="commission_type"]').value;
+        if (commType === 'PERCENT' && !isNaN(commVal) && commVal > 5) {
+            e.preventDefault();
+            alert('Ошибка! Комиссия банка указана в процентах и превышает 5% (' + commVal + '%). Проверьте, не перепутали ли вы поле — возможно нужно выбрать "₽" вместо "%".');
+            return;
         }
     });
 
@@ -597,6 +606,15 @@
         document.getElementById('modal_currency').value  = currency || 'USDT';
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
+
+    document.getElementById('editForm').addEventListener('submit', function(e) {
+        const commVal  = parseFloat(document.getElementById('modal_comm_val').value.replace(',', '.'));
+        const commType = document.getElementById('modal_comm_type').value;
+        if (commType === 'PERCENT' && !isNaN(commVal) && commVal > 5) {
+            e.preventDefault();
+            alert('Ошибка! Комиссия банка указана в процентах и превышает 5% (' + commVal + '%). Проверьте, не перепутали ли вы поле — возможно нужно выбрать "₽" вместо "%".');
+        }
+    });
 
     function triggerUpload(orderId) {
         document.getElementById('file-input-' + orderId).click();
