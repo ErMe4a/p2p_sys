@@ -1686,6 +1686,46 @@ def _get_ytd_base(user, year: int, month: int, share_key: str) -> float:
     return ytd_base
 
 
+def _calc_lifo_price(buy_orders, remainder_qty, prev_avg_price=0.0):
+    """
+    Курс остатка по методу LIFO (последние закупки первыми) — как в Excel-отчёте.
+    buy_orders — список BUY ордеров месяца в хронологическом порядке.
+    remainder_qty — итоговый остаток (qty) на конец месяца.
+    prev_avg_price — курс переходящего остатка с прошлого месяца (если не хватает покупок месяца).
+    """
+    abs_qty = abs(remainder_qty)
+    if abs_qty == 0:
+        return 0.0
+
+    buys = []
+    for o in reversed(buy_orders):
+        qty  = float(o.amount or 0)
+        cost = float(o.cost or 0)
+        price = float(o.price or 0)
+        unit_price = cost / qty if qty > 0 else price
+        buys.append((qty, unit_price))
+
+    if prev_avg_price > 0:
+        buys.append((float('inf'), prev_avg_price))
+
+    if not buys:
+        return 0.0
+
+    total_cost = 0.0
+    need = abs_qty
+    for qty, unit_price in buys:
+        if need <= 0:
+            break
+        take = min(qty, need)
+        total_cost += take * unit_price
+        need -= take
+
+    if need > 0 and buys:
+        total_cost += need * buys[-1][1]
+
+    return round(total_cost / abs_qty, 4) if abs_qty > 0 else 0.0
+
+
 def _calc_currency(user, month_start, month_end,
                    currency='USDT',
                    exchange_filter='', bank_filter_id=''):
@@ -1766,9 +1806,15 @@ def _calc_currency(user, month_start, month_end,
 
     remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_comm
 
-    avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
+    # ── LIFO курс остатка (как в Excel-отчёте) ──────────────────────
+    month_buy_orders_list = [o for o in month_orders if o.operation_type == 'BUY']
+    lifo_price = _calc_lifo_price(
+        month_buy_orders_list, remainder_qty_display, prev_avg_price=prev_avg_price
+    )
+    avg_price      = lifo_price
     remainder_cost = remainder_qty_display * avg_price
     eq_buy_cost    = total_buy_cost - remainder_cost
+    # ──────────────────────────────────────────────────────────────────
 
     if month_sell_qty == 0:
         gross = 0.0
@@ -1837,118 +1883,186 @@ def _calc_month_profit_filtered(user, month_start, month_end,
 
 
 
+def _calc_lifo_price_excel(month_buy_orders, remainder_qty, prev_carry=None):
+    """
+    Точная копия логики из export_excel_report._calc_lifo_price.
+    month_buy_orders — BUY ордера ТЕКУЩЕГО месяца (объекты с .amount/.cost/.price).
+    prev_carry — (qty, price) перенос остатка с предыдущего месяца.
+    """
+    abs_qty = abs(remainder_qty)
+    if abs_qty == 0:
+        return 0.0
+
+    buys = []
+    for o in reversed(month_buy_orders):
+        qty   = float(o.amount or 0)
+        cost  = float(o.cost or 0)
+        price = float(o.price or 0)
+        unit_price = cost / qty if qty > 0 else price
+        buys.append((qty, unit_price))
+
+    if prev_carry is not None:
+        carry_qty, carry_price = prev_carry
+        if carry_qty != 0 and carry_price > 0:
+            buys.append((abs(carry_qty), carry_price))
+
+    if not buys:
+        return 0.0
+
+    total_cost = 0.0
+    need = abs_qty
+    for qty, unit_price in buys:
+        if need <= 0:
+            break
+        take = min(qty, need)
+        total_cost += take * unit_price
+        need -= take
+
+    if need > 0 and buys:
+        total_cost += need * buys[-1][1]
+
+    return round(total_cost / abs_qty, 4) if abs_qty > 0 else 0.0
+
+
 def _calc_currency_from_orders(user_id, month_start, month_end,
                                 all_orders_by_user,
                                 currency='USDT',
                                 exchange_filter='', bank_filter_id=''):
     """
-    Аналог _calc_currency, но работает с уже загруженными ордерами.
-    all_orders_by_user — dict: user_id -> list of Order objects (все ордера за всё время).
+    Расчёт прибыли по одной валюте — ТОЧНАЯ копия логики Excel-отчёта.
+    LIFO по месяцам с rolling-переносом остатка (prev_carry),
+    комиссия биржи считается по ПОСЛЕДНЕМУ курсу продажи месяца (как в Excel).
 
-    Логика расчёта — ИДЕНТИЧНА оригинальной _calc_currency.
+    Чтобы получить prev_carry на начало month_start, рекурсивно проходим
+    все месяцы от SYSTEM_START.
     """
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+
     orders = all_orders_by_user.get(user_id, [])
+    orders_currency = sorted(
+        [o for o in orders if o.currency == currency],
+        key=lambda o: o.created_at
+    )
 
-    # Фильтр по валюте
-    orders_currency = [o for o in orders if o.currency == currency]
+    if not orders_currency:
+        return {
+            'currency': currency, 'prev_balance_qty': 0.0, 'prev_balance_cost': 0.0,
+            'prev_avg_price': 0.0, 'month_buy_qty': 0.0, 'month_buy_cost': 0.0,
+            'month_buy_comm': 0.0, 'month_sell_qty': 0.0, 'month_sell_cost': 0.0,
+            'month_sell_comm': 0.0, 'month_exch_comm': 0.0, 'month_exch_comm_rub': 0.0,
+            'total_buy_qty': 0.0, 'total_buy_cost': 0.0, 'remainder_qty_display': 0.0,
+            'remainder_cost': 0.0, 'avg_price': 0.0, 'eq_buy_cost': 0.0, 'gross': 0.0,
+        }
 
-    # Разделяем на историю (до месяца) и текущий месяц
-    prev_orders  = [o for o in orders_currency if o.created_at < month_start]
-    month_orders = [o for o in orders_currency
-                    if month_start <= o.created_at < month_end]
+    # Группируем ВСЕ ордера валюты по месяцам (МСК) от начала до month_end
+    by_month = {}
+    for o in orders_currency:
+        if o.created_at >= month_end:
+            break
+        dt_msk = o.created_at.astimezone(MSK)
+        key = (dt_msk.year, dt_msk.month)
+        by_month.setdefault(key, []).append(o)
 
-    # Применяем фильтры к текущему месяцу (как в оригинале)
-    if exchange_filter:
-        month_orders = [o for o in month_orders
-                        if exchange_filter.lower() in (o.exchange_type or '').lower()]
-    if bank_filter_id:
-        month_orders = [o for o in month_orders
-                        if str(getattr(o, 'bank_detail_id', '')) == str(bank_filter_id)]
+    target_key = (month_start.year, month_start.month)
 
-    # История — считаем остаток (идентично оригиналу)
-    prev_buy_qty   = 0.0
-    prev_buy_cost  = 0.0
-    prev_sell_qty  = 0.0
-    prev_exch_comm = 0.0
+    prev_carry = None  # (qty, price)
+    result = None
 
-    for o in prev_orders:
-        amt = float(o.amount or 0)
-        if o.operation_type == 'BUY':
-            prev_buy_qty  += amt
-            prev_buy_cost += float(o.cost or 0)
+    for key in sorted(by_month.keys()):
+        month_list = by_month[key]
+        is_target  = (key == target_key)
+
+        # Фильтры применяются только к целевому месяцу (как в оригинале)
+        filtered_list = month_list
+        if is_target:
+            filtered_list = [
+                o for o in month_list
+                if (not exchange_filter or exchange_filter.lower() in (o.exchange_type or '').lower())
+                and (not bank_filter_id or str(getattr(o, 'bank_detail_id', '')) == str(bank_filter_id))
+            ]
+
+        buy_qty = sum(float(o.amount or 0) for o in filtered_list if o.operation_type == 'BUY')
+        buy_cost = sum(float(o.cost or 0) for o in filtered_list if o.operation_type == 'BUY')
+        buy_comm = sum(
+            (float(o.cost or 0) * float(o.commission or 0) / 100
+             if o.commission_type == 'PERCENT' else float(o.commission or 0))
+            for o in filtered_list if o.operation_type == 'BUY'
+        )
+        sell_qty = sum(float(o.amount or 0) for o in filtered_list if o.operation_type == 'SELL')
+        sell_cost = sum(float(o.cost or 0) for o in filtered_list if o.operation_type == 'SELL')
+        sell_comm = sum(
+            (float(o.cost or 0) * float(o.commission or 0) / 100
+             if o.commission_type == 'PERCENT' else float(o.commission or 0))
+            for o in filtered_list if o.operation_type == 'SELL'
+        )
+        exch_qty = sum(
+            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+            for o in filtered_list if o.operation_type == 'SELL'
+        )
+        last_sell_price = 0.0
+        for o in filtered_list:
+            if o.operation_type == 'SELL' and float(o.price or 0) > 0:
+                last_sell_price = float(o.price or 0)
+
+        carry_qty = float(prev_carry[0]) if prev_carry else 0.0
+        remainder_qty = buy_qty + carry_qty - sell_qty - exch_qty
+
+        buy_orders_month = [o for o in filtered_list if o.operation_type == 'BUY']
+        lifo_price = _calc_lifo_price_excel(buy_orders_month, remainder_qty, prev_carry=prev_carry)
+
+        remainder_cost = remainder_qty * lifo_price
+        total_buy_for_month = buy_cost + (carry_qty * (prev_carry[1] if prev_carry else 0.0))
+        eq_buy_cost_month = total_buy_for_month - remainder_cost
+
+        exch_comm_rub_month = exch_qty * last_sell_price
+
+        if sell_qty == 0:
+            gross_month = 0.0
         else:
-            exch_rate = float(o.exchange_commission_rate or 0)
-            prev_sell_qty  += amt
-            prev_exch_comm += amt * exch_rate / 100
+            gross_month = sell_cost - eq_buy_cost_month - buy_comm - sell_comm - exch_comm_rub_month
 
-    prev_balance_qty  = prev_buy_qty - prev_sell_qty - prev_exch_comm
-    prev_avg_price    = (prev_buy_cost / prev_buy_qty) if prev_buy_qty > 0 else 0.0
-    prev_balance_cost = prev_balance_qty * prev_avg_price
+        if is_target:
+            result = {
+                'currency':              currency,
+                'prev_balance_qty':      carry_qty,
+                'prev_balance_cost':     carry_qty * (prev_carry[1] if prev_carry else 0.0),
+                'prev_avg_price':        round(prev_carry[1], 4) if prev_carry else 0.0,
+                'month_buy_qty':         buy_qty,
+                'month_buy_cost':        buy_cost,
+                'month_buy_comm':        buy_comm,
+                'month_sell_qty':        sell_qty,
+                'month_sell_cost':       sell_cost,
+                'month_sell_comm':       sell_comm,
+                'month_exch_comm':       exch_qty,
+                'month_exch_comm_rub':   exch_comm_rub_month,
+                'total_buy_qty':         buy_qty + carry_qty,
+                'total_buy_cost':        total_buy_for_month,
+                'remainder_qty_display': remainder_qty,
+                'remainder_cost':        remainder_cost,
+                'avg_price':             round(lifo_price, 4),
+                'eq_buy_cost':           eq_buy_cost_month,
+                'gross':                 gross_month,
+            }
+            break
 
-    # Текущий месяц (идентично оригиналу)
-    month_buy_qty       = 0.0; month_buy_cost  = 0.0
-    month_buy_comm      = 0.0
-    month_sell_qty      = 0.0; month_sell_cost = 0.0
-    month_sell_comm     = 0.0
-    month_exch_comm     = 0.0
-    month_exch_comm_rub = 0.0
+        # Прокидываем перенос на следующий месяц
+        if remainder_qty != 0 and lifo_price > 0:
+            prev_carry = (remainder_qty, lifo_price)
+        elif prev_carry is not None:
+            pass  # оставляем прошлый carry если не смогли посчитать
 
-    for o in month_orders:
-        amt        = float(o.amount or 0)
-        cost       = float(o.cost   or 0)
-        price      = float(o.price  or 0)
-        comm_val   = float(o.commission or 0)
-        total_comm = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
+    if result is None:
+        result = {
+            'currency': currency, 'prev_balance_qty': 0.0, 'prev_balance_cost': 0.0,
+            'prev_avg_price': 0.0, 'month_buy_qty': 0.0, 'month_buy_cost': 0.0,
+            'month_buy_comm': 0.0, 'month_sell_qty': 0.0, 'month_sell_cost': 0.0,
+            'month_sell_comm': 0.0, 'month_exch_comm': 0.0, 'month_exch_comm_rub': 0.0,
+            'total_buy_qty': 0.0, 'total_buy_cost': 0.0, 'remainder_qty_display': 0.0,
+            'remainder_cost': 0.0, 'avg_price': 0.0, 'eq_buy_cost': 0.0, 'gross': 0.0,
+        }
 
-        if o.operation_type == 'BUY':
-            month_buy_qty  += amt
-            month_buy_cost += cost
-            month_buy_comm += total_comm
-        else:
-            exch_rate   = float(o.exchange_commission_rate or 0)
-            exch_crypto = amt * exch_rate / 100
-
-            month_sell_qty      += amt
-            month_sell_cost     += cost
-            month_sell_comm     += total_comm
-            month_exch_comm     += exch_crypto
-            month_exch_comm_rub += exch_crypto * price
-
-    total_buy_qty  = prev_balance_qty  + month_buy_qty
-    total_buy_cost = prev_balance_cost + month_buy_cost
-
-    remainder_qty_display = total_buy_qty - month_sell_qty - month_exch_comm
-
-    avg_price      = (total_buy_cost / total_buy_qty) if total_buy_qty > 0 else 0.0
-    remainder_cost = remainder_qty_display * avg_price
-    eq_buy_cost    = total_buy_cost - remainder_cost
-
-    if month_sell_qty == 0:
-        gross = 0.0
-    else:
-        gross = month_sell_cost - eq_buy_cost - month_buy_comm - month_sell_comm - month_exch_comm_rub
-
-    return {
-        'currency':              currency,
-        'prev_balance_qty':      prev_balance_qty,
-        'prev_balance_cost':     prev_balance_cost,
-        'prev_avg_price':        round(prev_avg_price, 4),
-        'month_buy_qty':         month_buy_qty,
-        'month_buy_cost':        month_buy_cost,
-        'month_buy_comm':        month_buy_comm,
-        'month_sell_qty':        month_sell_qty,
-        'month_sell_cost':       month_sell_cost,
-        'month_sell_comm':       month_sell_comm,
-        'month_exch_comm':       month_exch_comm,
-        'month_exch_comm_rub':   month_exch_comm_rub,
-        'total_buy_qty':         total_buy_qty,
-        'total_buy_cost':        total_buy_cost,
-        'remainder_qty_display': remainder_qty_display,
-        'remainder_cost':        remainder_cost,
-        'avg_price':             round(avg_price, 4),
-        'eq_buy_cost':           eq_buy_cost,
-        'gross':                 gross,
-    }
+    return result
 
 
 def _calc_month_profit_from_orders(user_id, month_start, month_end,
@@ -2306,10 +2420,12 @@ def admin_profit_view(request):
                 comm_rub = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
                 if comm_rub > 0:
                     comm_rows.append({
-                        'date':   o.created_at.astimezone(MSK).strftime('%d.%m %H:%M'),
-                        'cost':   cost,
-                        'comm':   comm_rub,
-                        'op':     o.operation_type,
+                        'date':      o.created_at.astimezone(MSK).strftime('%d.%m %H:%M'),
+                        'cost':      cost,
+                        'comm':      comm_rub,
+                        'op':        o.operation_type,
+                        'comm_val':  comm_val,
+                        'comm_type': o.commission_type,
                     })
             comm_rows.sort(key=lambda r: r['comm'], reverse=True)
             top_bank_comm_orders = comm_rows[:3]
