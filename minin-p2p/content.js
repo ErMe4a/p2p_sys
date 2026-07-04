@@ -101,6 +101,10 @@ let currentSellRealNameTemp = '';
 // Added: keep the original BUY page name to allow reset
 let originalBuyName = '';
 let originalOwnName = '';
+let lastOrderIdForNameReset = null;
+let originalCounterpartyNickname = '';
+let originalCounterpartyRealName = '';
+let ownNameRetryInterval = null;
 async function loadDisplayNameFromStorage() {
     try {
         const res = await chrome.storage.sync.get(['displayName']);
@@ -213,6 +217,48 @@ function replaceBuyTipsName(name, root = document) {
     return replaced;
 }
 
+function startOwnNameRetry(name, maxAttempts = 20, delayMs = 500) {
+    // Останавливаем предыдущий retry, если был
+    if (ownNameRetryInterval) {
+        clearInterval(ownNameRetryInterval);
+        ownNameRetryInterval = null;
+    }
+
+    let attempts = 0;
+    ownNameRetryInterval = setInterval(() => {
+        attempts++;
+
+        // Если пользователь сбросил имя в процессе — останавливаемся
+        if (!currentDisplayName || currentDisplayName !== name) {
+            clearInterval(ownNameRetryInterval);
+            ownNameRetryInterval = null;
+            return;
+        }
+
+        const replaced = replaceOwnNameInPaymentMethod(name);
+
+        if (replaced) {
+            console.log('P2P Analytics: своё имя успешно применено, попытка', attempts);
+            clearInterval(ownNameRetryInterval);
+            ownNameRetryInterval = null;
+            return;
+        }
+
+        if (attempts >= maxAttempts) {
+            console.warn('P2P Analytics: не удалось применить своё имя за', maxAttempts, 'попыток');
+            clearInterval(ownNameRetryInterval);
+            ownNameRetryInterval = null;
+        }
+    }, delayMs);
+}
+
+function stopOwnNameRetry() {
+    if (ownNameRetryInterval) {
+        clearInterval(ownNameRetryInterval);
+        ownNameRetryInterval = null;
+    }
+}
+
 // New: Replace own name in payment method details (SELL order - your payment details)
 function replaceOwnNameInPaymentMethod(name, root = document) {
     if (!name) return false;
@@ -223,9 +269,9 @@ function replaceOwnNameInPaymentMethod(name, root = document) {
         items.forEach(item => {
             const spans = item.querySelectorAll('span.moly-text');
             if (spans.length < 2) return;
-            
-            const label = (spans[0].textContent || '').trim().toLowerCase();
-            if (label !== 'name' && label !== 'имя' && label !== 'фио') return;
+
+            const label = (spans[0].textContent || '').trim().toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+            if (!/^(name|имя|фио)$/.test(label)) return;
 
             const valueSpan = spans[1];
             if (!valueSpan) return;
@@ -238,6 +284,11 @@ function replaceOwnNameInPaymentMethod(name, root = document) {
                 }
             });
             currentText = currentText.trim();
+
+            // Захватываем оригинал ДО первой замены — нужно для мгновенного сброса
+            if (!originalOwnName && currentText && currentText !== name) {
+                originalOwnName = currentText;
+            }
 
             if (currentText && currentText !== name) {
                 // Меняем только первый текстовый нод
@@ -544,6 +595,8 @@ const downloadScreenshot = async (dataUrl, orderId) => {
 // Added: Reset display name to original default and clear storage
 async function resetBuyDisplayName() {
     try {
+        stopOwnNameRetry(); 
+
         await chrome.storage.sync.set({ displayName: '' });
         currentDisplayName = '';
 
@@ -556,10 +609,13 @@ async function resetBuyDisplayName() {
                 replacePayerNameInDom(originalBuyName);
             }
         }
-        
+
         if (isSellPage() && originalOwnName) {
              replaceOwnNameInPaymentMethod(originalOwnName);
         }
+
+        // Сбрасываем оригинал, чтобы следующее применение нового имени снова захватило актуальный оригинал
+        originalOwnName = '';
 
         alert('Имя сброшено к исходному');
     } catch (e) {
@@ -1796,8 +1852,14 @@ function cleanupResources() {
     isInitializing = false;
     // Reset ephemeral SELL name on navigation
     currentSellDisplayNameTemp = '';
+    // Reset ephemeral SELL real name (Verified) on navigation
+    currentSellRealNameTemp = '';
+    originalCounterpartyNickname = '';
+    originalCounterpartyRealName = '';
     // Reset captured BUY original name on navigation
     originalBuyName = '';
+    // Reset captured own name in SELL payment details on navigation
+    originalOwnName = '';
 }
 
 // --- Updated Observer ---
@@ -1894,10 +1956,17 @@ async function initialize() {
         }
 
         // Load display name logic
+        // Load display name logic
         await loadDisplayNameFromStorage();
         ensureOriginalBuyNameCaptured();
         applyDisplayNameIfNeeded();
-        
+
+        // Если своё имя задано и мы на SELL — запускаем retry на случай если вкладыш реквизитов ещё не отрисован
+        // Если своё имя задано — запускаем retry (без привязки к isSellPage — на BUY элемент просто не найдётся)
+        if (currentDisplayName) {
+            startOwnNameRetry(currentDisplayName);
+        }
+                
         // Initialize MutationObserver
         initializeMutationObserver();
         
@@ -2044,16 +2113,16 @@ try {
 
                 let replaced = false;
 
-                const chatHeader = document.querySelector('.im-container-caption, .ChatHeader, [class*="caption"]');
-                const searchRoot = chatHeader || document;
-                searchRoot.querySelectorAll('span.moly-text').forEach(el => {
-                    if (el.classList.contains('inline') && el.children.length === 0 && el.textContent.trim()) {
-                        const fw = el.getAttribute('class') || '';
-                        if (fw.includes('font-[600]') && el.textContent.trim() !== name) {
-                            console.log('P2P Analytics: меняем никнейм:', el.textContent.trim(), '→', name);
-                            el.textContent = name;
-                            replaced = true;
-                        }
+                // Точный селектор никнейма в шапке чата
+                document.querySelectorAll('.chat-info-details__nickname').forEach(el => {
+                    // Захватываем оригинал ДО первой замены
+                    if (!originalCounterpartyNickname) {
+                        originalCounterpartyNickname = el.textContent.trim();
+                    }
+                    if (el.textContent.trim() !== name) {
+                        console.log('P2P Analytics: меняем никнейм:', el.textContent.trim(), '→', name);
+                        el.textContent = name;
+                        replaced = true;
                     }
                 });
 
@@ -2078,14 +2147,24 @@ try {
 
                 document.querySelectorAll('.im-container-caption__info-verified').forEach(el => {
                     const nameContainer = el.querySelector('.moly-space-item.moly-space-item-last');
-                    if (nameContainer && nameContainer.textContent.trim() !== name) {
-                        console.log('P2P Analytics: меняем Verified имя:', nameContainer.textContent.trim(), '→', name);
-                        nameContainer.textContent = name;
-                        replaced = true;
+                    if (nameContainer) {
+                        // Захватываем оригинал ДО первой замены
+                        if (!originalCounterpartyRealName) {
+                            originalCounterpartyRealName = nameContainer.textContent.trim();
+                        }
+                        if (nameContainer.textContent.trim() !== name) {
+                            console.log('P2P Analytics: меняем Verified имя:', nameContainer.textContent.trim(), '→', name);
+                            nameContainer.textContent = name;
+                            replaced = true;
+                        }
                     }
                 });
 
                 document.querySelectorAll('.chat-info__real-name').forEach(el => {
+                    // Захватываем оригинал ДО первой замены (если ещё не захвачен из verified-блока)
+                    if (!originalCounterpartyRealName) {
+                        originalCounterpartyRealName = el.textContent.trim();
+                    }
                     if (el.textContent.trim() !== name) {
                         el.textContent = name;
                         replaced = true;
@@ -2106,11 +2185,64 @@ try {
                 currentDisplayName = name;
 
                 let replaced = false;
-                if (name && isSellPage()) {
+                if (name) {
                     replaced = replaceOwnNameInPaymentMethod(name);
+                    if (!replaced) {
+                        // Поле ещё не отрисовалось — пробуем повторно с интервалом
+                        startOwnNameRetry(name);
+                    }
+                } else {
+                    stopOwnNameRetry();
                 }
 
                 sendResponse({ success: true, replaced });
+            } catch (e) {
+                sendResponse({ success: false, error: e?.message || 'Ошибка' });
+            }
+            return true;
+        }
+
+        // Сбросить замены имён контрагента (никнейм + имя) — восстанавливаем оригиналы без перезагрузки
+        if (message && message.action === 'resetCounterpartyNames') {
+            try {
+                // Восстанавливаем никнейм
+                if (originalCounterpartyNickname) {
+                    document.querySelectorAll('.chat-info-details__nickname').forEach(el => {
+                        el.textContent = originalCounterpartyNickname;
+                    });
+                }
+
+                // Восстанавливаем имя (Verified / real-name)
+                if (originalCounterpartyRealName) {
+                    document.querySelectorAll('.im-container-caption__info-verified').forEach(el => {
+                        const nameContainer = el.querySelector('.moly-space-item.moly-space-item-last');
+                        if (nameContainer) {
+                            nameContainer.textContent = originalCounterpartyRealName;
+                        }
+                    });
+                    document.querySelectorAll('.chat-info__real-name').forEach(el => {
+                        el.textContent = originalCounterpartyRealName;
+                    });
+                }
+
+                // Очищаем временные переменные, чтобы MutationObserver больше не переписывал DOM
+                currentSellDisplayNameTemp = '';
+                currentSellRealNameTemp = '';
+                originalCounterpartyNickname = '';
+                originalCounterpartyRealName = '';
+
+                sendResponse({ success: true });
+            } catch (e) {
+                sendResponse({ success: false, error: e?.message || 'Ошибка' });
+            }
+            return true;
+        }
+
+        // Сбросить своё имя (BUY + SELL) — вызывает существующую resetBuyDisplayName()
+        if (message && message.action === 'resetBuyName') {
+            try {
+                resetBuyDisplayName();
+                sendResponse({ success: true });
             } catch (e) {
                 sendResponse({ success: false, error: e?.message || 'Ошибка' });
             }
@@ -2120,6 +2252,7 @@ try {
 } catch (e) {
     // ignore listener errors
 }
+
 
 // Debug function to manually test the extension
 window.P2PAnalyticsDebug = {

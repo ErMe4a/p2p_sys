@@ -419,18 +419,29 @@ function injectNameMenus() {
     const sellActions = document.createElement('div');
     sellActions.className = 'form-actions';
     sellActions.style.marginTop = '4px';
-    sellActions.style.marginBottom = '16px';
+    sellActions.style.marginBottom = '8px';
     applySellDisplayNameBtn = document.createElement('button');
     applySellDisplayNameBtn.className = 'btn';
     applySellDisplayNameBtn.id = 'applySellDisplayNameBtn';
     applySellDisplayNameBtn.textContent = 'Применить никнейм';
     sellActions.appendChild(applySellDisplayNameBtn);
 
+    // НОВОЕ: кнопка сброса замен контрагента (никнейм + имя) — теперь под блоком "Имя"
+    const resetCounterpartyActions = document.createElement('div');
+    resetCounterpartyActions.className = 'form-actions';
+    resetCounterpartyActions.style.marginTop = '4px';
+    const resetCounterpartyBtn = document.createElement('button');
+    resetCounterpartyBtn.className = 'btn';
+    resetCounterpartyBtn.id = 'resetCounterpartyNamesBtn';
+    resetCounterpartyBtn.textContent = 'Сбросить замены';
+    resetCounterpartyActions.appendChild(resetCounterpartyBtn);
+
     // Правильный порядок:
     sellContent.appendChild(sellFormGroup);    // Никнейм
-    sellContent.appendChild(sellActions);      // Применить на текущей странице
+    sellContent.appendChild(sellActions);      // Применить никнейм
     sellContent.appendChild(nameFormGroup);    // Реальное имя
     sellContent.appendChild(nameActions);      // Применить имя
+    sellContent.appendChild(resetCounterpartyActions); // Сбросить замены (под именем)
     sellDetails.appendChild(sellContent);
 
     // Append details to container
@@ -479,8 +490,6 @@ function injectNameMenus() {
             }
         });
     }
-    
-
 
     // Bind кнопку применения реального имени
     const applyRealNameBtnEl = document.getElementById('applyRealNameBtn');
@@ -499,7 +508,44 @@ function injectNameMenus() {
             });
         });
     }
-    
+
+    // НОВОЕ: Bind кнопку сброса замен контрагента (работает и для никнейма, и для имени)
+    const resetCounterpartyBtnEl = document.getElementById('resetCounterpartyNamesBtn');
+    if (resetCounterpartyBtnEl) {
+        resetCounterpartyBtnEl.addEventListener('click', async (e) => {
+            e.preventDefault();
+            try {
+                if (!isExtensionContextValid() || !chrome.tabs) {
+                    showError('Невозможно сбросить: контекст расширения недоступен');
+                    return;
+                }
+                const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+                const tabId = tabs && tabs[0] ? tabs[0].id : null;
+                if (!tabId) {
+                    showError('Не найдена активная вкладка');
+                    return;
+                }
+                chrome.tabs.sendMessage(tabId, { action: 'resetCounterpartyNames' }, (response) => {
+                    if (chrome.runtime.lastError) {
+                        showError(chrome.runtime.lastError.message || 'Ошибка отправки сообщения');
+                        return;
+                    }
+                    if (response && response.success) {
+                        showStatus('Оригинальные имена восстановлены');
+                        if (sellDisplayNameInput) sellDisplayNameInput.value = '';
+                        const realNameInput = document.getElementById('sellRealName');
+                        if (realNameInput) realNameInput.value = '';
+                    } else {
+                        showError(response?.error || 'Не удалось сбросить');
+                    }
+                });
+            } catch (err) {
+                console.error('Failed to reset counterparty names:', err);
+                showError('Не удалось сбросить замены контрагента');
+            }
+        });
+    }
+
     // Bind BUY reset button
     const resetBuyBtnEl = document.getElementById('resetBuyDisplayNameBtn');
     if (resetBuyBtnEl) {
