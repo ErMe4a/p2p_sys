@@ -169,7 +169,10 @@ def my_orders_list(request):
 
         # 6. Логика чека (Эвотор)
         need_receipt = request.POST.get('need_receipt') == 'on'
-
+        
+        if 'intelion' in (request.POST.get('exchange') or '').lower():
+            need_receipt = False
+        
         if need_receipt:
             contact_email = request.POST.get('receipt_contact', '').strip()
             if not contact_email:

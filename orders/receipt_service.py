@@ -51,6 +51,9 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
     """
     Отправка чека в Эвотор И СОХРАНЕНИЕ результата в БД.
     """
+
+    if 'intelion' in str(getattr(order, 'exchange_type', '')).lower():
+        return ReceiptResponse(status="SKIPPED", error_text="Чеки для биржи Intelion отключены")
     user = order.user
 
     # 1. Если чек уже есть в базе, не бьем повторно (защита)

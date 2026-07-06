@@ -229,7 +229,7 @@
                 </select>
             </div>
             <div class="col-md-3">
-                <select class="form-select" name="exchange">
+                <select class="form-select" name="exchange" id="createExchange">
                     <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
                     <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
                     <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
@@ -239,6 +239,7 @@
                     <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
                     <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
                     <option value="Rapira"   {% if saved_data.exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
+                    <option value="Intelion" {% if saved_data.exchange == 'Intelion' %}selected{% endif %}>Intelion</option>
                 </select>
             </div>
         </div>
@@ -320,6 +321,7 @@
                     <option value="EMCD"     {% if filter_exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
                     <option value="BingX"    {% if filter_exchange == 'BingX' %}selected{% endif %}>BingX</option>
                     <option value="Rapira"   {% if filter_exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
+                    <option value="Intelion" {% if filter_exchange == 'Intelion' %}selected{% endif %}>Intelion</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -486,6 +488,7 @@
                                 <option value="EMCD">EMCD</option>
                                 <option value="BingX">BingX</option>
                                 <option value="Rapira">Rapira</option>
+                                <option value="Intelion">Intelion</option>
                             </select>
                         </div>
                         <div class="col-12">
@@ -619,5 +622,23 @@
     function triggerUpload(orderId) {
         document.getElementById('file-input-' + orderId).click();
     }
+
+    // === INTELION: чек недоступен ===
+    const createExchange = document.getElementById('createExchange');
+    const checkDocsBox = document.getElementById('checkDocs');
+
+    function handleIntelionReceipt() {
+        if (createExchange.value === 'Intelion') {
+            checkDocsBox.checked = false;      // гасим галочку
+            checkDocsBox.disabled = true;      // и не даём включить
+            document.getElementById('emailInputWrapper').style.display = 'none';
+        } else {
+            checkDocsBox.disabled = false;
+        }
+    }
+
+    createExchange.addEventListener('change', handleIntelionReceipt);
+    handleIntelionReceipt(); // на случай если Intelion сохранён в saved_data при загрузке
+
 </script>
 {% endblock %}
