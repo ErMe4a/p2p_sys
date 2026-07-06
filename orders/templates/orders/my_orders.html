@@ -268,7 +268,7 @@
             <div class="col-md-2 pt-4">
                 <div class="d-flex gap-3 align-items-center h-100 ps-2">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt">
+                        <input class="form-check-input" type="checkbox" id="checkDocs" name="need_receipt" checked>
                         <label class="form-check-label small text-muted" for="checkDocs">Чек</label>
                     </div>
                     <div class="form-check">
@@ -559,16 +559,19 @@
         return str + '@gmail.com';
     }
 
-    document.getElementById('checkDocs').addEventListener('change', function() {
+    // Синхронизация поля email с состоянием галочки "Чек"
+    function syncReceiptUI() {
         const emailWrapper = document.getElementById('emailInputWrapper');
         const emailInput   = document.getElementById('receiptContact');
-        if (this.checked) {
+        if (document.getElementById('checkDocs').checked) {
             emailWrapper.style.display = 'block';
             if (!emailInput.value) emailInput.value = generateRandomEmail();
         } else {
             emailWrapper.style.display = 'none';
         }
-    });
+    }
+
+    document.getElementById('checkDocs').addEventListener('change', syncReceiptUI);
 
     document.getElementById('createOrderForm').addEventListener('submit', function(e) {
         const price     = document.getElementById('main_price').value.trim().replace(',', '.');
@@ -623,7 +626,7 @@
         document.getElementById('file-input-' + orderId).click();
     }
 
-    // === INTELION: чек недоступен ===
+    // === INTELION: чек недоступен, для остальных бирж стоит по дефолту ===
     const createExchange = document.getElementById('createExchange');
     const checkDocsBox = document.getElementById('checkDocs');
 
@@ -631,14 +634,15 @@
         if (createExchange.value === 'Intelion') {
             checkDocsBox.checked = false;      // гасим галочку
             checkDocsBox.disabled = true;      // и не даём включить
-            document.getElementById('emailInputWrapper').style.display = 'none';
         } else {
             checkDocsBox.disabled = false;
+            checkDocsBox.checked = true;       // возвращаем дефолт (чек всегда стоит)
         }
+        syncReceiptUI();
     }
 
     createExchange.addEventListener('change', handleIntelionReceipt);
-    handleIntelionReceipt(); // на случай если Intelion сохранён в saved_data при загрузке
+    handleIntelionReceipt(); // при загрузке страницы
 
 </script>
 {% endblock %}
