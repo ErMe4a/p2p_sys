@@ -1150,52 +1150,59 @@ function cleanupResources() {
  */
 function extractNumberMEXC(text) {
     if (!text) return null;
-
+ 
     const cleaned = text
         .replace(/\s+/g, '')
         .replace(/\u00A0/g, '')
         .replace(/USDT|BTC|ETH|RUB|USD|EUR/gi, '');
-
+ 
     const match = cleaned.match(/[\d.,]+/);
     if (!match) return null;
-
+ 
     let numberStr = match[0];
-
+ 
     const commaCount = (numberStr.match(/,/g) || []).length;
     const periodCount = (numberStr.match(/\./g) || []).length;
-
+ 
     console.log('P2P Analytics MEXC [extractNumberMEXC] input:', text,
         '→ numberStr:', numberStr,
         '→ commas:', commaCount,
         '→ periods:', periodCount);
-
+ 
     if (commaCount > 0 && periodCount > 0) {
-        // "1.234,56" → период=тысячи, запятая=десятичная
-        numberStr = numberStr.replace(/\./g, '').replace(/,/g, '.');
-    } else if (commaCount === 1) {
-        const afterComma = numberStr.split(',')[1] || '';
-        if (afterComma.length === 3) {
-            // "1,000" или "17,000" → тысячи, убираем запятую
-            numberStr = numberStr.replace(/,/g, '');
+        // Есть оба разделителя — десятичный тот, что стоит ПРАВЕЕ
+        // (например "1.234,56" → запятая правее → десятичная;
+        //  "1,234.56" → точка правее → десятичная)
+        const lastComma = numberStr.lastIndexOf(',');
+        const lastDot = numberStr.lastIndexOf('.');
+ 
+        if (lastComma > lastDot) {
+            numberStr = numberStr.replace(/\./g, '').replace(/,/g, '.');
         } else {
-            // "45,97" → десятичная
-            numberStr = numberStr.replace(/,/g, '.');
+            numberStr = numberStr.replace(/,/g, '');
         }
     } else if (commaCount > 1) {
-        // "1,000,000" → все запятые это тысячи
+        // Несколько запятых без точек — точно разделители тысяч
+        // (десятичный разделитель не может повторяться в одном числе)
         numberStr = numberStr.replace(/,/g, '');
     } else if (periodCount > 1) {
-        // "1.234.567" → все точки это тысячи
+        // Несколько точек без запятых — тоже разделители тысяч
         numberStr = numberStr.replace(/\./g, '');
+    } else if (commaCount === 1) {
+        // Одна запятая — ВСЕГДА десятичный разделитель.
+        // Больше никакого гадания по количеству цифр после неё.
+        numberStr = numberStr.replace(',', '.');
     }
-
+    // periodCount === 1 и commaCount === 0 — уже валидный JS-формат, не трогаем
+ 
     console.log('P2P Analytics MEXC [extractNumberMEXC] after replacement:', numberStr);
-
+ 
     const num = parseFloat(numberStr);
     const result = isFinite(num) ? num : null;
     console.log('P2P Analytics MEXC [extractNumberMEXC] final result:', result);
     return result;
 }
+ 
 
 // Parse order info from MEXC page
 function parseOrderInfo() {

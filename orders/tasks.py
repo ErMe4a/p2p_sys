@@ -122,7 +122,15 @@ def verify_and_receipt_later(self, order_id: int):
 
     else:
         if attempt < 5:
-            countdown = 30 * (2 ** (attempt - 1))
+            # ИСПРАВЛЕНО: базовая задержка теперь зависит от биржи.
+            # MEXC ищет ордер постранично по истории (дольше и тяжелее
+            # для API биржи), поэтому даём больше времени на повтор —
+            # было 30 сек для обеих бирж одинаково, хотя в докстринге
+            # выше заявлено 120 для MEXC.
+            is_mexc = 'mexc' in o.exchange_type.lower()
+            base_delay = 120 if is_mexc else 30
+            countdown = base_delay * (2 ** (attempt - 1))
+
             logger.warning(
                 "verify_and_receipt_later: Order %d — API не ответил, повтор через %d сек.",
                 order_id, countdown,
@@ -133,6 +141,15 @@ def verify_and_receipt_later(self, order_id: int):
                 "verify_and_receipt_later: Order %d — 5 попыток исчерпаны, бьём чек с данными из БД.",
                 order_id,
             )
+
+            # ИСПРАВЛЕНО: раньше запись в UnprocessedOrder тут не удалялась —
+            # чек пробивался, а ордер продолжал висеть в "Необработанных"
+            # даже после фактической обработки.
+            UnprocessedOrder.objects.filter(
+                user=o.user,
+                order_id=o.external_id,
+            ).delete()
+
             _try_send_receipt(o)
 
 

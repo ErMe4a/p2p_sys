@@ -418,13 +418,38 @@ def unprocessed_orders_list(request):
     next_sync_ts = None
     try:
         from django_celery_beat.models import PeriodicTask
-        task = PeriodicTask.objects.filter(name='sync-bybit-orders').first()
+
+        # ИСПРАВЛЕНО: ищем по task (python-путь до функции), а не по
+        # человекочитаемому name — name в БД может отличаться от того, что
+        # ожидает код, и тогда лукап тихо возвращал None.
+        task = PeriodicTask.objects.filter(
+            task='orders.tasks.sync_bybit_orders_task'
+        ).first()
+
         if task and task.last_run_at:
-            interval_seconds = 30 * 60  # 30 минут
-            next_run = task.last_run_at.timestamp() + interval_seconds
-            next_sync_ts = int(next_run * 1000)  # в миллисекундах для JS
-    except Exception:
-        pass
+            interval_seconds = None
+
+            if task.interval:
+                # ИСПРАВЛЕНО: берём реальный интервал из IntervalSchedule,
+                # а не хардкодим 30 минут
+                period_seconds = {
+                    'seconds': 1,
+                    'minutes': 60,
+                    'hours': 3600,
+                    'days': 86400,
+                }.get(task.interval.period, 60)
+                interval_seconds = task.interval.every * period_seconds
+            elif task.crontab:
+                # Для crontab-расписания точный интервал не вычислить
+                # тривиально — честно не показываем таймер, чтобы не врать
+                interval_seconds = None
+
+            if interval_seconds:
+                next_run = task.last_run_at.timestamp() + interval_seconds
+                next_sync_ts = int(next_run * 1000)  # в миллисекундах для JS
+
+    except Exception as e:
+        print(f"next_sync_ts calc failed: {e}")  # ИСПРАВЛЕНО: было тихое pass (без логгера, как и остальной views.py)
 
     context = {
         'unprocessed_orders': unprocessed_orders,
@@ -433,6 +458,7 @@ def unprocessed_orders_list(request):
         'next_sync_ts':       next_sync_ts,
     }
     return render(request, 'orders/unprocessed.html', context)
+
 
 @login_required
 def delete_unprocessed_order(request, pk):
@@ -457,7 +483,6 @@ def delete_unprocessed_order(request, pk):
         messages.error(request, "Ордер не найден.")
 
     return redirect("unprocessed_orders")
-
 
 
 

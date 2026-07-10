@@ -7,7 +7,10 @@ exchange_api.py
 Возвращает dict { price, cost, amount, operation_type } или None.
 
 Bybit  — прямой запрос POST /v5/p2p/order/info по orderId
-MEXC   — постраничный запрос в диапазоне ±1 день от даты ордера
+MEXC   — прямой запрос GET /api/v3/fiat/order/detail по advOrderNo
+         (ИСПРАВЛЕНО: раньше был постраничный перебор ±1 день —
+         оказалось, что есть официальный эндпоинт получения одного
+         ордера напрямую по ID, см. официальную доку MEXC P2P API)
 Другие — None (HTX, Gate, Telegram берут данные из расширения)
 """
 
@@ -15,6 +18,7 @@ import logging
 import hmac
 import hashlib
 import time
+import urllib.parse
 import requests
 import urllib3
 from datetime import datetime, timezone
@@ -115,9 +119,17 @@ def _get_bybit_order(user, order_id: str) -> dict | None:
 
 def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | None:
     """
-    MEXC P2P: нет эндпоинта по одному ID.
-    Листаем страницы в диапазоне ±1 день от даты ордера пока не найдём.
-    Если дата не передана — берём последние 3 дня.
+    MEXC P2P: прямой запрос по ID через официальный эндпоинт
+    GET /api/v3/fiat/order/detail?advOrderNo=<order_id>
+
+    ИСПРАВЛЕНО: раньше тут был постраничный перебор в диапазоне ±1 день
+    (или последних 3 дней), который на активных аккаунтах мог занимать
+    много страниц/минут, пока расширение висело на запросе. Оказалось,
+    у MEXC есть отдельный эндпоинт для получения одного ордера напрямую
+    по advOrderNo — один запрос вместо цикла по страницам.
+
+    order_date больше не используется (эндпоинт не требует диапазона дат),
+    параметр оставлен только для обратной совместимости сигнатуры вызова.
     """
     if not user.mexc_api_key or not user.mexc_api_secret:
         return None
@@ -126,103 +138,68 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         return None
 
     try:
-        now_ms = int(time.time() * 1000)
+        timestamp = int(time.time() * 1000)
+        params = {
+            "advOrderNo": order_id,
+            "timestamp": timestamp,
+        }
+        query_string = urllib.parse.urlencode(sorted(params.items()))
+        sig = hmac.new(
+            user.mexc_api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
 
-        # Определяем диапазон поиска
-        if order_date:
-            # Берём ±1 день от даты ордера на бирже
-            if hasattr(order_date, 'timestamp'):
-                order_ts = int(order_date.timestamp() * 1000)
-            else:
-                order_ts = now_ms
-            start_time = order_ts - (24 * 60 * 60 * 1000)
-            end_time   = order_ts + (24 * 60 * 60 * 1000)
-            # Не заглядываем в будущее
-            if end_time > now_ms:
-                end_time = now_ms
-        else:
-            # Дата не передана — ищем в последних 3 днях
-            start_time = now_ms - (3 * 24 * 60 * 60 * 1000)
-            end_time   = now_ms
+        url = f"https://api.mexc.com/api/v3/fiat/order/detail?{query_string}&signature={sig}"
+        headers = {
+            "X-MEXC-APIKEY": user.mexc_api_key,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
 
-        # Листаем страницы пока не найдём или не закончатся
-        page = 1
-        while True:
-            timestamp = int(time.time() * 1000)
-            params = {
-                "orderDealState": "DONE",
-                "page": page,
-                "limit": 50,
-                "startTime": start_time,
-                "endTime": end_time,
-                "timestamp": timestamp,
-            }
-            query_string = "&".join(f"{k}={v}" for k, v in params.items())
-            sig = hmac.new(
-                user.mexc_api_secret.encode("utf-8"),
-                query_string.encode("utf-8"),
-                hashlib.sha256
-            ).hexdigest()
+        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        data = resp.json()
+        code = data.get("code")
 
-            url = f"https://api.mexc.com/api/v3/fiat/market/order/pagination?{query_string}&signature={sig}"
-            headers = {
-                "X-MEXC-APIKEY": user.mexc_api_key,
-                "Content-Type": "application/json",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            }
+        # Невалидный ключ
+        if code in MEXC_INVALID_KEY_CODES:
+            user.mexc_key_valid = False
+            user.save(update_fields=["mexc_key_valid"])
+            logger.warning("MEXC [%s]: ключ невалиден (код %s) — помечен.", user.username, code)
+            return None
 
-            resp = requests.get(url, headers=headers, timeout=15, verify=False)
-            data = resp.json()
-            code = data.get("code")
+        # IP whitelist
+        if code == 700006:
+            logger.warning("MEXC [%s]: IP не в whitelist (код 700006).", user.username)
+            return None
 
-            # Невалидный ключ
-            if code in MEXC_INVALID_KEY_CODES:
-                user.mexc_key_valid = False
-                user.save(update_fields=["mexc_key_valid"])
-                logger.warning("MEXC [%s]: ключ невалиден (код %s) — помечен.", user.username, code)
-                return None
+        if code is not None and code != 0:
+            logger.warning(
+                "MEXC [%s] order/detail order %s: code=%s msg=%s",
+                user.username, order_id, code, data.get("msg"),
+            )
+            return None
 
-            # IP whitelist
-            if code == 700006:
-                logger.warning("MEXC [%s]: IP не в whitelist (код 700006).", user.username)
-                return None
+        item = data.get("data") or {}
+        if not item:
+            logger.warning("MEXC [%s]: order %s не найден.", user.username, order_id)
+            return None
 
-            if code is not None and code != 0:
-                logger.warning("MEXC [%s] page %d: code=%s msg=%s", user.username, page, code, data.get("msg"))
-                return None
+        price  = _to_float(item.get("price"))
+        amount = _to_float(item.get("tradableQuantity"))
+        cost   = _to_float(item.get("amount"))
+        op     = str(item.get("side", "BUY")).upper()
 
-            items = data.get("data") or []
+        if amount == 0 and price > 0 and cost > 0:
+            amount = round(cost / price, 8)
+        if price == 0 and amount > 0 and cost > 0:
+            price = round(cost / amount, 2)
 
-            # Ищем нужный ордер на этой странице
-            for item in items:
-                if str(item.get("advOrderNo")) == str(order_id):
-                    price  = _to_float(item.get("price"))
-                    amount = _to_float(item.get("tradableQuantity"))
-                    cost   = _to_float(item.get("amount"))
-                    op     = str(item.get("side", "BUY")).upper()
-
-                    if amount == 0 and price > 0 and cost > 0:
-                        amount = round(cost / price, 8)
-                    if price == 0 and amount > 0 and cost > 0:
-                        price = round(cost / amount, 2)
-
-                    logger.info(
-                        "MEXC [%s]: order %s найден на стр.%d — price=%s cost=%s amount=%s type=%s",
-                        user.username, order_id, page, price, cost, amount, op,
-                    )
-                    return {"price": price, "cost": cost, "amount": amount, "operation_type": op}
-
-            # Проверяем есть ли следующая страница
-            total_pages = data.get("page", {}).get("totalPage", 1)
-            if page >= total_pages or not items:
-                break
-            page += 1
-
-        logger.warning(
-            "MEXC [%s]: order %s не найден в диапазоне дат (проверено %d стр.).",
-            user.username, order_id, page,
+        logger.info(
+            "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s",
+            user.username, order_id, price, cost, amount, op,
         )
-        return None
+        return {"price": price, "cost": cost, "amount": amount, "operation_type": op}
 
     except Exception as e:
         logger.error("MEXC _get_mexc_order [%s] order %s: %s", user.username, order_id, e)
