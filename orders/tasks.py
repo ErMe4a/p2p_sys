@@ -4,7 +4,7 @@ from .models import User, Order
 from .bybit_api import sync_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .models import UnprocessedOrder
-from .evotor_atol import evotor_check_report, evotor_get_token, EvotorAtolError
+
 logger = logging.getLogger(__name__)
 
 MAX_EVOTOR_REPORT_RETRIES = 6  # 30с,60с,120с,240с,240с,240с ~ до 15 минут
