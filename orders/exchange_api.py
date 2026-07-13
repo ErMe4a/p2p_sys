@@ -126,17 +126,22 @@ def _get_bybit_order(user, order_id: str) -> dict | None:
 
 def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | None:
     """
-    MEXC P2P: прямой запрос по ID через официальный эндпоинт
-    GET /api/v3/fiat/order/detail?advOrderNo=<order_id>
+    MEXC P2P: получение данных ордера.
 
-    ИСПРАВЛЕНО: раньше тут был постраничный перебор в диапазоне ±1 день
-    (или последних 3 дней), который на активных аккаунтах мог занимать
-    много страниц/минут, пока расширение висело на запросе. Оказалось,
-    у MEXC есть отдельный эндпоинт для получения одного ордера напрямую
-    по advOrderNo — один запрос вместо цикла по страницам.
+    КРИТИЧНЫЙ ФИКС: эндпоинт GET /api/v3/fiat/order/detail?advOrderNo=...
+    возвращает поле "side" ПЕРЕВЁРНУТЫМ относительно реального направления
+    сделки — подтверждено на нескольких реальных ордерах: order/detail даёт
+    side="BUY" для ордера, который на сайте MEXC и через pagination-эндпоинт
+    (/api/v3/fiat/market/order/pagination) однозначно помечен как "Продажа"
+    (side="SELL"). price/amount/tradableQuantity в обоих эндпоинтах совпадают
+    верно — расходится только "side".
 
-    order_date больше не используется (эндпоинт не требует диапазона дат),
-    параметр оставлен только для обратной совместимости сигнатуры вызова.
+    Поэтому цену/сумму/количество берём из order/detail (один быстрый запрос
+    по ID), а тип операции (BUY/SELL) — отдельным запросом к pagination за
+    узкое окно времени вокруг даты ордера, где side подтверждённо достоверен.
+
+    Если order_date не передана — используем последние 3 дня для поиска
+    в pagination (это чуть медленнее, но затрагивает только "side").
     """
     if not user.mexc_api_key or not user.mexc_api_secret:
         return None
@@ -168,9 +173,6 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         data = resp.json()
         code = data.get("code")
 
-        # ИСПРАВЛЕНО: 700007 (нет права P2P) теперь тоже сюда — ключ
-        # помечается невалидным и юзер получает 403 при следующей попытке
-        # сохранить ордер, вместо бесконечных бесплодных ретраев.
         if code in MEXC_INVALID_KEY_CODES:
             user.mexc_key_valid = False
             user.save(update_fields=["mexc_key_valid"])
@@ -184,7 +186,6 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
                 logger.warning("MEXC [%s]: ключ невалиден (код %s) — помечен.", user.username, code)
             return None
 
-        # IP whitelist — ключ сам по себе валиден, флаг не трогаем
         if code == MEXC_IP_WHITELIST_CODE:
             logger.warning("MEXC [%s]: IP не в whitelist (код 700006).", user.username)
             return None
@@ -204,19 +205,28 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         price  = _to_float(item.get("price"))
         amount = _to_float(item.get("tradableQuantity"))
         cost   = _to_float(item.get("amount"))
-        op     = str(item.get("side", "BUY")).upper()
-
-        # ИСПРАВЛЕНО: валидация side — если биржа вернёт неожиданное значение,
-        # не тащим его дальше как есть (в tasks.py перезапись operation_type
-        # идёт без проверки, поэтому фильтруем на источнике).
-        if op not in ("SELL", "BUY"):
-            logger.warning("MEXC [%s]: order %s — неожиданный side='%s', считаем BUY.", user.username, order_id, op)
-            op = "BUY"
 
         if amount == 0 and price > 0 and cost > 0:
             amount = round(cost / price, 8)
         if price == 0 and amount > 0 and cost > 0:
             price = round(cost / amount, 2)
+
+        # ── Тип операции — ОТДЕЛЬНО, через pagination (side из order/detail
+        # не используем — он подтверждённо перевёрнут) ──────────────────────
+        op = _get_mexc_side_via_pagination(user, order_id, order_date)
+        if op is None:
+            # ИСПРАВЛЕНО: раньше тут был fallback на side из order/detail —
+            # но именно это поле перевёрнуто, доверять ему нельзя. Если не
+            # смогли достоверно определить сторону через pagination — считаем
+            # всю верификацию неудачной (вернём None), чтобы вызывающий код
+            # ушёл на повторную попытку позже, а не сохранил заведомо рискованный
+            # (возможно перевёрнутый) тип операции.
+            logger.warning(
+                "MEXC [%s]: order %s — не удалось достоверно определить сторону "
+                "через pagination, вся верификация провалена (уйдёт на ретрай).",
+                user.username, order_id,
+            )
+            return None
 
         logger.info(
             "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s",
@@ -226,6 +236,74 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
 
     except Exception as e:
         logger.error("MEXC _get_mexc_order [%s] order %s: %s", user.username, order_id, e)
+        return None
+
+
+def _get_mexc_side_via_pagination(user, order_id: str, order_date: datetime = None) -> str | None:
+    """
+    Достаёт достоверный side для ордера через pagination-эндпоинт.
+    Ищет в узком окне вокруг order_date (если передана) или в последних
+    3 днях. Возвращает "BUY"/"SELL" или None, если не нашли/ошибка.
+    """
+    try:
+        now_ms = int(time.time() * 1000)
+
+        if order_date:
+            if hasattr(order_date, "timestamp"):
+                order_ts = int(order_date.timestamp() * 1000)
+            else:
+                order_ts = now_ms
+            start_ms = order_ts - (24 * 60 * 60 * 1000)
+            end_ms = min(order_ts + (24 * 60 * 60 * 1000), now_ms)
+        else:
+            start_ms = now_ms - (3 * 24 * 60 * 60 * 1000)
+            end_ms = now_ms
+
+        page = 1
+        while page <= 10:  # разумный предел, чтобы не зависнуть
+            timestamp = int(time.time() * 1000)
+            params = {
+                "page": page,
+                "limit": 50,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "timestamp": timestamp,
+            }
+            query_string = "&".join(f"{k}={v}" for k, v in params.items())
+            sig = hmac.new(
+                user.mexc_api_secret.encode("utf-8"),
+                query_string.encode("utf-8"),
+                hashlib.sha256
+            ).hexdigest()
+
+            url = f"https://api.mexc.com/api/v3/fiat/market/order/pagination?{query_string}&signature={sig}"
+            headers = {
+                "X-MEXC-APIKEY": user.mexc_api_key,
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            }
+
+            resp = requests.get(url, headers=headers, timeout=15, verify=False)
+            data = resp.json()
+
+            if data.get("code") != 0:
+                return None
+
+            items = data.get("data") or []
+            for it in items:
+                if str(it.get("advOrderNo")) == str(order_id):
+                    side = str(it.get("side", "")).upper()
+                    return side if side in ("BUY", "SELL") else None
+
+            total_pages = data.get("page", {}).get("totalPage", 1)
+            if page >= total_pages or not items:
+                break
+            page += 1
+
+        return None
+
+    except Exception as e:
+        logger.error("MEXC _get_mexc_side_via_pagination [%s] order %s: %s", user.username, order_id, e)
         return None
 
 
