@@ -239,10 +239,18 @@ def probe_mexc_key(user) -> bool:
     флаг mexc_key_valid специально, чтобы узнать, не включил ли юзер галочку
     P2P заново на том же самом ключе (без пересохранения ключа в системе).
 
-    Дёргает тот же эндпоинт order/detail с заведомо несуществующим ID.
-    Если ключ рабочий — MEXC ответит code=0 с пустым data (order не найден,
-    но доступ есть). Если ключ всё ещё сломан — вернётся тот же код ошибки
-    (700007/10072/10073), и вызывающий код оставит юзера заблокированным.
+    ИСПРАВЛЕНО: изначально пробник дёргал order/detail с фейковым несуществующим
+    ID ("d" + нули). Оказалось, что MEXC на такой запрос иногда возвращает
+    недокументированный код 60028 ("User's transaction order error") ДАЖЕ для
+    полностью рабочих ключей — это не сигнал о проблеме с правами, а какая-то
+    внутренняя особенность именно order/detail на несуществующий ID. Из-за
+    этого пробник по order/detail был ненадёжен и мог давать ложные "ключ не
+    работает" на реально исправных ключах.
+
+    Теперь используется тот же pagination-эндпоинт, что и в sync_mexc_orders
+    (проверен и подтверждён в проде) — запрос за последние 5 минут. Он всегда
+    даёт однозначный ответ: code=0 (ключ рабочий, даже если ордеров за этот
+    период не было) или code=700007/10072/10073 (ключ реально сломан).
 
     Возвращает True, если ключ снова рабочий (и сам не трогает флаг —
     это ответственность вызывающего кода, чтобы не размазывать логику
@@ -252,31 +260,34 @@ def probe_mexc_key(user) -> bool:
         return False
 
     try:
-        timestamp = int(time.time() * 1000)
+        now_ms = int(time.time() * 1000)
+        start_ms = now_ms - 5 * 60 * 1000  # последние 5 минут — достаточно для probe
+
         params = {
-            "advOrderNo": "probe_nonexistent_0000000000",
-            "timestamp": timestamp,
+            "page": 1,
+            "limit": 10,
+            "startTime": start_ms,
+            "endTime": now_ms,
+            "timestamp": now_ms,
         }
-        query_string = urllib.parse.urlencode(sorted(params.items()))
+        query_string = "&".join(f"{k}={v}" for k, v in params.items())
         sig = hmac.new(
             user.mexc_api_secret.encode("utf-8"),
             query_string.encode("utf-8"),
             hashlib.sha256
         ).hexdigest()
 
-        url = f"https://api.mexc.com/api/v3/fiat/order/detail?{query_string}&signature={sig}"
+        url = f"https://api.mexc.com/api/v3/fiat/market/order/pagination?{query_string}&signature={sig}"
         headers = {
             "X-MEXC-APIKEY": user.mexc_api_key,
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
 
-        resp = requests.get(url, headers=headers, timeout=10, verify=False)
+        resp = requests.get(url, headers=headers, timeout=15, verify=False)
         data = resp.json()
         code = data.get("code")
 
-        # code == 0 значит доступ есть (сам факт, что "ордер не найден" —
-        # это ответ авторизованного запроса, а не отказ в доступе)
         if code == 0:
             logger.info("MEXC [%s]: probe успешен — ключ снова рабочий.", user.username)
             return True
