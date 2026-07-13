@@ -229,6 +229,66 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         return None
 
 
+# ── Пробник для восстановленных ключей ────────────────────────────────────────
+
+def probe_mexc_key(user) -> bool:
+    """
+    Лёгкая проверка "жив ли ключ снова" — для юзеров с mexc_key_valid=False.
+
+    Используется periodic-таском recheck_mexc_keys_task, который ИГНОРИРУЕТ
+    флаг mexc_key_valid специально, чтобы узнать, не включил ли юзер галочку
+    P2P заново на том же самом ключе (без пересохранения ключа в системе).
+
+    Дёргает тот же эндпоинт order/detail с заведомо несуществующим ID.
+    Если ключ рабочий — MEXC ответит code=0 с пустым data (order не найден,
+    но доступ есть). Если ключ всё ещё сломан — вернётся тот же код ошибки
+    (700007/10072/10073), и вызывающий код оставит юзера заблокированным.
+
+    Возвращает True, если ключ снова рабочий (и сам не трогает флаг —
+    это ответственность вызывающего кода, чтобы не размазывать логику
+    изменения флага по разным местам).
+    """
+    if not user.mexc_api_key or not user.mexc_api_secret:
+        return False
+
+    try:
+        timestamp = int(time.time() * 1000)
+        params = {
+            "advOrderNo": "probe_nonexistent_0000000000",
+            "timestamp": timestamp,
+        }
+        query_string = urllib.parse.urlencode(sorted(params.items()))
+        sig = hmac.new(
+            user.mexc_api_secret.encode("utf-8"),
+            query_string.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+
+        url = f"https://api.mexc.com/api/v3/fiat/order/detail?{query_string}&signature={sig}"
+        headers = {
+            "X-MEXC-APIKEY": user.mexc_api_key,
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+
+        resp = requests.get(url, headers=headers, timeout=10, verify=False)
+        data = resp.json()
+        code = data.get("code")
+
+        # code == 0 значит доступ есть (сам факт, что "ордер не найден" —
+        # это ответ авторизованного запроса, а не отказ в доступе)
+        if code == 0:
+            logger.info("MEXC [%s]: probe успешен — ключ снова рабочий.", user.username)
+            return True
+
+        logger.debug("MEXC [%s]: probe — код %s, ключ всё ещё нерабочий.", user.username, code)
+        return False
+
+    except Exception as e:
+        logger.debug("MEXC [%s]: probe исключение: %s", user.username, e)
+        return False
+
+
 # ── Вспомогательные ───────────────────────────────────────────────────────────
 
 def _to_float(value) -> float:

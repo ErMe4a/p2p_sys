@@ -4,7 +4,10 @@ from .models import User, Order
 from .bybit_api import sync_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .models import UnprocessedOrder
+from .evotor_atol import evotor_check_report, evotor_get_token, EvotorAtolError
 logger = logging.getLogger(__name__)
+
+MAX_EVOTOR_REPORT_RETRIES = 6  # 30с,60с,120с,240с,240с,240с ~ до 15 минут
 
 # ── Расписание ретраев верификации ────────────────────────────────────────────
 # ИСПРАВЛЕНО: было 5 попыток с фолбэком "бьём чек из БД". Теперь чек
@@ -302,4 +305,49 @@ def _try_send_receipt(order: Order):
             getattr(result, "evotor_uuid", None),
         )
     except Exception as e:
-        logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e) 
+        logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
+
+
+
+
+@shared_task(bind=True, max_retries=0, queue="sync")
+def recheck_mexc_keys_task(self):
+    """
+    НОВОЕ: периодическая проверка "не ожил ли ключ MEXC сам по себе".
+
+    В отличие от retry_blocked_orders_task (которую нужно вызывать явно
+    после того, как юзер пересохранил ключ в настройках), этот таск не
+    требует никакого действия от юзера в самой системе — он предназначен
+    ровно для сценария "юзер просто включил галочку P2P на MEXC на том же
+    самом ключе, ничего не пересохраняя у нас".
+
+    Ставится в django_celery_beat раз в 30-60 минут. Проходит по всем
+    юзерам с mexc_key_valid=False, пробует probe_mexc_key (лёгкий тестовый
+    запрос) — если ключ ожил, сбрасывает флаг и запускает допробитие
+    зависших ордеров этого юзера.
+    """
+    from .exchange_api import probe_mexc_key
+
+    blocked_users = (
+        User.objects
+        .filter(mexc_key_valid=False)
+        .exclude(mexc_api_key__isnull=True).exclude(mexc_api_key="")
+        .exclude(mexc_api_secret__isnull=True).exclude(mexc_api_secret="")
+    )
+
+    recovered = 0
+    for user in blocked_users:
+        try:
+            if probe_mexc_key(user):
+                user.mexc_key_valid = True
+                user.save(update_fields=["mexc_key_valid"])
+                recovered += 1
+                logger.info("recheck_mexc_keys_task: ключ MEXC [%s] снова рабочий, разблокирован.", user.username)
+
+                retry_blocked_orders_task.apply_async(args=[user.id], queue="receipt")
+        except Exception as e:
+            logger.error("recheck_mexc_keys_task: ошибка проверки [%s]: %s", user.username, e, exc_info=True)
+
+    if recovered:
+        logger.info("recheck_mexc_keys_task: восстановлено %d ключей MEXC.", recovered)
+    return recovered
