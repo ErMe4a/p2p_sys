@@ -6,6 +6,14 @@ from .mexc_api import sync_mexc_orders
 from .models import UnprocessedOrder
 logger = logging.getLogger(__name__)
 
+# ── Расписание ретраев верификации ────────────────────────────────────────────
+# ИСПРАВЛЕНО: было 5 попыток с фолбэком "бьём чек из БД". Теперь чек
+# НИКОГДА не бьётся по неподтверждённым данным (кроме ручного режима) —
+# вместо фолбэка длинное расписание ретраев до ~48 часов.
+VERIFY_RETRY_SCHEDULE = [30, 60, 120, 300, 900, 1800]  # 30с,1м,2м,5м,15м,30м
+VERIFY_HOURLY_DELAY = 3600                              # дальше — каждый час
+VERIFY_MAX_RETRIES = len(VERIFY_RETRY_SCHEDULE) + 48    # ~48 часов суммарно
+
 
 @shared_task(bind=True, max_retries=0, queue="sync")
 def sync_bybit_orders_task(self):
@@ -53,17 +61,22 @@ def sync_bybit_orders_task(self):
     return {"bybit": bybit_total, "mexc": mexc_total}
 
 
-@shared_task(bind=True, max_retries=5, queue="receipt")
+@shared_task(bind=True, max_retries=VERIFY_MAX_RETRIES, queue="receipt")
 def verify_and_receipt_later(self, order_id: int):
     """
     Пробует получить данные ордера из API биржи и пробить чек.
 
-    Расписание повторов (нарастающая задержка):
-      попытка 1 → через 30 сек  (Bybit) или 120 сек (MEXC)
-      попытка 2 → через 60 сек
-      попытка 3 → через 120 сек
-      попытка 4 → через 240 сек
-      попытка 5 → бьём чек с тем что есть в БД
+    НОВЫЕ ПРАВИЛА (чек только из данных API):
+      - Чек бьётся ТОЛЬКО после подтверждения данных API биржи
+        (или в ручном режиме is_manual — данные оператора).
+      - Фолбэк "попытки исчерпаны — бьём чек из БД" УДАЛЁН.
+      - Расписание ретраев: 30с → 1м → 2м → 5м → 15м → 30м → далее
+        каждый час, суммарно до ~48 часов.
+      - Если ключ юзера помечен невалидным — ретраи останавливаются
+        немедленно (без смысла долбить мёртвый ключ). После починки
+        ключа зависшие ордера допробьёт retry_blocked_orders_task.
+      - Если биржа так и не подтвердила ордер за ~48ч — ордер
+        помечается verification_failed, чек не бьётся.
     """
     from .exchange_api import get_order_from_exchange
 
@@ -82,8 +95,26 @@ def verify_and_receipt_later(self, order_id: int):
         logger.info("verify_and_receipt_later: Order %d чек уже пробит.", order_id)
         return
 
+    # ИСПРАВЛЕНО: если ключ уже помечен невалидным — не ретраим впустую.
+    # Ордер останется неверифицированным до починки ключа юзером.
+    ex_lower = str(o.exchange_type).lower()
+    if "mexc" in ex_lower and not o.user.mexc_key_valid:
+        logger.warning(
+            "verify_and_receipt_later: Order %d — ключ MEXC юзера %s невалиден, "
+            "ретраи остановлены. Допробьётся после починки ключа.",
+            order_id, o.user.username,
+        )
+        return
+    if "bybit" in ex_lower and not o.user.bybit_key_valid:
+        logger.warning(
+            "verify_and_receipt_later: Order %d — ключ Bybit юзера %s невалиден, "
+            "ретраи остановлены. Допробьётся после починки ключа.",
+            order_id, o.user.username,
+        )
+        return
+
     attempt = self.request.retries + 1
-    logger.info("verify_and_receipt_later: Order %d [%s] попытка %d/5.", order_id, o.external_id, attempt)
+    logger.info("verify_and_receipt_later: Order %d [%s] попытка %d.", order_id, o.external_id, attempt)
 
     api_data = get_order_from_exchange(
         user=o.user,
@@ -121,46 +152,116 @@ def verify_and_receipt_later(self, order_id: int):
         _try_send_receipt(o)
 
     else:
-        if attempt < 5:
-            # ИСПРАВЛЕНО: базовая задержка теперь зависит от биржи.
-            # MEXC ищет ордер постранично по истории (дольше и тяжелее
-            # для API биржи), поэтому даём больше времени на повтор —
-            # было 30 сек для обеих бирж одинаково, хотя в докстринге
-            # выше заявлено 120 для MEXC.
-            is_mexc = 'mexc' in o.exchange_type.lower()
-            base_delay = 120 if is_mexc else 30
-            countdown = base_delay * (2 ** (attempt - 1))
+        # ИСПРАВЛЕНО: ключ мог быть помечен невалидным ПРЯМО СЕЙЧАС, внутри
+        # только что отработавшего get_order_from_exchange (например поймали
+        # код 700007) — перепроверяем перед тем, как ставить ретрай.
+        o.user.refresh_from_db(fields=["mexc_key_valid", "bybit_key_valid"])
+        if ("mexc" in ex_lower and not o.user.mexc_key_valid) or \
+           ("bybit" in ex_lower and not o.user.bybit_key_valid):
+            logger.warning(
+                "verify_and_receipt_later: Order %d — ключ помечен невалидным "
+                "в ходе запроса, ретраи остановлены.",
+                order_id,
+            )
+            return
+
+        if attempt <= VERIFY_MAX_RETRIES:
+            # ИСПРАВЛЕНО: расписание вместо жёсткой формулы 30/120 * 2^n
+            if attempt <= len(VERIFY_RETRY_SCHEDULE):
+                countdown = VERIFY_RETRY_SCHEDULE[attempt - 1]
+            else:
+                countdown = VERIFY_HOURLY_DELAY
 
             logger.warning(
-                "verify_and_receipt_later: Order %d — API не ответил, повтор через %d сек.",
-                order_id, countdown,
+                "verify_and_receipt_later: Order %d — API не подтвердил, повтор через %d сек (попытка %d/%d).",
+                order_id, countdown, attempt, VERIFY_MAX_RETRIES,
             )
             raise self.retry(countdown=countdown)
         else:
-            logger.warning(
-                "verify_and_receipt_later: Order %d — 5 попыток исчерпаны, бьём чек с данными из БД.",
-                order_id,
-            )
+            # ИСПРАВЛЕНО: фолбэк "бьём чек из БД" удалён полностью.
+            # Помечаем ордер как неподтверждённый — чек не бьётся, пока
+            # юзер не решит вопрос сам (ручной режим или разбор ордера).
+            current_receipt = o.receipt if isinstance(o.receipt, dict) else {}
+            o.receipt = {
+                **current_receipt,
+                "verification_failed": True,
+                "status": "VERIFICATION_FAILED",
+            }
+            o.save(update_fields=["receipt"])
 
-            # ИСПРАВЛЕНО: раньше запись в UnprocessedOrder тут не удалялась —
-            # чек пробивался, а ордер продолжал висеть в "Необработанных"
-            # даже после фактической обработки.
+            # Из "Необработанных" всё равно убираем — раз попытки исчерпаны,
+            # дальше висеть там ему незачем, ордер уже не "необработанный",
+            # он "неподтверждённый" (виден по receipt.status в интерфейсе).
             UnprocessedOrder.objects.filter(
                 user=o.user,
                 order_id=o.external_id,
             ).delete()
 
-            _try_send_receipt(o)
+            logger.error(
+                "verify_and_receipt_later: Order %d [%s] — биржа не подтвердила ордер "
+                "за ~48ч. Чек НЕ пробит. Требуется ручное решение (manualEdit или разбор).",
+                order_id, o.external_id,
+            )
+
+
+@shared_task(bind=True, max_retries=0, queue="receipt")
+def retry_blocked_orders_task(self, user_id: int = None):
+    """
+    НОВОЕ: допробитие зависших ордеров после починки ключей.
+
+    Вызывается из вьюхи настроек сразу после того, как юзер сохранил новый
+    рабочий API-ключ (mexc_key_valid/bybit_key_valid снова стали True) —
+    с user_id, чтобы сразу подхватить именно его зависшие ордера.
+
+    Можно также поставить в Celery Beat раз в час без user_id как страховку.
+    """
+    qs = Order.objects.filter(is_verified=False, exchange_type__in=["Bybit", "MEXC"])
+    if user_id:
+        qs = qs.filter(user_id=user_id)
+
+    requeued = 0
+    for o in qs.select_related("user"):
+        r = o.receipt if isinstance(o.receipt, dict) else {}
+        if r.get("uuid") or r.get("verification_failed"):
+            continue
+
+        ex_lower = str(o.exchange_type).lower()
+        if "mexc" in ex_lower and not o.user.mexc_key_valid:
+            continue
+        if "bybit" in ex_lower and not o.user.bybit_key_valid:
+            continue
+
+        verify_and_receipt_later.apply_async(args=[o.id], countdown=5, queue="receipt")
+        requeued += 1
+
+    if requeued:
+        logger.info("retry_blocked_orders_task: перезапущено %d зависших ордеров (user_id=%s).", requeued, user_id)
+    return requeued
 
 
 def _try_send_receipt(order: Order):
     """
     Пробивает чек если есть contact и ненулевая сумма.
     Чек уже пробитый не трогаем.
+
+    ИСПРАВЛЕНО: добавлен жёсткий барьер — чек бьётся ТОЛЬКО если ордер
+    верифицирован через API (is_verified=True) или это осознанный ручной
+    ввод (is_manual=True). Раньше сюда мог долететь вызов с неверифицированными
+    данными расширения через фолбэк "5 попыток исчерпаны" — этот путь удалён
+    в verify_and_receipt_later, но барьер здесь оставлен как вторая линия
+    защиты на случай будущих вызовов этой функции из других мест.
     """
     from .receipt_service import create_or_update_and_send_receipt
 
     if order.receipt and isinstance(order.receipt, dict) and order.receipt.get("uuid"):
+        return
+
+    # ИСПРАВЛЕНО: жёсткая проверка источника данных перед любым дальнейшим шагом
+    if not order.is_verified and not order.is_manual:
+        logger.warning(
+            "_try_send_receipt: Order %d — не верифицирован и не ручной, чек НЕ бьём.",
+            order.id,
+        )
         return
 
     receipt_dict = order.receipt if isinstance(order.receipt, dict) else {}
@@ -175,21 +276,22 @@ def _try_send_receipt(order: Order):
         return
 
     # ── ИСПРАВЛЕНИЕ ──────────────────────────────────────────────────────────
-    # Берём финансовые данные из верифицированного ордера (API данные),
-    # а не из плашки расширения где курс мог прийти в копейках (79950 вместо 79.95).
+    # Берём финансовые данные из ордера (там либо данные API, либо осознанный
+    # ручной ввод — в обоих случаях мы уже прошли барьер выше), а не из
+    # плашки расширения, где курс мог прийти в копейках (79950 вместо 79.95).
     # contact берём из receipt_dict — его в API нет.
-    if order.is_verified:
-        receipt_dict = {
-            **receipt_dict,
-            "price":  float(order.price),
-            "sum":    float(order.cost),
-            "amount": float(order.amount),
-        }
-        logger.info(
-            "_try_send_receipt: Order %d — подменяем данные чека из ордера: "
-            "price=%s sum=%s amount=%s",
-            order.id, float(order.price), float(order.cost), float(order.amount),
-        )
+    receipt_dict = {
+        **receipt_dict,
+        "price":  float(order.price),
+        "sum":    float(order.cost),
+        "amount": float(order.amount),
+    }
+    logger.info(
+        "_try_send_receipt: Order %d — подменяем данные чека из ордера (verified=%s, manual=%s): "
+        "price=%s sum=%s amount=%s",
+        order.id, order.is_verified, order.is_manual,
+        float(order.price), float(order.cost), float(order.amount),
+    )
 
     try:
         result = create_or_update_and_send_receipt(order, receipt_dict)
@@ -200,4 +302,4 @@ def _try_send_receipt(order: Order):
             getattr(result, "evotor_uuid", None),
         )
     except Exception as e:
-        logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
+        logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e) 

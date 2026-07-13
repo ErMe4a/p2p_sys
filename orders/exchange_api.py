@@ -28,7 +28,14 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 BYBIT_INVALID_KEY_CODES = {33004, 10003, 10004}
-MEXC_INVALID_KEY_CODES  = {10072, 10073}
+
+# ИСПРАВЛЕНО: добавлен код 700007 — "нет права P2P на ключе" (MEXC обновил
+# настройки ключей, у существующих ключей нужно заново включить галочку P2P).
+# Раньше этот код падал в "прочие ошибки" и система бесконечно ретраила
+# мёртвый ключ вместо того, чтобы сразу его заблокировать.
+MEXC_INVALID_KEY_CODES = {10072, 10073, 700007}
+
+MEXC_IP_WHITELIST_CODE = 700006
 
 
 def get_order_from_exchange(
@@ -161,15 +168,24 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         data = resp.json()
         code = data.get("code")
 
-        # Невалидный ключ
+        # ИСПРАВЛЕНО: 700007 (нет права P2P) теперь тоже сюда — ключ
+        # помечается невалидным и юзер получает 403 при следующей попытке
+        # сохранить ордер, вместо бесконечных бесплодных ретраев.
         if code in MEXC_INVALID_KEY_CODES:
             user.mexc_key_valid = False
             user.save(update_fields=["mexc_key_valid"])
-            logger.warning("MEXC [%s]: ключ невалиден (код %s) — помечен.", user.username, code)
+            if code == 700007:
+                logger.warning(
+                    "MEXC [%s]: у ключа нет права P2P (код 700007) — помечен невалидным. "
+                    "Юзеру нужно включить галочку 'P2P' в настройках ключа на MEXC.",
+                    user.username,
+                )
+            else:
+                logger.warning("MEXC [%s]: ключ невалиден (код %s) — помечен.", user.username, code)
             return None
 
-        # IP whitelist
-        if code == 700006:
+        # IP whitelist — ключ сам по себе валиден, флаг не трогаем
+        if code == MEXC_IP_WHITELIST_CODE:
             logger.warning("MEXC [%s]: IP не в whitelist (код 700006).", user.username)
             return None
 
@@ -189,6 +205,13 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         amount = _to_float(item.get("tradableQuantity"))
         cost   = _to_float(item.get("amount"))
         op     = str(item.get("side", "BUY")).upper()
+
+        # ИСПРАВЛЕНО: валидация side — если биржа вернёт неожиданное значение,
+        # не тащим его дальше как есть (в tasks.py перезапись operation_type
+        # идёт без проверки, поэтому фильтруем на источнике).
+        if op not in ("SELL", "BUY"):
+            logger.warning("MEXC [%s]: order %s — неожиданный side='%s', считаем BUY.", user.username, order_id, op)
+            op = "BUY"
 
         if amount == 0 and price > 0 and cost > 0:
             amount = round(cost / price, 8)

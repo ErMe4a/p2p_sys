@@ -146,16 +146,24 @@ def order(request):
 
     exchange_name = get_exchange_name(data.get("exchangeType", 1))
 
+    # ИСПРАВЛЕНО: тексты стали конкретнее — юзер сразу видит, что чинить,
+    # а не просто "недействителен".
     if exchange_name == "Bybit" and not request.user.bybit_key_valid:
         return Response({
             "success": False,
-            "message": "Ключ Bybit API недействителен или истёк. Обновите ключ в настройках."
+            "message": "Неправильно настроены API ключи Bybit (ключ недействителен "
+                       "или истёк). Обновите ключ в настройках — зависшие ордера "
+                       "допробьются автоматически."
         }, status=403)
 
     if exchange_name == "MEXC" and not request.user.mexc_key_valid:
         return Response({
             "success": False,
-            "message": "Ключ MEXC API недействителен. Обновите ключ в настройках."
+            "message": "Неправильно настроены API ключи MEXC. Проверьте: 1) ключ "
+                       "действителен, 2) в настройках ключа на MEXC включена "
+                       "галочка 'P2P' (MEXC обновил настройки ключей — её нужно "
+                       "включить заново), 3) нет IP-ограничения. Обновите ключ в "
+                       "настройках — зависшие ордера допробьются автоматически."
         }, status=403)
 
     commission      = data.get("commission") or 0
@@ -230,6 +238,27 @@ def order(request):
                     "Order %s [%s]: API не вернул данные — сохраняем с данными расширения, чек откладываем.",
                     external_id, exchange_name,
                 )
+
+                # ИСПРАВЛЕНО: ключ мог быть помечен невалидным ПРЯМО СЕЙЧАС,
+                # внутри только что отработавшего get_order_from_exchange
+                # (например поймали 700007) — перепроверяем и, если так,
+                # отклоняем сразу с понятным текстом вместо сохранения
+                # заведомо мёртвого ордера.
+                request.user.refresh_from_db(fields=["mexc_key_valid", "bybit_key_valid"])
+                if exchange_name == "MEXC" and not request.user.mexc_key_valid:
+                    return Response({
+                        "success": False,
+                        "message": "Неправильно настроены API ключи MEXC (нет права "
+                                   "P2P или ключ недействителен). Включите галочку "
+                                   "'P2P' в настройках ключа на MEXC и обновите ключ "
+                                   "в настройках системы."
+                    }, status=403)
+                if exchange_name == "Bybit" and not request.user.bybit_key_valid:
+                    return Response({
+                        "success": False,
+                        "message": "Неправильно настроены API ключи Bybit. Обновите "
+                                   "ключ в настройках системы."
+                    }, status=403)
 
     if op_type not in ("SELL", "BUY"):
         op_type = "BUY"

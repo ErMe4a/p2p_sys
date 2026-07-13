@@ -78,6 +78,25 @@ function isColorGreen(colorStr) {
 function detectOrderType() {
     console.log('P2P Analytics MEXC: Detecting order type...');
 
+    // ИСПРАВЛЕНО: НОВАЯ, самая надёжная стратегия — идёт первой.
+    // data-testid у MEXC гораздо стабильнее хэш-классов (CSS-модули
+    // меняются при каждом деплое фронтенда, data-testid — нет).
+    // Если на странице есть "Buyer Nickname" — значит контрагент
+    // покупатель, а мы продавец (SELL). Если "Seller Nickname" —
+    // контрагент продавец, мы покупатель (BUY).
+    try {
+        if (document.querySelector('[data-testid="info-row-buyerName"]')) {
+            console.log('P2P Analytics MEXC: Detected SELL via buyerName row (мы продавец)');
+            return 'sell';
+        }
+        if (document.querySelector('[data-testid="info-row-sellerName"]')) {
+            console.log('P2P Analytics MEXC: Detected BUY via sellerName row (мы покупатель)');
+            return 'buy';
+        }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy 0 (buyer/sellerName) failed', e);
+    }
+
     // СТРАТЕГИЯ 1: Читаем subtitle заголовка
     // Пример: "You have successfully sold 12.0481 USDT"
     // Пример: "You have successfully bought 12.0481 USDT"
@@ -110,7 +129,9 @@ function detectOrderType() {
         console.error('P2P Analytics MEXC: Strategy 2 (title) failed', e);
     }
 
-    // СТРАТЕГИЯ 3: Поиск по data-testid строк в InfoLayout
+    // СТРАТЕГИЯ 3: Поиск по data-testid строк в InfoLayout (лейбл "Type/Тип/Side/Направление")
+    // Оставлена как запасной вариант — на текущей вёрстке MEXC такой строки
+    // уже нет, но если её вернут в будущем, стратегия снова заработает сама.
     try {
         const rows = document.querySelectorAll('[data-testid^="info-row-"]');
         for (const row of rows) {
@@ -1475,9 +1496,15 @@ function createCheckContent() {
     editCheckboxWrapper.appendChild(editLabel);
 
     // === 4. Выбор типа (Приход/Расход) ===
+    // ИСПРАВЛЕНО: раньше этот блок был скрыт (display: none) и появлялся
+    // только когда включена галочка "Чек". Из-за этого, если чек не нужен,
+    // а автоопределение типа (detectOrderType) не сработало — пользователь
+    // физически не мог выбрать тип вручную, и сохранение падало с ошибкой
+    // "не удалось определить тип заказа". Теперь блок виден всегда — это
+    // подстраховка на случай сбоя автоопределения, независимо от чека.
     const typeSelector = document.createElement('div');
     typeSelector.className = 'p2p-analytics-type-selector';
-    typeSelector.style.display = 'none';
+    typeSelector.style.display = 'flex';
 
     const labelSell = document.createElement('label');
     labelSell.className = 'p2p-analytics-radio-label type-sell';
@@ -1512,6 +1539,7 @@ function createCheckContent() {
     successMessage.textContent = 'Чек пробит (данные зафиксированы)';
 
     // === 5. Условные инпуты (Контакт) ===
+    // Контакт как был, так и остаётся условным — он нужен только для чека
     const conditionalInputs = document.createElement('div');
     conditionalInputs.className = 'p2p-analytics-conditional-inputs';
     conditionalInputs.style.display = 'none';
@@ -1562,7 +1590,6 @@ function createCheckContent() {
             unlockFinancialFields();
         } else {
             lockFinancialFields();
-            // При снятии галочки — возвращаем данные со страницы
             if (rateInput) rateInput.value = parsePriceFromPage();
             if (quantityInput) quantityInput.value = parseQuantityFromPage();
             if (costInput) costInput.value = parseAmountFromPage();
@@ -1570,11 +1597,13 @@ function createCheckContent() {
     });
 
     // === Обработчик чекбокса ЧЕК ===
+    // ИСПРАВЛЕНО: typeSelector больше не скрывается/показывается через этот
+    // обработчик — он теперь всегда виден (см. п.4 выше). Тут остаётся только
+    // управление полем "Контакт", которое действительно нужно только для чека.
     checkbox.addEventListener('change', () => {
         if (!receiptExists) {
             const isChecked = checkbox.checked;
             conditionalInputs.style.display = isChecked ? 'block' : 'none';
-            typeSelector.style.display = isChecked ? 'flex' : 'none';
             if (isChecked && contactInput && !contactInput.value) {
                 contactInput.value = generateRandomGmail();
             }
@@ -1673,12 +1702,10 @@ function createCheckContent() {
                         lockFinancialFields();
                     }
 
-                    // Данные из БД приоритетнее страницы
                     if (order.price) rateInput.value = order.price;
                     if (order.quantity) quantityInput.value = order.quantity;
                     if (order.amount && costInput) costInput.value = order.amount;
 
-                    // Если каких-то данных нет в БД — ждём DOM и берём со страницы
                     if (!order.price || !order.quantity || !order.amount) {
                         waitForElement('[data-testid="info-row-price"]').then(() => {
                             if (!rateInput.value) rateInput.value = parsePriceFromPage();
@@ -1688,7 +1715,6 @@ function createCheckContent() {
                     }
 
                 } else {
-                    // Ордера в БД нет — ждём DOM и берём со страницы
                     waitForElement('[data-testid="info-row-price"]').then(() => {
                         rateInput.value = parsePriceFromPage();
                         quantityInput.value = parseQuantityFromPage();
@@ -1697,7 +1723,6 @@ function createCheckContent() {
                     });
                 }
 
-                // Контакт всегда доступен
                 if (contactInput) {
                     contactInput.readOnly = false;
                     contactInput.disabled = false;
@@ -1708,6 +1733,10 @@ function createCheckContent() {
                 permanentInputs.style.opacity = '1';
                 permanentInputs.style.filter = 'none';
 
+                // ИСПРАВЛЕНО: typeSelector больше не трогаем тут — он уже
+                // виден по умолчанию (см. п.4). Раньше он показывался только
+                // в ветке hasCredentials===true, из-за чего при отсутствующих
+                // реквизитах Evotor тип тоже нельзя было выбрать вручную.
                 if (!hasCredentials) {
                     checkbox.disabled = true;
                     checkbox.classList.add('p2p-analytics-checkbox-disabled');
@@ -1718,7 +1747,6 @@ function createCheckContent() {
                     checkbox.checked = true;
                     checkbox.disabled = false;
 
-                    typeSelector.style.display = 'flex';
                     conditionalInputs.style.display = 'block';
 
                     if (contactInput && !contactInput.value) {
@@ -1731,6 +1759,7 @@ function createCheckContent() {
 
     return checkContent;
 }
+
 // Function to collect form data
 
 function collectFormData() {
