@@ -28,6 +28,9 @@ class User(AbstractUser):
 
     bybit_key_valid = models.BooleanField(default=True, verbose_name="Bybit ключ валиден")
     mexc_key_valid = models.BooleanField(default=True, verbose_name="MEXC ключ валиден")
+    
+    oktmo  = models.CharField(max_length=11, blank=True, default="", verbose_name="ОКТМО")
+    kod_no = models.CharField(max_length=4,  blank=True, default="", verbose_name="Код налогового органа")
 
     def __str__(self):
         return self.username

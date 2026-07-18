@@ -216,11 +216,20 @@
         <div class="form-row mb-3">
             <div class="form-group"><label>Год (для УСН)</label><input class="form-control" type="number" id="reportsYear" value="2026" min="2020" max="2030"></div>
         </div>
+        <div class="form-group">
+            <label>Период (уведомление)</label>
+            <select class="form-control" id="reportsUvPeriod">
+                <option value="Q1">1 квартал</option>
+                <option value="H1">Полугодие</option>
+                <option value="M9">9 месяцев</option>
+            </select>
+        </div>
 
         <div class="btn-report-grid">
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadScreenshots()" id="downloadScreenshotsBtn">📷 Скриншоты</button>
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadExcel()" id="downloadExcelBtn">📊 Excel</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUsn()" id="downloadUsnBtn">📋 Скачать УСН отчет</button>
+            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUvedomlenie()">📨 Уведомление XML (КНД 1110355)</button>
         </div>
     </div>
 </div>
@@ -492,6 +501,14 @@
     }
     function closeReportsModal() { document.getElementById('reportsModal').classList.remove('active'); }
 
+    function downloadUvedomlenie() {
+        const userId = document.getElementById('reportsUserId').value;
+        const year = document.getElementById('reportsYear').value;
+        const period = document.getElementById('reportsUvPeriod').value;
+        if (!userId) { alert("Ошибка: не выбран пользователь"); return; }
+        window.location.href = `/admin-panel/export/uvedomlenie/?user_id=${userId}&year=${year}&period=${period}`;
+    }
+    
     function downloadExcel() {
         const userId = document.getElementById('reportsUserId').value;
         const start = document.getElementById('reportsStartDate').value;

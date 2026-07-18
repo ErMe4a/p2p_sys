@@ -33,6 +33,7 @@ from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpen
 from .receipt_service import create_or_update_and_send_receipt
 from zoneinfo import ZoneInfo
 MSK = ZoneInfo('Europe/Moscow')
+from .uvedomlenie_generator import build_uvedomlenie, PERIODS
 # --- Инициализация ---
 User = get_user_model()
 SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
@@ -354,7 +355,8 @@ def profile_settings(request):
         user.payment_address = request.POST.get('payment_address')
         user.tax_type       = request.POST.get('tax_type')
         user.inn            = request.POST.get('inn')
-
+        user.oktmo = request.POST.get('oktmo', '').strip()
+        user.kod_no = request.POST.get('kod_no', '').strip()
         # 2. Сохраняем ключи API
         user.htx_access_key  = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
@@ -366,7 +368,7 @@ def profile_settings(request):
             user.mexc_key_valid = True
         user.mexc_api_key    = new_mexc_key
         user.mexc_api_secret = new_mexc_secret
-
+        
         # Bybit: если ключ изменился — сбрасываем флаг невалидности
         new_bybit_key    = request.POST.get('bybit_key')
         new_bybit_secret = request.POST.get('bybit_secret')
@@ -2174,6 +2176,29 @@ def _get_ytd_base_from_cache(user_id, year, month,
 
     return ytd_base
 
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def export_uvedomlenie(request):
+    """Скачивание XML-уведомления КНД 1110355 (сумма считается из ордеров)."""
+    user_id = request.GET.get('user_id')
+    year = int(request.GET.get('year') or datetime.now().year)
+    period_key = request.GET.get('period', 'Q1')
+
+    if period_key not in PERIODS:
+        return HttpResponse("Неверный период", status=400)
+
+    target = User.objects.filter(id=user_id).first()
+    if not target:
+        return HttpResponse("Пользователь не найден", status=404)
+
+    try:
+        filename, xml_bytes, info = build_uvedomlenie(target, year, period_key)
+    except ValueError as e:
+        return HttpResponse(f"Ошибка: {e}", status=400)
+
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
