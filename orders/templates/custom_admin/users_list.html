@@ -229,7 +229,7 @@
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadScreenshots()" id="downloadScreenshotsBtn">📷 Скриншоты</button>
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadExcel()" id="downloadExcelBtn">📊 Excel</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUsn()" id="downloadUsnBtn">📋 Скачать УСН отчет</button>
-            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUvedomlenie()">📨 Уведомление XML (КНД 1110355)</button>
+            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" id="downloadUvBtn" onclick="downloadUvedomlenie()">📨 Уведомление XML (КНД 1110355)</button>
         </div>
     </div>
 </div>
@@ -501,12 +501,51 @@
     }
     function closeReportsModal() { document.getElementById('reportsModal').classList.remove('active'); }
 
-    function downloadUvedomlenie() {
+    async function downloadUvedomlenie() {
         const userId = document.getElementById('reportsUserId').value;
         const year = document.getElementById('reportsYear').value;
         const period = document.getElementById('reportsUvPeriod').value;
         if (!userId) { alert("Ошибка: не выбран пользователь"); return; }
-        window.location.href = `/admin-panel/export/uvedomlenie/?user_id=${userId}&year=${year}&period=${period}`;
+
+        const btn = document.getElementById('downloadUvBtn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '⏳ Формирование...';
+
+        try {
+            const url = `/admin-panel/export/uvedomlenie/?user_id=${userId}&year=${year}&period=${period}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                // Сервер вернул JSON с понятной причиной (ОКТМО/код НО не заполнены и т.д.)
+                let message = 'Не удалось сформировать уведомление.';
+                try {
+                    const data = await response.json();
+                    if (data.error) message = data.error;
+                } catch (e) { /* оставляем дефолтное сообщение */ }
+                alert('⚠️ ' + message);
+                return;
+            }
+
+            // Успех — скачиваем файл как blob
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const filename = match ? match[1] : 'uvedomlenie.xml';
+
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+        } catch (e) {
+            alert('⚠️ Ошибка сети при формировании уведомления.');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
     }
     
     function downloadExcel() {

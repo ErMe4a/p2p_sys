@@ -368,7 +368,7 @@ def profile_settings(request):
             user.mexc_key_valid = True
         user.mexc_api_key    = new_mexc_key
         user.mexc_api_secret = new_mexc_secret
-        
+
         # Bybit: если ключ изменился — сбрасываем флаг невалидности
         new_bybit_key    = request.POST.get('bybit_key')
         new_bybit_secret = request.POST.get('bybit_secret')
@@ -956,230 +956,30 @@ def user_profit_view(request):
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
-
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
-def admin_users_list(request):
-    """Список пользователей и управление ими"""
-    if not request.user.is_superuser:
-        return redirect('admin_login')
+def export_uvedomlenie(request):
+    """Скачивание XML-уведомления КНД 1110355 (сумма считается из ордеров)."""
+    user_id = request.GET.get('user_id')
+    year = int(request.GET.get('year') or datetime.now().year)
+    period_key = request.GET.get('period', 'Q1')
 
-    # === 1. Редактирование пользователя ===
-    if request.method == 'POST' and request.POST.get('action') == 'edit_user':
-        user_id = request.POST.get('user_id')
-        try:
-            user_to_edit = User.objects.get(id=user_id)
+    if period_key not in PERIODS:
+        return JsonResponse({'error': 'Неверный период.'}, status=400)
 
-            new_username = request.POST.get('username')
-            if new_username:
-                user_to_edit.username = new_username
+    target = User.objects.filter(id=user_id).first()
+    if not target:
+        return JsonResponse({'error': 'Пользователь не найден.'}, status=404)
 
-            new_password = request.POST.get('password')
-            if new_password:
-                user_to_edit.set_password(new_password)
+    try:
+        filename, xml_bytes, info = build_uvedomlenie(target, year, period_key)
+    except ValueError as e:
+        # Понятная причина: не заполнено ОКТМО/код НО/ФИО, либо сумма = 0.
+        return JsonResponse({'error': str(e)}, status=400)
 
-            user_to_edit.htx_access_key  = request.POST.get('htx_key')
-            user_to_edit.htx_private_key = request.POST.get('htx_secret')
-
-            # Bybit: если ключ изменился — сбрасываем флаг невалидности
-            new_bybit_key    = request.POST.get('bybit_key')
-            new_bybit_secret = request.POST.get('bybit_secret')
-            if new_bybit_key and new_bybit_key != user_to_edit.bybit_api_key:
-                user_to_edit.bybit_key_valid = True
-            user_to_edit.bybit_api_key    = new_bybit_key
-            user_to_edit.bybit_api_secret = new_bybit_secret
-
-            # MEXC: если ключ изменился — сбрасываем флаг невалидности
-            new_mexc_key    = request.POST.get('mexc_key')
-            new_mexc_secret = request.POST.get('mexc_secret')
-            if new_mexc_key and new_mexc_key != user_to_edit.mexc_api_key:
-                user_to_edit.mexc_key_valid = True
-            user_to_edit.mexc_api_key    = new_mexc_key
-            user_to_edit.mexc_api_secret = new_mexc_secret
-
-            user_to_edit.evotor_login    = request.POST.get('evotor_login')
-            user_to_edit.evotor_password = request.POST.get('evotor_password')
-
-            user_to_edit.save()
-            messages.success(request, f"Пользователь {user_to_edit.username} успешно обновлен.")
-        except User.DoesNotExist:
-            messages.error(request, "Пользователь не найден.")
-
-        return redirect('admin_users')
-
-    # === 2. Создание пользователя ===
-    if request.method == 'POST' and request.POST.get('action') == 'create_user':
-        username = request.POST.get('username')
-        password = request.POST.get('password')
-        if username and password:
-            User.objects.create(
-                username=username,
-                password=make_password(password),
-                bybit_api_key=request.POST.get('bybit_key'),
-                bybit_api_secret=request.POST.get('bybit_secret'),
-                is_staff=True
-            )
-            messages.success(request, f"Пользователь {username} создан.")
-        return redirect('admin_users')
-
-    # === 3. Корректировка начального остатка ===
-    if request.method == 'POST' and request.POST.get('action') == 'edit_balance':
-        user_id        = request.POST.get('user_id')
-        adjustment_str = request.POST.get('balance_adjustment', '0')
-        rate_str       = request.POST.get('balance_rate', '0')
-
-        try:
-            user_to_edit = User.objects.get(id=user_id)
-
-            amount_val = float(str(adjustment_str).replace(',', '.'))
-            rate_val   = float(str(rate_str).replace(',', '.'))
-
-            init_order = Order.objects.filter(
-                user=user_to_edit,
-                exchange_type="Остаток (до 1 фев)"
-            ).first()
-
-            if amount_val == 0:
-                if init_order:
-                    init_order.delete()
-                messages.success(
-                    request,
-                    f"Начальный остаток пользователя {user_to_edit.username} удалён."
-                )
-            else:
-                if rate_val <= 0:
-                    messages.error(request, "Укажите курс закупки больше нуля.")
-                    return redirect('admin_users')
-
-                op_type    = 'BUY' if amount_val > 0 else 'SELL'
-                abs_amount = abs(amount_val)
-                cost       = abs_amount * rate_val
-
-                if init_order:
-                    init_order.operation_type = op_type
-                    init_order.amount         = abs_amount
-                    init_order.price          = rate_val
-                    init_order.cost           = cost
-                    init_order.save()
-                    messages.success(
-                        request,
-                        f"Начальный остаток пользователя {user_to_edit.username} "
-                        f"изменён: {amount_val} USDT по курсу {rate_val} ₽ "
-                        f"(= {cost:,.2f} ₽)."
-                    )
-                else:
-                    feb_first = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
-                    Order.objects.create(
-                        user=user_to_edit,
-                        external_id=f"INIT-{user_to_edit.id}",
-                        operation_type=op_type,
-                        amount=abs_amount,
-                        price=rate_val,
-                        cost=cost,
-                        exchange_type="Остаток (до 1 фев)",
-                        created_at=feb_first
-                    )
-                    messages.success(
-                        request,
-                        f"Начальный остаток внесён для {user_to_edit.username}: "
-                        f"{amount_val} USDT по курсу {rate_val} ₽ "
-                        f"(= {cost:,.2f} ₽)."
-                    )
-
-        except User.DoesNotExist:
-            messages.error(request, "Пользователь не найден.")
-        except ValueError:
-            messages.error(request, "Некорректное значение количества или курса.")
-
-        return redirect('admin_users')
-
-    # === 4. Настройка доли пользователя по месяцам ===
-    if request.method == 'POST' and request.POST.get('action') == 'edit_share':
-        user_id = request.POST.get('user_id')
-        year    = request.POST.get('share_year')
-
-        try:
-            user_to_edit = User.objects.get(id=user_id)
-
-            if not isinstance(user_to_edit.profit_shares, dict):
-                user_to_edit.profit_shares = {}
-
-            for i in range(1, 13):
-                month_str = f"{i:02d}"
-                key       = f"{year}-{month_str}"
-                val       = request.POST.get(f"share_{month_str}")
-
-                if val is not None and val.strip() != "":
-                    user_to_edit.profit_shares[key] = float(str(val).replace(',', '.'))
-
-            user_to_edit.save()
-            messages.success(
-                request,
-                f"Доля для пользователя {user_to_edit.username} обновлена на {year} год."
-            )
-        except User.DoesNotExist:
-            messages.error(request, "Пользователь не найден.")
-        except ValueError:
-            messages.error(request, "Ошибка в формате числа доли. Используйте цифры.")
-
-        return redirect('admin_users')
-
-    # === 5. Вывод списка пользователей ===
-    users = User.objects.all().order_by('id')
-
-    # Один запрос — все user_id у которых есть manual entries
-    users_with_manual = set(
-        MonthlyManualEntry.objects
-        .values_list('user_id', flat=True)
-        .distinct()
-    )
-
-    # Один запрос — все user_id у которых есть init_order
-    init_orders_map = {
-        o.user_id: o
-        for o in Order.objects.filter(exchange_type="Остаток (до 1 фев)")
-    }
-
-    # Один запрос — суммы BUY и SELL по всем пользователям
-    from django.db.models import Sum, Case, When, FloatField
-    balance_qs = (
-        Order.objects
-        .values('user_id')
-        .annotate(
-            total_buy=Sum(
-                Case(When(operation_type='BUY',  then='amount'), default=0, output_field=FloatField())
-            ),
-            total_sell=Sum(
-                Case(When(operation_type='SELL', then='amount'), default=0, output_field=FloatField())
-            ),
-        )
-    )
-    balance_map = {row['user_id']: row for row in balance_qs}
-
-    for u in users:
-        bal = balance_map.get(u.id, {})
-        bought = float(bal.get('total_buy',  0) or 0)
-        sold   = float(bal.get('total_sell', 0) or 0)
-        u.real_balance = bought - sold
-
-        init_order = init_orders_map.get(u.id)
-        if init_order:
-            u.has_initial_balance = True
-            u.init_amount = (
-                float(init_order.amount)
-                if init_order.operation_type == 'BUY'
-                else -float(init_order.amount)
-            )
-            u.init_rate = float(init_order.price)
-        else:
-            u.has_initial_balance = False
-            u.init_amount = 0
-            u.init_rate   = 0
-
-        u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
-        u.has_manual_entries = u.id in users_with_manual
-
-    return render(request, 'custom_admin/users_list.html', {'users': users})
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
