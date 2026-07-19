@@ -177,11 +177,13 @@ def calc_system_ytd_base(user, year, last_month):
         calc = _calc_month_profit_filtered(user, ms_start, ms_end)
         gross_mo = calc["gross"]
 
-        # Месяц без активности по ордерам -> ручные данные из Excel
-        if calc["month_buy_qty"] == 0 and calc["month_sell_qty"] == 0:
-            manual = MonthlyManualEntry.objects.filter(user=user, month=mo_key).first()
-            if manual:
-                gross_mo = float(manual.gross)
+        # Ручная запись месяца (Excel) ПРИОРИТЕТНЕЕ ордеров:
+        # так же отображает месяц вкладка "Прибыль". Если manual есть -
+        # берем его gross, даже когда в месяце случайно есть ордера
+        # (например, частично засинкались поверх ручных данных).
+        manual = MonthlyManualEntry.objects.filter(user=user, month=mo_key).first()
+        if manual is not None:
+            gross_mo = float(manual.gross)
 
         expenses_mo = float(
             UserExpense.objects.filter(user=user, month=mo_key)
