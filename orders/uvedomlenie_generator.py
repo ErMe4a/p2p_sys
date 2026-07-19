@@ -277,7 +277,11 @@ def build_uvedomlenie(user, year, period_key):
         })
 
     ET.indent(root, space="  ")
-    xml_bytes = ET.tostring(root, encoding="windows-1251", xml_declaration=True)
+    # Декларацию пишем вручную с ДВОЙНЫМИ кавычками (как у Астрала):
+    # ElementTree ставит одинарные, а валидаторы ФНС-форматов
+    # распознают файл по точному виду заголовка.
+    body = ET.tostring(root, encoding="windows-1251", xml_declaration=False)
+    xml_bytes = '<?xml version="1.0" encoding="windows-1251"?>\n'.encode("ascii") + body
 
     info = {
         "income": float(base_cum["income"]),
