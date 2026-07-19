@@ -237,7 +237,7 @@ def build_uvedomlenie(user, year, period_key):
 
     fam = getattr(user, "last_name_ndfl", "") or user.last_name or ""
     name = getattr(user, "first_name_ndfl", "") or user.first_name or ""
-    otch = getattr(user, "middle_name_ndfl", "") or ""
+    otch = getattr(user, "middle_name_ndfl", "") or getattr(user, "middle_name", "") or ""
     if not fam or not name:
         raise ValueError("Не заполнены фамилия/имя подписанта (настройки пользователя).")
 

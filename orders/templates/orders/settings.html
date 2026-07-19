@@ -89,7 +89,46 @@
 <div class="settings-container shadow-sm">
     <form method="post">
         {% csrf_token %}
-
+        <div class="section-divider">Данные пользователя</div>
+        <div class="row">
+            <div class="col-md-4">
+                <label class="field-label">Фамилия</label>
+                <input type="text" name="last_name" class="form-control" value="{{ user.last_name|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="field-label">Имя</label>
+                <input type="text" name="first_name" class="form-control" value="{{ user.first_name|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="field-label">Отчество</label>
+                <input type="text" name="middle_name" class="form-control" value="{{ user.middle_name|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">ИНН</label>
+                <input type="text" name="inn" class="form-control" maxlength="12"
+                    placeholder="12 цифр" value="{{ user.inn|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Тип налогообложения</label>
+                <select name="tax_type" class="form-select">
+                    <option value="OCH" {% if user.tax_type == 'OCH' %}selected{% endif %}>OCH</option>
+                    <option value="OSNO" {% if user.tax_type == 'OSNO' %}selected{% endif %}>ОСНО</option>
+                    <option value="USN_INCOME" {% if user.tax_type == 'USN_INCOME' %}selected{% endif %}>УСН доход</option>
+                    <option value="USN_INCOME_OUTCOME" {% if user.tax_type == 'USN_INCOME_OUTCOME' %}selected{% endif %}>УСН доход-расход</option>
+                    <option value="PATENT" {% if user.tax_type == 'PATENT' %}selected{% endif %}>Патент</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">ОКТМО</label>
+                <input type="text" name="oktmo" class="form-control" maxlength="11"
+                    placeholder="8 или 11 цифр" value="{{ user.oktmo|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Код налогового органа</label>
+                <input type="text" name="kod_no" class="form-control" maxlength="4"
+                    placeholder="4 цифры, напр. 7720" value="{{ user.kod_no|default:'' }}">
+            </div>
+        </div>
         <div class="section-divider">Онлайн-касса</div>
         <div class="row">
             <div class="col-md-6">
@@ -112,22 +151,7 @@
                 <label class="field-label">Место расчетов</label>
                 <input type="text" name="payment_address" class="form-control" value="{{ user.payment_address|default:'' }}">
             </div> -->
-            <div class="col-md-6">
-                <label class="field-label">Тип налогообложения</label>
-                <select name="tax_type" class="form-select">
-                    <option value="OCH" {% if user.tax_type == 'OCH' %}selected{% endif %}>OCH</option>
-                    
-                    <option value="OSNO" {% if user.tax_type == 'OSNO' %}selected{% endif %}>ОСНО</option>
-                    
-                    <option value="USN_INCOME" {% if user.tax_type == 'USN_INCOME' %}selected{% endif %}>УСН доход</option>
-                    <option value="USN_INCOME_OUTCOME" {% if user.tax_type == 'USN_INCOME_OUTCOME' %}selected{% endif %}>УСН доход-расход</option>
-                    <option value="PATENT" {% if user.tax_type == 'PATENT' %}selected{% endif %}>Патент</option>
-                </select>
-            </div>
-            <div class="col-md-6">
-                <label class="field-label">ИНН</label>
-                <input type="text" name="inn" class="form-control" value="{{ user.inn|default:'' }}">
-            </div>
+            
             <div class="col-md-6">
                 <label class="field-label">ОКТМО</label>
                 <input type="text" name="oktmo" class="form-control" value="{{ user.oktmo|default:'' }}">

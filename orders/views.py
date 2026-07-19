@@ -355,8 +355,11 @@ def profile_settings(request):
         user.payment_address = request.POST.get('payment_address')
         user.tax_type       = request.POST.get('tax_type')
         user.inn            = request.POST.get('inn')
-        user.oktmo = request.POST.get('oktmo', '').strip()
-        user.kod_no = request.POST.get('kod_no', '').strip()
+        user.last_name = (request.POST.get('last_name') or '').strip()
+        user.first_name = (request.POST.get('first_name') or '').strip()
+        user.middle_name = (request.POST.get('middle_name') or '').strip()
+        user.oktmo = (request.POST.get('oktmo') or '').strip()
+        user.kod_no = (request.POST.get('kod_no') or '').strip()
         # 2. Сохраняем ключи API
         user.htx_access_key  = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
