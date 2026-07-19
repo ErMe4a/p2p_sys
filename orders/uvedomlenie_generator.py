@@ -144,6 +144,56 @@ def _last_day(year, month):
     return date(year, month + 1, 1) - __import__("datetime").timedelta(days=1)
 
 
+def calc_system_ytd_base(user, year, last_month):
+    """
+    Налоговая база "как на вкладке Прибыль": сумма по месяцам 1..last_month
+    значений max(0, gross_месяца - расходы_месяца), где:
+      - gross считается ТЕМИ ЖЕ функциями, что и вкладка Прибыль
+        (_calc_month_profit_filtered: помесячный LIFO с переносом остатка,
+         USDT+TON, комиссия биржи в рублях);
+      - если в месяце нет ордеров - gross берется из MonthlyManualEntry
+        (данные, загруженные из Excel);
+      - расходы месяца (Банк/Биржа/Прочие) - из UserExpense.
+    Возвращает Decimal. last_month=0 -> Decimal(0).
+    """
+    if not last_month:
+        return Decimal(0)
+
+    # Ленивые импорты - чтобы не создать циклический импорт views <-> generator
+    from zoneinfo import ZoneInfo
+    from django.db.models import Sum
+    from .views import _calc_month_profit_filtered
+    from .models import MonthlyManualEntry, UserExpense
+
+    MSK = ZoneInfo("Europe/Moscow")
+    total = Decimal(0)
+
+    for mo in range(1, last_month + 1):
+        ms_start = datetime(year, mo, 1, tzinfo=MSK)
+        ms_end = (datetime(year, mo + 1, 1, tzinfo=MSK)
+                  if mo < 12 else datetime(year + 1, 1, 1, tzinfo=MSK))
+        mo_key = f"{year}-{str(mo).zfill(2)}"
+
+        calc = _calc_month_profit_filtered(user, ms_start, ms_end)
+        gross_mo = calc["gross"]
+
+        # Месяц без активности по ордерам -> ручные данные из Excel
+        if calc["month_buy_qty"] == 0 and calc["month_sell_qty"] == 0:
+            manual = MonthlyManualEntry.objects.filter(user=user, month=mo_key).first()
+            if manual:
+                gross_mo = float(manual.gross)
+
+        expenses_mo = float(
+            UserExpense.objects.filter(user=user, month=mo_key)
+            .aggregate(Sum("amount"))["amount__sum"] or 0
+        )
+
+        # База месяца не бывает отрицательной - ровно как на вкладке Прибыль
+        total += Decimal(str(max(0.0, gross_mo - expenses_mo)))
+
+    return total
+
+
 # ============================================================
 # РАСЧЕТ НАЛОГА ПО РЕЖИМАМ
 # ============================================================
@@ -186,10 +236,14 @@ def _ndfl_by_brackets(profit):
     return result
 
 
-def calc_osno(base_cum, base_prev):
-    """НДФЛ ИП: дельта по каждой ступени/КБК отдельно."""
-    cum = _ndfl_by_brackets(max(base_cum["profit"], Decimal(0)))
-    prev = _ndfl_by_brackets(max(base_prev["profit"], Decimal(0)))
+def calc_osno(base_cum_val, base_prev_val):
+    """
+    НДФЛ ИП: дельта по каждой ступени/КБК отдельно.
+    base_cum_val / base_prev_val - налоговые базы (Decimal),
+    посчитанные "как на вкладке Прибыль" (calc_system_ytd_base).
+    """
+    cum = _ndfl_by_brackets(max(base_cum_val, Decimal(0)))
+    prev = _ndfl_by_brackets(max(base_prev_val, Decimal(0)))
     blocks = []
     for kbk in [b[2] for b in NDFL_BRACKETS]:
         delta = _r(cum.get(kbk, 0)) - _r(prev.get(kbk, 0))
@@ -210,23 +264,30 @@ def build_uvedomlenie(user, year, period_key):
     """
     period = PERIODS[period_key]
     last_month = period["last_month"]
-
-    # База нарастающим итогом: текущий период и предыдущий
-    prev_month = {3: None, 6: 3, 9: 6}[last_month]
-    base_cum = calc_tax_base(user.id, year, last_month)
-    base_prev = (calc_tax_base(user.id, year, prev_month)
-                 if prev_month else {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)})
+    prev_month = {3: 0, 6: 3, 9: 6}[last_month]
 
     tax_type = (user.tax_type or "").upper()
-    if tax_type == "USN_INCOME":
-        blocks = calc_usn_income(base_cum, base_prev)
-        p_code, p_num = period["usn"]
-    elif tax_type == "USN_INCOME_OUTCOME":
-        blocks = calc_usn_income_outcome(base_cum, base_prev)
-        p_code, p_num = period["usn"]
-    elif tax_type in ("OSNO", "OCH"):
-        blocks = calc_osno(base_cum, base_prev)
+
+    if tax_type in ("OSNO", "OCH"):
+        # НДФЛ ИП: база СТРОГО как на вкладке Прибыль
+        # (LIFO по месяцам, ручные месяцы из Excel, минус расходы).
+        base_cum_val = calc_system_ytd_base(user, year, last_month)
+        base_prev_val = calc_system_ytd_base(user, year, prev_month)
+        blocks = calc_osno(base_cum_val, base_prev_val)
         p_code, p_num = period["ndfl"]
+        info_income = info_expenses = None
+        info_profit = base_cum_val
+    elif tax_type in ("USN_INCOME", "USN_INCOME_OUTCOME"):
+        base_cum = calc_tax_base(user.id, year, last_month)
+        base_prev = (calc_tax_base(user.id, year, prev_month)
+                     if prev_month else {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)})
+        if tax_type == "USN_INCOME":
+            blocks = calc_usn_income(base_cum, base_prev)
+        else:
+            blocks = calc_usn_income_outcome(base_cum, base_prev)
+        p_code, p_num = period["usn"]
+        info_income = base_cum["income"]; info_expenses = base_cum["expenses"]
+        info_profit = base_cum["profit"]
     else:
         raise ValueError(f"Для режима {tax_type} уведомление не формируется (например, ПАТЕНТ).")
 
@@ -244,9 +305,11 @@ def build_uvedomlenie(user, year, period_key):
     if len(kod_no) != 4 or not kod_no.isdigit():
         raise ValueError("Код налогового органа должен состоять из 4 цифр (заполните в настройках).")
 
-    fam = getattr(user, "last_name_ndfl", "") or user.last_name or ""
-    name = getattr(user, "first_name_ndfl", "") or user.first_name or ""
-    otch = getattr(user, "middle_name_ndfl", "") or getattr(user, "middle_name", "") or ""
+    # ФИО приводим к ВЕРХНЕМУ регистру (как в печатной форме ФНС),
+    # независимо от того, как записано в настройках пользователя.
+    fam = (getattr(user, "last_name_ndfl", "") or user.last_name or "").strip().upper()
+    name = (getattr(user, "first_name_ndfl", "") or user.first_name or "").strip().upper()
+    otch = (getattr(user, "middle_name_ndfl", "") or getattr(user, "middle_name", "") or "").strip().upper()
     if not fam or not name:
         raise ValueError("Не заполнены фамилия/имя подписанта (настройки пользователя).")
 
@@ -293,9 +356,9 @@ def build_uvedomlenie(user, year, period_key):
     xml_bytes = '<?xml version="1.0" encoding="windows-1251"?>\n'.encode("ascii") + body
 
     info = {
-        "income": float(base_cum["income"]),
-        "expenses": float(base_cum["expenses"]),
-        "profit": float(base_cum["profit"]),
+        "income": float(info_income) if info_income is not None else None,
+        "expenses": float(info_expenses) if info_expenses is not None else None,
+        "profit": float(info_profit),
         "blocks": [(k, a) for k, a in blocks],
         "period": f"{p_code}/{p_num}",
         "label": period["label"],
