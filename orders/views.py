@@ -39,6 +39,7 @@ User = get_user_model()
 SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 from collections import defaultdict
 
+from .nds_generator import build_nds_declaration, QUARTERS
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
@@ -360,6 +361,7 @@ def profile_settings(request):
         user.middle_name = (request.POST.get('middle_name') or '').strip()
         user.oktmo = (request.POST.get('oktmo') or '').strip()
         user.kod_no = (request.POST.get('kod_no') or '').strip()
+        user.phone = (request.POST.get('phone') or '').strip()
         # 2. Сохраняем ключи API
         user.htx_access_key  = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
@@ -2996,6 +2998,30 @@ def admin_orders_editor(request):
     })
 
 
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def export_nds(request):
+    """Скачивание XML-декларации по НДС (сумма считается из ордеров)."""
+    user_id = request.GET.get('user_id')
+    year = int(request.GET.get('year') or datetime.now().year)
+    quarter_key = request.GET.get('quarter', 'Q1')
+
+    if quarter_key not in QUARTERS:
+        return JsonResponse({'error': 'Неверный квартал.'}, status=400)
+
+    target = User.objects.filter(id=user_id).first()
+    if not target:
+        return JsonResponse({'error': 'Пользователь не найден.'}, status=404)
+
+    try:
+        filename, xml_bytes, info = build_nds_declaration(target, year, quarter_key)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 @login_required(login_url='admin_login')

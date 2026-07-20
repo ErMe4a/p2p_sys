@@ -128,6 +128,11 @@
                 <input type="text" name="kod_no" class="form-control" maxlength="4"
                     placeholder="4 цифры, напр. 7720" value="{{ user.kod_no|default:'' }}">
             </div>
+            <div class="col-md-6">
+                <label class="field-label">Телефон</label>
+                <input type="text" name="phone" class="form-control" maxlength="15"
+                    placeholder="79855601686" value="{{ user.phone|default:'' }}">
+            </div>
         </div>
         <div class="section-divider">Онлайн-касса</div>
         <div class="row">

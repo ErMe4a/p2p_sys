@@ -83,7 +83,7 @@
                                     '{{ u.mexc_api_key|default:'' }}', '{{ u.mexc_api_secret|default:'' }}', 
                                     '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}'
                                 )">✏️</button>
-                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}')">📊</button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}','{{ u.tax_type}}')">📊</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -230,6 +230,21 @@
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadExcel()" id="downloadExcelBtn">📊 Excel</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUsn()" id="downloadUsnBtn">📋 Скачать УСН отчет</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" id="downloadUvBtn" onclick="downloadUvedomlenie()">📨 Уведомление XML (КНД 1110355)</button>
+
+        </div>
+         <input type="hidden" id="reportsTaxType">
+        <div id="ndsBlock" style="display:none; margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">
+            <div class="form-group mb-2">
+                <label>Квартал (для НДС)</label>
+                <select class="form-control" id="reportsNdsQuarter">
+                    <option value="Q1">1 квартал</option>
+                    <option value="Q2">2 квартал</option>
+                    <option value="Q3">3 квартал</option>
+                    <option value="Q4">4 квартал</option>
+                </select>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width"
+                    id="downloadNdsBtn" onclick="downloadNds()">🧾 Скачать декларацию НДС</button>
         </div>
     </div>
 </div>
@@ -461,11 +476,14 @@
     }
 
     // === ОТЧЁТЫ ===
-    async function openReportsModal(userId, username) {
+    
+    async function openReportsModal(userId, username, taxType) {
         document.getElementById('reportsUserId').value = userId;
         document.getElementById('reportsUserLogin').innerText = username;
-        const detailsSelect = document.getElementById('reportsUserDetails');
-        detailsSelect.innerHTML = '<option value="">Загрузка...</option>';
+        document.getElementById('reportsTaxType').value = taxType || '';
+
+        const ndsBlock = document.getElementById('ndsBlock');
+        ndsBlock.style.display = (taxType === 'OSNO' || taxType === 'OCH') ? 'block' : 'none';
 
         const dbBanks = [
             { id: '1', name: 'Сбербанк' }, { id: '2', name: 'Тинькофф' }, { id: '3', name: 'Райффайзен' },
@@ -562,6 +580,51 @@
         const userId = document.getElementById('reportsUserId').value;
         const year = document.getElementById('reportsYear').value;
         window.location.href = `/admin-panel/export/usn/?user_id=${userId}&year=${year}`;
+    }
+
+    async function downloadNds() {
+        const userId = document.getElementById('reportsUserId').value;
+        const year = document.getElementById('reportsYear').value;
+        const quarter = document.getElementById('reportsNdsQuarter').value;
+        if (!userId) { alert("Ошибка: не выбран пользователь"); return; }
+
+        const btn = document.getElementById('downloadNdsBtn');
+        const originalText = btn.innerText;
+        btn.disabled = true;
+        btn.innerText = '⏳ Формирование...';
+
+        try {
+            const url = `/admin-panel/export/nds/?user_id=${userId}&year=${year}&quarter=${quarter}`;
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                let message = 'Не удалось сформировать декларацию.';
+                try {
+                    const data = await response.json();
+                    if (data.error) message = data.error;
+                } catch (e) { /* оставляем дефолтное сообщение */ }
+                alert('⚠️ ' + message);
+                return;
+            }
+
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^"]+)"?/);
+            const filename = match ? match[1] : 'nds.xml';
+
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+
+        } catch (e) {
+            alert('⚠️ Ошибка сети при формировании декларации.');
+        } finally {
+            btn.disabled = false;
+            btn.innerText = originalText;
+        }
     }
 
     function downloadScreenshots() {

@@ -32,7 +32,8 @@ class User(AbstractUser):
     middle_name = models.CharField(max_length=150, blank=True, default="", verbose_name="Отчество")
     oktmo  = models.CharField(max_length=11, blank=True, default="", verbose_name="ОКТМО")
     kod_no = models.CharField(max_length=4,  blank=True, default="", verbose_name="Код налогового органа")
-
+    # orders/models.py -> class User
+    phone = models.CharField(max_length=15, blank=True, default="", verbose_name="Телефон")
     def __str__(self):
         return self.username
 
