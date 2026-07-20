@@ -146,54 +146,63 @@ def _last_day(year, month):
 
 def calc_system_ytd_base(user, year, last_month):
     """
-    Налоговая база "как на вкладке Прибыль": сумма по месяцам 1..last_month
-    значений max(0, gross_месяца - расходы_месяца), где:
-      - gross считается ТЕМИ ЖЕ функциями, что и вкладка Прибыль
-        (_calc_month_profit_filtered: помесячный LIFO с переносом остатка,
-         USDT+TON, комиссия биржи в рублях);
-      - если в месяце нет ордеров - gross берется из MonthlyManualEntry
-        (данные, загруженные из Excel);
-      - расходы месяца (Банк/Биржа/Прочие) - из UserExpense.
+    Налоговая база СТРОГО как на годовой странице прибыли пользователя
+    (api_user_yearly_profit): готовим те же предзагруженные данные и
+    вызываем ту же функцию _get_ytd_base_from_cache из views.py.
+
+    Ключевые особенности (идентичны странице):
+      - ордера берутся только от SYSTEM_START (всё, что раньше, - вне
+        расчёта; такие месяцы закрываются ручными записями из Excel);
+      - помесячный расчёт _calc_month_profit_from_orders (LIFO-перенос
+        остатка, комиссия биржи по последнему курсу продажи месяца);
+      - manual-запись используется, только если в месяце нет ордеров;
+      - база месяца = max(0, gross - расходы UserExpense).
+
     Возвращает Decimal. last_month=0 -> Decimal(0).
+    Сумма помесячных НДФЛ на странице телескопически равна налогу от этой
+    базы, поэтому уведомление всегда сходится с колонкой "Налог".
     """
     if not last_month:
         return Decimal(0)
 
     # Ленивые импорты - чтобы не создать циклический импорт views <-> generator
+    from collections import defaultdict
     from zoneinfo import ZoneInfo
-    from django.db.models import Sum
-    from .views import _calc_month_profit_filtered
+    from .views import SYSTEM_START, _get_ytd_base_from_cache
     from .models import MonthlyManualEntry, UserExpense
 
     MSK = ZoneInfo("Europe/Moscow")
-    total = Decimal(0)
+    year_end = datetime(year + 1, 1, 1, tzinfo=MSK)
 
-    for mo in range(1, last_month + 1):
-        ms_start = datetime(year, mo, 1, tzinfo=MSK)
-        ms_end = (datetime(year, mo + 1, 1, tzinfo=MSK)
-                  if mo < 12 else datetime(year + 1, 1, 1, tzinfo=MSK))
-        mo_key = f"{year}-{str(mo).zfill(2)}"
+    # 1. Ордера пользователя от SYSTEM_START до конца года - как на странице
+    orders = list(
+        Order.objects
+        .filter(user=user, created_at__gte=SYSTEM_START, created_at__lt=year_end)
+        .order_by("created_at")
+    )
+    all_orders_by_user = {user.id: orders}
 
-        calc = _calc_month_profit_filtered(user, ms_start, ms_end)
-        gross_mo = calc["gross"]
+    # 2. Расходы за год - как на странице
+    expenses_by_user_month = defaultdict(float)
+    for e in (UserExpense.objects
+              .filter(user=user, month__startswith=str(year))
+              .values("user_id", "month", "amount")):
+        expenses_by_user_month[(e["user_id"], e["month"])] += float(e["amount"])
 
-        # Ручная запись месяца (Excel) ПРИОРИТЕТНЕЕ ордеров:
-        # так же отображает месяц вкладка "Прибыль". Если manual есть -
-        # берем его gross, даже когда в месяце случайно есть ордера
-        # (например, частично засинкались поверх ручных данных).
-        manual = MonthlyManualEntry.objects.filter(user=user, month=mo_key).first()
-        if manual is not None:
-            gross_mo = float(manual.gross)
+    # 3. Ручные записи за год - как на странице
+    manuals_by_user_month = {}
+    for m in MonthlyManualEntry.objects.filter(user=user, month__startswith=str(year)):
+        manuals_by_user_month[(user.id, m.month)] = m
 
-        expenses_mo = float(
-            UserExpense.objects.filter(user=user, month=mo_key)
-            .aggregate(Sum("amount"))["amount__sum"] or 0
-        )
-
-        # База месяца не бывает отрицательной - ровно как на вкладке Прибыль
-        total += Decimal(str(max(0.0, gross_mo - expenses_mo)))
-
-    return total
+    # _get_ytd_base_from_cache(uid, year, month, ...) суммирует месяцы 1..month-1,
+    # поэтому для базы "по конец last_month" передаём last_month + 1.
+    base = _get_ytd_base_from_cache(
+        user.id, year, last_month + 1,
+        all_orders_by_user,
+        expenses_by_user_month,
+        manuals_by_user_month,
+    )
+    return Decimal(str(base))
 
 
 # ============================================================
