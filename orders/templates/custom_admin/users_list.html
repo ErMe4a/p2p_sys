@@ -83,7 +83,7 @@
                                     '{{ u.mexc_api_key|default:'' }}', '{{ u.mexc_api_secret|default:'' }}', 
                                     '{{ u.evotor_login|default:'' }}', '{{ u.evotor_password|default:'' }}'
                                 )">✏️</button>
-                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}', '{{ u.tax_type|default:'' }}')">📊</button>
+                        <button class="btn btn-sm btn-outline-secondary ms-1" onclick="openReportsModal('{{ u.id }}', '{{ u.username }}', '{{ u.tax_type }}')">📊</button>
                     </td>
                 </tr>
                 {% endfor %}
