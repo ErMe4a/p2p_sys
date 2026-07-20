@@ -36,5 +36,5 @@ urlpatterns = [
     path('p2p-admin/api/user-yearly-profit/', views.api_user_yearly_profit, name='api_user_yearly_profit'),
     path('p2p-admin/manual-entries/upload-excel/', views.admin_manual_entry_upload_excel, name='admin_manual_entry_upload_excel'),
     path('admin-panel/export/uvedomlenie/', views.export_uvedomlenie, name='export_uvedomlenie'),
-    
+    path('admin-panel/export/nds/', views.export_nds, name='export_nds'),
 ]
