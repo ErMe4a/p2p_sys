@@ -492,6 +492,7 @@
             { id: '10', name: 'Уралсиб' }, { id: '11', name: 'Хайс' }, { id: '12', name: 'Русский Стандарт' }
         ];
 
+        const detailsSelect = document.getElementById('reportsUserDetails');
         try {
             const response = await fetch('/api/details'); 
             if (response.ok) {
