@@ -1163,7 +1163,28 @@ def toggle_document_submission(request):
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_fns_status_bulk(request):
+    """
+    AJAX-эндпоинт: считает точку ФНС для ВСЕХ пользователей асинхронно,
+    ПОСЛЕ того как страница списка пользователей уже отрисовалась.
+    Тяжёлый расчёт (обращения к ордерам через is_fns_all_submitted)
+    больше не блокирует загрузку самой таблицы.
 
+    Каждый вызов is_fns_all_submitted внутри всё ещё кэшируется на
+    5 минут (см. views_fns_user_v2.py) - при повторных заходах на
+    страницу пользователей расчёт не повторяется, пока кэш не истёк
+    или не был сброшен отметкой чекбокса "Отправлено".
+    """
+    year = timezone.now().year
+    users = User.objects.all()
+
+    statuses = {}
+    for u in users:
+        statuses[u.id] = is_fns_all_submitted(u, year)
+
+    return JsonResponse({'year': year, 'statuses': statuses})
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -1364,9 +1385,6 @@ def admin_users_list(request):
     )
     balance_map = {row['user_id']: row for row in balance_qs}
 
-    # Текущий год — для расчёта точки статуса ФНС (см. ниже)
-    fns_current_year = timezone.now().year
-
     for u in users:
         bal = balance_map.get(u.id, {})
         bought = float(bal.get('total_buy',  0) or 0)
@@ -1390,16 +1408,10 @@ def admin_users_list(request):
         u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
         u.has_manual_entries = u.id in users_with_manual
 
-        # Точка статуса ФНС: зелёная, если все актуальные документы
-        # пользователя за текущий год отмечены отправленными (или их
-        # сейчас нет вообще). Кэшируется на 5 минут внутри is_fns_all_submitted,
-        # сбрасывается сразу при отметке чекбокса на /fns/ пользователя.
-        u.fns_ok = is_fns_all_submitted(u, fns_current_year)
+    return render(request, 'custom_admin/users_list.html', {'users': users})
 
-    return render(request, 'custom_admin/users_list.html', {
-        'users': users,
-        'current_year': fns_current_year,
-    })
+
+
 
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",
