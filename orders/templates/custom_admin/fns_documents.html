@@ -1,0 +1,130 @@
+{% extends 'custom_admin/admin_base.html' %}
+
+{% block title %}ФНС | Админка{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-control, .form-select { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
+
+    .fns-filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 15px; align-items: end; margin-bottom: 24px; }
+    .fns-filters .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
+
+    .fns-doc-row {
+        display: flex; align-items: center; justify-content: space-between;
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+        border-radius: 10px; padding: 14px 18px; margin-bottom: 10px;
+    }
+    .fns-doc-row.error { border-color: rgba(248, 73, 96, 0.4); background: rgba(248, 73, 96, 0.06); }
+    .fns-doc-title { font-size: 0.92rem; font-weight: 500; }
+    .fns-doc-icon { margin-right: 10px; }
+    .fns-doc-error-text { font-size: 0.78rem; color: #f84960; margin-top: 4px; }
+    .fns-empty { color: var(--text-muted); font-size: 0.9rem; padding: 30px 0; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card-custom">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="m-0">📨 ФНС — уведомления и декларации</h5>
+    </div>
+
+    <form method="get" class="fns-filters">
+        <div class="form-group">
+            <label>Пользователь</label>
+            <select class="form-select" name="user_id" onchange="this.form.submit()">
+                <option value="">— выберите пользователя —</option>
+                {% for u in users %}
+                    <option value="{{ u.id }}" {% if selected_user_id == u.id|stringformat:"s" %}selected{% endif %}>
+                        {{ u.username }}{% if u.tax_type %} ({{ u.tax_type }}){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Год</label>
+            <input class="form-control" type="number" name="year" value="{{ year }}" min="2020" max="2030" onchange="this.form.submit()">
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-sm btn-outline-blue">Обновить</button>
+        </div>
+    </form>
+
+    {% if not selected_user %}
+        <div class="fns-empty">Выберите пользователя, чтобы увидеть список документов за {{ year }} год.</div>
+    {% elif not documents %}
+        <div class="fns-empty">
+            Для <strong>{{ selected_user.username }}</strong> за {{ year }} год
+            нет документов, требующих подачи прямо сейчас
+            (периоды ещё не завершились, либо суммы к уплате нет).
+        </div>
+    {% else %}
+        <div class="mb-3" style="font-size: 0.82rem; color: var(--text-muted);">
+            {{ selected_user.username }} — {{ year }} год.
+            Показаны только завершившиеся периоды, требующие подачи.
+        </div>
+
+        {% for doc in documents %}
+            <div class="fns-doc-row {% if not doc.ok %}error{% endif %}">
+                <div>
+                    <div class="fns-doc-title">
+                        <span class="fns-doc-icon">{% if doc.kind == 'uvedomlenie' %}📨{% else %}🧾{% endif %}</span>
+                        {{ doc.title }}
+                    </div>
+                    {% if not doc.ok %}
+                        <div class="fns-doc-error-text">⚠️ {{ doc.error }}</div>
+                    {% endif %}
+                </div>
+                {% if doc.ok %}
+                    <button type="button" class="btn btn-sm btn-outline-blue" onclick="fnsDownload('{{ doc.url }}', this)">
+                        📥 Скачать
+                    </button>
+                {% else %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Недоступно</button>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function fnsDownload(url, btnEl) {
+    const originalText = btnEl.innerText;
+    btnEl.disabled = true;
+    btnEl.innerText = '⏳ Формирование...';
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            let message = 'Не удалось сформировать документ.';
+            try {
+                const data = await response.json();
+                if (data.error) message = data.error;
+            } catch (e) { /* оставляем дефолтное сообщение */ }
+            alert('⚠️ ' + message);
+            return;
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'document.xml';
+
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+    } catch (e) {
+        alert('⚠️ Ошибка сети при формировании документа.');
+    } finally {
+        btnEl.disabled = false;
+        btnEl.innerText = originalText;
+    }
+}
+</script>
+{% endblock %}

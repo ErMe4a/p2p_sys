@@ -40,6 +40,12 @@ SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 from collections import defaultdict
 
 from .nds_generator import build_nds_declaration, QUARTERS
+from .uvedomlenie_generator import build_uvedomlenie, PERIODS as UVED_PERIODS
+from .nds_generator import build_nds_declaration, QUARTERS as NDS_QUARTERS
+
+# Причины, при которых пункт скрывается молча (не ошибка данных,
+# а просто "документ не требуется в этом периоде").
+_FNS_SKIP_MARKERS = ('равна нулю', 'не требуется', 'не формируется', 'не превышает порог')
 #ПОЛЬЗАК ПАНЕЛЬ____________________________________________________________________________________________________________________
 
 
@@ -3023,6 +3029,92 @@ def export_nds(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
+
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_fns_documents(request):
+    """
+    Вкладка ФНС: для выбранного пользователя автоматически подбирает
+    список документов (уведомления по авансам + декларации НДС),
+    которые реально нужно подать — на основе текущей даты и данных
+    в системе. Ничего не хранится в БД, список считается каждый раз заново.
+    """
+    User = get_user_model()
+    users = User.objects.all().order_by('username')
+
+    selected_user_id = request.GET.get('user_id')
+    year = int(request.GET.get('year') or timezone.now().year)
+    today = timezone.now()
+
+    selected_user = None
+    documents = []
+
+    if selected_user_id:
+        selected_user = User.objects.filter(id=selected_user_id).first()
+
+    if selected_user:
+        # --- Уведомления по авансовым платежам (НДФЛ/УСН) ---
+        for period_key, period in UVED_PERIODS.items():
+            last_month = period['last_month']
+            period_ended = (year < today.year) or (year == today.year and today.month > last_month)
+            if not period_ended:
+                continue
+            try:
+                build_uvedomlenie(selected_user, year, period_key)
+            except ValueError as e:
+                msg = str(e)
+                if any(m in msg for m in _FNS_SKIP_MARKERS):
+                    continue
+                documents.append({
+                    'kind': 'uvedomlenie', 'sort_month': last_month,
+                    'title': f"Уведомление об авансовом платеже — {period['label']}",
+                    'url': None, 'ok': False, 'error': msg,
+                })
+                continue
+            documents.append({
+                'kind': 'uvedomlenie', 'sort_month': last_month,
+                'title': f"Уведомление об авансовом платеже — {period['label']}",
+                'url': f"/admin-panel/export/uvedomlenie/?user_id={selected_user.id}&year={year}&period={period_key}",
+                'ok': True,
+            })
+
+        # --- Декларации по НДС ---
+        for q_key, q in NDS_QUARTERS.items():
+            end_month = q['end_month']
+            period_ended = (year < today.year) or (year == today.year and today.month > end_month)
+            if not period_ended:
+                continue
+            try:
+                build_nds_declaration(selected_user, year, q_key)
+            except ValueError as e:
+                msg = str(e)
+                if any(m in msg for m in _FNS_SKIP_MARKERS):
+                    continue
+                documents.append({
+                    'kind': 'nds', 'sort_month': end_month,
+                    'title': f"Декларация по НДС — {q['label']}",
+                    'url': None, 'ok': False, 'error': msg,
+                })
+                continue
+            documents.append({
+                'kind': 'nds', 'sort_month': end_month,
+                'title': f"Декларация по НДС — {q['label']}",
+                'url': f"/admin-panel/export/nds/?user_id={selected_user.id}&year={year}&quarter={q_key}",
+                'ok': True,
+            })
+
+        # Хронологический порядок; при равном месяце уведомление выше декларации НДС
+        documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
+
+    return render(request, 'custom_admin/fns_documents.html', {
+        'users': users,
+        'selected_user': selected_user,
+        'selected_user_id': selected_user_id,
+        'year': year,
+        'documents': documents,
+    })
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
