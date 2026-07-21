@@ -42,7 +42,8 @@ from collections import defaultdict
 from .nds_generator import build_nds_declaration, QUARTERS
 from .uvedomlenie_generator import build_uvedomlenie, PERIODS as UVED_PERIODS
 from .nds_generator import build_nds_declaration, QUARTERS as NDS_QUARTERS
-
+from .models import DocumentSubmission
+from django.views.decorators.http import require_POST
 # Причины, при которых пункт скрывается молча (не ошибка данных,
 # а просто "документ не требуется в этом периоде").
 _FNS_SKIP_MARKERS = ('равна нулю', 'не требуется', 'не формируется', 'не превышает порог')
@@ -501,6 +502,7 @@ def delete_unprocessed_order(request, pk):
 
 @login_required
 def user_profit_view(request):
+
     user   = request.user
     action = request.GET.get('action')
 
@@ -964,6 +966,201 @@ def user_profit_view(request):
     # =====================================================================
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
+
+
+
+
+def get_required_fns_documents(user, year):
+    """
+    ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
+    сейчас актуальны для пользователя. Используется и страницей /fns/,
+    и расчётом точки статуса в админке - изменения в правилах (даты,
+    пороги, скрытие Q1 и т.п.) достаточно внести в одном месте.
+
+    Возвращает список dict: kind, period_key, sort_month, title, url,
+    ok (bool), error (если not ok).
+    """
+    today = timezone.now()
+    documents = []
+
+    for period_key, period in UVED_PERIODS.items():
+        last_month = period['last_month']
+        period_ended = (year < today.year) or (year == today.year and today.month > last_month)
+        if not period_ended:
+            continue
+        try:
+            build_uvedomlenie(user, year, period_key)
+        except ValueError as e:
+            msg = str(e)
+            if any(m in msg for m in _FNS_SKIP_MARKERS):
+                continue
+            documents.append({
+                'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
+                'title': f"Уведомление об авансовом платеже — {period['label']}",
+                'url': None, 'ok': False, 'error': msg,
+            })
+            continue
+        documents.append({
+            'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
+            'title': f"Уведомление об авансовом платеже — {period['label']}",
+            'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
+            'ok': True,
+        })
+
+    for q_key, q in NDS_QUARTERS.items():
+        if q_key == 'Q1':
+            continue
+        end_month = q['end_month']
+        period_ended = (year < today.year) or (year == today.year and today.month > end_month)
+        if not period_ended:
+            continue
+        try:
+            build_nds_declaration(user, year, q_key)
+        except ValueError as e:
+            msg = str(e)
+            if any(m in msg for m in _FNS_SKIP_MARKERS):
+                continue
+            documents.append({
+                'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
+                'title': f"Декларация по НДС — {q['label']}",
+                'url': None, 'ok': False, 'error': msg,
+            })
+            continue
+        documents.append({
+            'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
+            'title': f"Декларация по НДС — {q['label']}",
+            'url': f"/fns/export/nds/?year={year}&quarter={q_key}",
+            'ok': True,
+        })
+
+    documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
+    return documents
+
+
+def is_fns_all_submitted(user, year):
+    """
+    Точка статуса для админки: True, если ВСЕ актуальные документы
+    пользователя отмечены как отправленные (или их нет вообще -
+    считаем это тоже "зелёным", по договорённости). Кэшируется на
+    5 минут, сбрасывается сразу при отметке чекбокса.
+    """
+    cache_key = f"fns_status_{user.id}_{year}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    docs = get_required_fns_documents(user, year)
+
+    result = True
+    if docs:
+        submitted_set = set(
+            DocumentSubmission.objects
+            .filter(user=user, year=year, submitted=True)
+            .values_list('doc_type', 'period_key')
+        )
+        for d in docs:
+            # Документ с ошибкой данных (не хватает ОКТМО и т.п.) -
+            # по договорённости считаем "не отправлено" (простая точка,
+            # без отдельного жёлто-красного состояния).
+            if not d['ok'] or (d['kind'], d['period_key']) not in submitted_set:
+                result = False
+                break
+
+    cache.set(cache_key, result, 300)  # 5 минут
+    return result
+
+
+@login_required(login_url='login')
+def my_fns_documents(request):
+    """Личная страница пользователя: список документов, требующих подачи."""
+    user = request.user
+    year = int(request.GET.get('year') or timezone.now().year)
+
+    documents = get_required_fns_documents(user, year)
+
+    submissions = {
+        (s.doc_type, s.period_key): s
+        for s in DocumentSubmission.objects.filter(user=user, year=year)
+    }
+    for d in documents:
+        if d['ok']:
+            sub = submissions.get((d['kind'], d['period_key']))
+            d['submitted'] = bool(sub and sub.submitted)
+
+    return render(request, 'orders/fns.html', {
+        'year': year,
+        'documents': documents,
+    })
+
+
+@login_required(login_url='login')
+def user_export_uvedomlenie(request):
+    """Скачивание СВОЕГО уведомления. user_id не принимается - только request.user."""
+    year = int(request.GET.get('year') or timezone.now().year)
+    period_key = request.GET.get('period', 'Q1')
+
+    if period_key not in UVED_PERIODS:
+        return JsonResponse({'error': 'Неверный период.'}, status=400)
+
+    try:
+        filename, xml_bytes, info = build_uvedomlenie(request.user, year, period_key)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required(login_url='login')
+def user_export_nds(request):
+    """Скачивание СВОЕЙ декларации НДС. user_id не принимается - только request.user."""
+    year = int(request.GET.get('year') or timezone.now().year)
+    quarter_key = request.GET.get('quarter', 'Q2')
+
+    if quarter_key not in NDS_QUARTERS or quarter_key == 'Q1':
+        return JsonResponse({'error': 'Неверный квартал.'}, status=400)
+
+    try:
+        filename, xml_bytes, info = build_nds_declaration(request.user, year, quarter_key)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required(login_url='login')
+@require_POST
+def toggle_document_submission(request):
+    """
+    Сохраняет отметку "Отправлено" для конкретного документа текущего
+    пользователя. Сразу сбрасывает кэш точки статуса в админке, чтобы
+    изменение отразилось без задержки в 5 минут.
+    """
+    doc_type = request.POST.get('doc_type')
+    period_key = request.POST.get('period_key')
+    year = request.POST.get('year')
+    submitted = request.POST.get('submitted') == 'true'
+
+    if not (doc_type and period_key and year):
+        return JsonResponse({'error': 'Некорректные данные.'}, status=400)
+    if doc_type not in ('uvedomlenie', 'nds'):
+        return JsonResponse({'error': 'Некорректный тип документа.'}, status=400)
+
+    year = int(year)
+    obj, _ = DocumentSubmission.objects.get_or_create(
+        user=request.user, doc_type=doc_type, period_key=period_key, year=year
+    )
+    obj.submitted = submitted
+    obj.submitted_at = timezone.now() if submitted else None
+    obj.save()
+
+    cache.delete(f"fns_status_{request.user.id}_{year}")
+
+    return JsonResponse({'ok': True, 'submitted': obj.submitted})
+
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -1167,6 +1364,9 @@ def admin_users_list(request):
     )
     balance_map = {row['user_id']: row for row in balance_qs}
 
+    # Текущий год — для расчёта точки статуса ФНС (см. ниже)
+    fns_current_year = timezone.now().year
+
     for u in users:
         bal = balance_map.get(u.id, {})
         bought = float(bal.get('total_buy',  0) or 0)
@@ -1190,7 +1390,16 @@ def admin_users_list(request):
         u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
         u.has_manual_entries = u.id in users_with_manual
 
-    return render(request, 'custom_admin/users_list.html', {'users': users})
+        # Точка статуса ФНС: зелёная, если все актуальные документы
+        # пользователя за текущий год отмечены отправленными (или их
+        # сейчас нет вообще). Кэшируется на 5 минут внутри is_fns_all_submitted,
+        # сбрасывается сразу при отметке чекбокса на /fns/ пользователя.
+        u.fns_ok = is_fns_all_submitted(u, fns_current_year)
+
+    return render(request, 'custom_admin/users_list.html', {
+        'users': users,
+        'current_year': fns_current_year,
+    })
 
 def _month_name(n):
     return ["Январь","Февраль","Март","Апрель","Май","Июнь",

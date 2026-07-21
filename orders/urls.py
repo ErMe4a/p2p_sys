@@ -16,7 +16,10 @@ urlpatterns = [
     path('delete/<int:order_id>/', views.delete_order, name='delete_order'),
     path('upload_screen/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
     path('upload-screenshot/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
-    
+    path('fns/', views.my_fns_documents, name='my_fns'),
+    path('fns/export/uvedomlenie/', views.user_export_uvedomlenie, name='user_export_uvedomlenie'),
+    path('fns/export/nds/', views.user_export_nds, name='user_export_nds'),
+    path('fns/toggle/', views.toggle_document_submission, name='toggle_document_submission'),
     path('profit/', views.user_profit_view, name='user_profit'),
 
     path('p2p-admin/login/', views.admin_login, name='admin_login'),

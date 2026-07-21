@@ -38,6 +38,7 @@ class User(AbstractUser):
         return self.username
 
 
+
 class BankDetail(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название банка")
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
@@ -198,3 +199,20 @@ class UserExpense(models.Model):
 
     def __str__(self):
         return f"{self.name} — {self.amount} ₽ ({self.month})"
+
+class DocumentSubmission(models.Model):
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name='document_submissions'
+    )
+    doc_type = models.CharField(max_length=20)      # 'uvedomlenie' | 'nds'
+    period_key = models.CharField(max_length=10)    # 'Q1' | 'H1' | 'M9' | 'Q2' | 'Q3' | 'Q4'
+    year = models.IntegerField()
+    submitted = models.BooleanField(default=False)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('user', 'doc_type', 'period_key', 'year')
+
+    def __str__(self):
+        return f"{self.user} — {self.doc_type} {self.period_key}/{self.year} — {'✓' if self.submitted else '—'}"

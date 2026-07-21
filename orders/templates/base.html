@@ -121,7 +121,8 @@
             <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" 
                href="{% url 'settings' %}">Настройки</a>
             
-            <a class="nav-link" href="#">ЭЦП</a>
+            <a class="nav-link {% if request.resolver_match.url_name == 'my_fns' %}active{% endif %}" 
+                href="{% url 'my_fns' %}">ФНС</a>
         </nav>
 
         <div class="d-flex align-items-center gap-3">

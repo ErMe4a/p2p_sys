@@ -36,6 +36,7 @@
                     <th class="col-center">HTX</th>
                     <th class="col-center">MEXC</th>
                     <th class="col-center">Evotor</th>
+                    <th class="col-center">ФНС</th>
                     <th class="text-end">Действия</th>
                 </tr>
             </thead>
@@ -56,6 +57,13 @@
                     </td>
                     <td class="col-center">
                         {% if u.evotor_login and u.evotor_password %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
+                    </td>
+                    <td class="col-center">
+                        {% if u.fns_ok %}
+                            <span class="api-dot active" title="Все документы за {{ current_year|default:'этот год' }} отправлены"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не все документы отмечены как отправленные"></span>
+                        {% endif %}
                     </td>
 
                     <td class="text-end">

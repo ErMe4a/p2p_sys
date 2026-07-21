@@ -1,0 +1,213 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<style>
+    .fns-card {
+        background: var(--bg-card); border: 1px solid var(--border-color);
+        border-radius: 10px; padding: 20px; margin-bottom: 8px;
+    }
+    .fns-filters { display: flex; gap: 15px; align-items: end; margin-bottom: 24px; }
+    .fns-filters .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
+    .fns-filters select, .fns-filters input {
+        background: var(--bg-input) !important; border: 1px solid var(--border-color) !important;
+        color: var(--text-main) !important;
+    }
+
+    .fns-doc-row {
+        display: flex; align-items: center; justify-content: space-between;
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color);
+        border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; gap: 15px; flex-wrap: wrap;
+    }
+    .fns-doc-row.error { border-color: rgba(248, 73, 96, 0.4); background: rgba(248, 73, 96, 0.06); }
+    .fns-doc-title { font-size: 0.92rem; font-weight: 500; }
+    .fns-doc-icon { margin-right: 10px; }
+    .fns-doc-error-text { font-size: 0.78rem; color: #f84960; margin-top: 4px; }
+    .fns-empty { color: var(--text-muted); font-size: 0.9rem; padding: 30px 0; text-align: center; }
+
+    .fns-actions { display: flex; align-items: center; gap: 16px; }
+    .fns-submitted-label {
+        display: flex; align-items: center; gap: 6px; font-size: 0.82rem;
+        color: var(--text-muted); cursor: pointer; user-select: none;
+    }
+    .fns-submitted-label input { width: 16px; height: 16px; cursor: pointer; }
+    .fns-submitted-label.checked { color: #58d68d; font-weight: 500; }
+
+    /* Модалка подтверждения расходов (своя копия для страницы пользователя) */
+    .modal-overlay {
+        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.7); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content-custom {
+        background: var(--bg-card); border-radius: 14px; padding: 24px; max-width: 420px; width: 90%;
+        border: 1px solid var(--border-color); box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    }
+</style>
+
+<div class="fns-card">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="m-0">📨 ФНС — мои уведомления и декларации</h5>
+    </div>
+
+    <form method="get" class="fns-filters">
+        <div class="form-group">
+            <label>Год</label>
+            <input class="form-control" type="number" name="year" value="{{ year }}" min="2020" max="2030" onchange="this.form.submit()">
+        </div>
+        <div class="form-group">
+            <button type="submit" class="btn btn-sm btn-outline-blue">Обновить</button>
+        </div>
+    </form>
+
+    {% if not documents %}
+        <div class="fns-empty">
+            За {{ year }} год нет документов, требующих подачи прямо сейчас
+            (периоды ещё не завершились, либо суммы к уплате нет).
+        </div>
+    {% else %}
+        <div class="mb-3" style="font-size: 0.82rem; color: var(--text-muted);">
+            {{ year }} год. Показаны только завершившиеся периоды, требующие подачи.
+        </div>
+
+        {% for doc in documents %}
+            <div class="fns-doc-row {% if not doc.ok %}error{% endif %}" data-doc-type="{{ doc.kind }}" data-period-key="{{ doc.period_key }}">
+                <div>
+                    <div class="fns-doc-title">
+                        <span class="fns-doc-icon">{% if doc.kind == 'uvedomlenie' %}📨{% else %}🧾{% endif %}</span>
+                        {{ doc.title }}
+                    </div>
+                    {% if not doc.ok %}
+                        <div class="fns-doc-error-text">⚠️ {{ doc.error }}</div>
+                    {% endif %}
+                </div>
+
+                {% if doc.ok %}
+                    <div class="fns-actions">
+                        <label class="fns-submitted-label {% if doc.submitted %}checked{% endif %}">
+                            <input type="checkbox"
+                                   {% if doc.submitted %}checked{% endif %}
+                                   onchange="toggleSubmission(this, '{{ doc.kind }}', '{{ doc.period_key }}', {{ year }})">
+                            Отправлено
+                        </label>
+                        <button type="button" class="btn btn-sm btn-outline-blue" onclick="fnsDownload('{{ doc.url }}', '{{ doc.kind }}', this)">
+                            📥 Скачать
+                        </button>
+                    </div>
+                {% else %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Недоступно</button>
+                {% endif %}
+            </div>
+        {% endfor %}
+    {% endif %}
+</div>
+
+<!-- Модалка подтверждения расходов -->
+<div class="modal-overlay" id="expensesConfirmModal">
+    <div class="modal-content-custom">
+        <p style="font-size: 0.95rem; margin-bottom: 20px;">
+            Подтверждаете ли вы, что внесли все расходы за указанный квартал?
+        </p>
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="_expensesConfirmResolve(false)">Нет</button>
+            <button class="btn btn-sm btn-outline-blue" onclick="_expensesConfirmResolve(true)">Да</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let _expensesConfirmResolver = null;
+
+function askExpensesConfirm() {
+    return new Promise((resolve) => {
+        _expensesConfirmResolver = resolve;
+        document.getElementById('expensesConfirmModal').classList.add('active');
+    });
+}
+
+function _expensesConfirmResolve(result) {
+    document.getElementById('expensesConfirmModal').classList.remove('active');
+    if (_expensesConfirmResolver) {
+        _expensesConfirmResolver(result);
+        _expensesConfirmResolver = null;
+    }
+}
+
+function getCsrfToken() {
+    const match = document.cookie.match(/csrftoken=([^;]+)/);
+    return match ? match[1] : '';
+}
+
+async function fnsDownload(url, kind, btnEl) {
+    if (kind === 'uvedomlenie') {
+        const confirmed = await askExpensesConfirm();
+        if (!confirmed) return;
+    }
+
+    const originalText = btnEl.innerText;
+    btnEl.disabled = true;
+    btnEl.innerText = '⏳ Формирование...';
+
+    try {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            let message = 'Не удалось сформировать документ.';
+            try {
+                const data = await response.json();
+                if (data.error) message = data.error;
+            } catch (e) { /* оставляем дефолтное сообщение */ }
+            alert('⚠️ ' + message);
+            return;
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'document.xml';
+
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+    } catch (e) {
+        alert('⚠️ Ошибка сети при формировании документа.');
+    } finally {
+        btnEl.disabled = false;
+        btnEl.innerText = originalText;
+    }
+}
+
+async function toggleSubmission(checkboxEl, docType, periodKey, year) {
+    const submitted = checkboxEl.checked;
+    const label = checkboxEl.closest('.fns-submitted-label');
+
+    try {
+        const response = await fetch('{% url "toggle_document_submission" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': getCsrfToken(),
+            },
+            body: `doc_type=${encodeURIComponent(docType)}&period_key=${encodeURIComponent(periodKey)}&year=${year}&submitted=${submitted}`,
+        });
+
+        if (!response.ok) {
+            checkboxEl.checked = !submitted; // откатываем чекбокс
+            alert('⚠️ Не удалось сохранить статус отправки.');
+            return;
+        }
+
+        label.classList.toggle('checked', submitted);
+
+    } catch (e) {
+        checkboxEl.checked = !submitted;
+        alert('⚠️ Ошибка сети при сохранении статуса.');
+    }
+}
+</script>
+{% endblock %}
