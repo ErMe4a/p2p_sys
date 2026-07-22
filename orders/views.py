@@ -969,6 +969,10 @@ def user_profit_view(request):
 
 
 
+# Добавление в orders/views.py (или views_fns_user_v2.py)
+
+from datetime import date, timedelta
+
 
 def _deadline_25th(year, end_month):
     """
@@ -1069,8 +1073,13 @@ def get_required_fns_documents(user, year):
     for d in documents:
         d['deadline_str'] = d['deadline'].strftime('%d.%m.%Y')
 
-    documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
+    # Свежий квартал сверху (убывание по месяцу), внутри квартала
+    # уведомление показываем раньше декларации НДС.
+    documents.sort(key=lambda d: (-d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
+
+
+
 
 def is_fns_all_submitted(user, year):
     """
