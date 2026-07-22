@@ -25,6 +25,15 @@
     .fns-doc-error-text { font-size: 0.78rem; color: #f84960; margin-top: 4px; }
     .fns-empty { color: var(--text-muted); font-size: 0.9rem; padding: 30px 0; text-align: center; }
 
+    .fns-quarter-header {
+        font-size: 1rem; font-weight: 600; color: #fff;
+        margin: 24px 0 10px 0; padding-bottom: 6px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .fns-quarter-header:first-of-type { margin-top: 0; }
+    .fns-quarter-deadline { font-weight: 400; font-size: 0.82rem; color: var(--text-muted); margin-left: 8px; }
+    .fns-doc-amount { font-size: 0.82rem; color: #58d68d; margin-top: 4px; }
+
     .fns-actions { display: flex; align-items: center; gap: 16px; }
     .fns-submitted-label {
         display: flex; align-items: center; gap: 6px; font-size: 0.82rem;
@@ -53,39 +62,49 @@
 
     {% if not documents %}
         <div class="fns-empty">
-            За {{ year }} год нет документов, требующих подачи прямо сейчас
+            Нет документов, требующих подачи прямо сейчас
             (периоды ещё не завершились, либо суммы к уплате нет).
         </div>
     {% else %}
+        {% regroup documents by quarter_num as quarter_groups %}
+        {% for group in quarter_groups %}
+            <div class="fns-quarter-header">
+                {{ group.grouper }} квартал {{ year }}
+                <span class="fns-quarter-deadline">(срок сдачи {{ group.list.0.deadline_str }})</span>
+            </div>
 
-        {% for doc in documents %}
-            <div class="fns-doc-row {% if not doc.ok %}error{% endif %}" data-doc-type="{{ doc.kind }}" data-period-key="{{ doc.period_key }}">
-                <div>
-                    <div class="fns-doc-title">
-                        <span class="fns-doc-icon">{% if doc.kind == 'uvedomlenie' %}📨{% else %}🧾{% endif %}</span>
-                        {{ doc.title }}
+            {% for doc in group.list %}
+                <div class="fns-doc-row {% if not doc.ok %}error{% endif %}" data-doc-type="{{ doc.kind }}" data-period-key="{{ doc.period_key }}">
+                    <div>
+                        <div class="fns-doc-title">
+                            <span class="fns-doc-icon">{% if doc.kind == 'uvedomlenie' %}📨{% else %}🧾{% endif %}</span>
+                            {{ doc.title }}
+                        </div>
+                        {% if doc.ok and doc.amount is not None %}
+                            <div class="fns-doc-amount">Сумма налога: {{ doc.amount|floatformat:0 }} руб.</div>
+                        {% endif %}
+                        {% if not doc.ok %}
+                            <div class="fns-doc-error-text">⚠️ {{ doc.error }}</div>
+                        {% endif %}
                     </div>
-                    {% if not doc.ok %}
-                        <div class="fns-doc-error-text">⚠️ {{ doc.error }}</div>
+
+                    {% if doc.ok %}
+                        <div class="fns-actions">
+                            <label class="fns-submitted-label {% if doc.submitted %}checked{% endif %}">
+                                <input type="checkbox"
+                                       {% if doc.submitted %}checked{% endif %}
+                                       onchange="toggleSubmission(this, '{{ doc.kind }}', '{{ doc.period_key }}', {{ year }})">
+                                Отправлено
+                            </label>
+                            <button type="button" class="btn btn-sm btn-outline-blue" onclick="fnsDownload('{{ doc.url }}', '{{ doc.kind }}', this)">
+                                📥 Скачать
+                            </button>
+                        </div>
+                    {% else %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Недоступно</button>
                     {% endif %}
                 </div>
-
-                {% if doc.ok %}
-                    <div class="fns-actions">
-                        <label class="fns-submitted-label {% if doc.submitted %}checked{% endif %}">
-                            <input type="checkbox"
-                                   {% if doc.submitted %}checked{% endif %}
-                                   onchange="toggleSubmission(this, '{{ doc.kind }}', '{{ doc.period_key }}', {{ year }})">
-                            Отправлено
-                        </label>
-                        <button type="button" class="btn btn-sm btn-outline-blue" onclick="fnsDownload('{{ doc.url }}', '{{ doc.kind }}', this)">
-                            📥 Скачать
-                        </button>
-                    </div>
-                {% else %}
-                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Недоступно</button>
-                {% endif %}
-            </div>
+            {% endfor %}
         {% endfor %}
     {% endif %}
 </div>

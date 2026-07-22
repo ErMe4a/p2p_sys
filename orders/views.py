@@ -970,15 +970,37 @@ def user_profit_view(request):
 
 
 
+def _deadline_25th(year, end_month):
+    """
+    Срок подачи документа: 25-е число месяца, следующего за концом
+    отчётного периода. Если попадает на выходной (суббота/воскресенье) -
+    переносится на ближайший понедельник (перенос по НК РФ).
+    Праздничные дни НЕ учитываются (упрощение) - если понадобится точный
+    производственный календарь, нужен отдельный справочник праздников.
+    """
+    next_month = end_month + 1
+    next_year = year
+    if next_month > 12:
+        next_month = 1
+        next_year += 1
+    d = date(next_year, next_month, 25)
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
 def get_required_fns_documents(user, year):
     """
     ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
-    сейчас актуальны для пользователя. Используется и страницей /fns/,
-    и расчётом точки статуса в админке - изменения в правилах (даты,
-    пороги, скрытие Q1 и т.п.) достаточно внести в одном месте.
+    сейчас актуальны для пользователя.
 
-    Возвращает список dict: kind, period_key, sort_month, title, url,
-    ok (bool), error (если not ok).
+    ИЗМЕНЕНИЯ (группировка по кварталам для страницы /fns/):
+      - для уведомлений добавлено поле 'amount' - сумма налога к уплате
+        (сумма всех КБК-блоков из info['blocks']);
+      - для всех документов добавлено 'deadline' (datetime.date) и
+        'deadline_str' (ДД.ММ.ГГГГ) - срок подачи;
+      - добавлено 'quarter_num' - номер квартала для группировки
+        в шаблоне (1/2/3/4), считается от sort_month.
     """
     today = timezone.now()
     documents = []
@@ -989,22 +1011,28 @@ def get_required_fns_documents(user, year):
         if not period_ended:
             continue
         try:
-            build_uvedomlenie(user, year, period_key)
+            filename, xml_bytes, info = build_uvedomlenie(user, year, period_key)
         except ValueError as e:
             msg = str(e)
             if any(m in msg for m in _FNS_SKIP_MARKERS):
                 continue
             documents.append({
                 'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-                'title': f"Уведомление об авансовом платеже — {period['label']}",
+                'quarter_num': (last_month + 2) // 3,
+                'title': "Уведомление об авансовом платеже",
                 'url': None, 'ok': False, 'error': msg,
+                'deadline': _deadline_25th(year, last_month),
             })
             continue
+
+        total_amount = sum(a for _, a in info['blocks'])
         documents.append({
             'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-            'title': f"Уведомление об авансовом платеже — {period['label']}",
+            'quarter_num': (last_month + 2) // 3,
+            'title': "Уведомление об авансовом платеже",
             'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
-            'ok': True,
+            'ok': True, 'amount': total_amount,
+            'deadline': _deadline_25th(year, last_month),
         })
 
     for q_key, q in NDS_QUARTERS.items():
@@ -1022,20 +1050,27 @@ def get_required_fns_documents(user, year):
                 continue
             documents.append({
                 'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-                'title': f"Декларация по НДС — {q['label']}",
+                'quarter_num': (end_month + 2) // 3,
+                'title': "Декларация по НДС",
                 'url': None, 'ok': False, 'error': msg,
+                'deadline': _deadline_25th(year, end_month),
             })
             continue
         documents.append({
             'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-            'title': f"Декларация по НДС — {q['label']}",
+            'quarter_num': (end_month + 2) // 3,
+            'title': "Декларация по НДС",
             'url': f"/fns/export/nds/?year={year}&quarter={q_key}",
             'ok': True,
+            'deadline': _deadline_25th(year, end_month),
         })
+
+    # Форматируем deadline_str для шаблона (Django не умеет .strftime в тегах без фильтра date)
+    for d in documents:
+        d['deadline_str'] = d['deadline'].strftime('%d.%m.%Y')
 
     documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
-
 
 def is_fns_all_submitted(user, year):
     """
