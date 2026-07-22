@@ -1,11 +1,17 @@
-# audit_orders_v2_smart.py
-# READ-ONLY углублённый аудит за 2026 год. Ничего не меняет в БД.
-# Запуск:  python manage.py shell < audit_orders_v2_smart.py
+# audit_orders_excel_report.py
+# READ-ONLY. Строит Excel-отчёт по аномалиям ордеров за 2026 год.
+# Ничего не меняет в БД, только читает и пишет .xlsx на диск.
+#
+# Запуск:  python manage.py shell < audit_orders_excel_report.py
+# Результат: /tmp/audit_report_2026.xlsx  (скачай его к себе для просмотра)
 
 from collections import defaultdict
 from datetime import datetime
-from decimal import Decimal
 from statistics import median
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
 from zoneinfo import ZoneInfo
 
 from orders.models import Order
@@ -17,116 +23,94 @@ YEAR = 2026
 year_start = datetime(YEAR, 1, 1, tzinfo=MSK)
 year_end = datetime(YEAR + 1, 1, 1, tzinfo=MSK)
 
+OUTPUT_PATH = "/tmp/audit_report_2026.xlsx"
+
 def f(x):
     try:
         return float(x or 0)
     except Exception:
         return 0.0
 
-qs = Order.objects.filter(created_at__gte=year_start, created_at__lt=year_end).order_by("created_at")
+print("Загружаю ордера из БД...")
+orders = list(Order.objects.filter(created_at__gte=year_start, created_at__lt=year_end).order_by("created_at"))
 uid_to_name = {u.id: u.username for u in User.objects.all()}
+print(f"Загружено: {len(orders)}")
 
-print("=" * 70)
-print(f"УГЛУБЛЁННЫЙ АУДИТ ({YEAR}) — курс / количество / комиссии / ручные ордера")
-print("=" * 70)
-
-orders = list(qs)
-print(f"Загружено ордеров: {len(orders)}")
-
-# ── 1. Рыночный курс дня (медиана price по USDT среди BUY+SELL с price>0) ──
-price_by_day = defaultdict(list)
+# ============================================================
+# 1. КУРС: своя медиана дня ДЛЯ КАЖДОЙ ВАЛЮТЫ ОТДЕЛЬНО (USDT и TON не смешиваются)
+# ============================================================
+price_by_day_cur = defaultdict(list)
 for o in orders:
-    if o.currency != "USDT":
-        continue
     price = f(getattr(o, "price", 0))
     if price <= 0:
         continue
     day = o.created_at.astimezone(MSK).date()
-    price_by_day[day].append(price)
+    price_by_day_cur[(o.currency, day)].append(price)
 
-median_price_by_day = {day: median(vals) for day, vals in price_by_day.items() if len(vals) >= 5}
+median_price = {k: median(v) for k, v in price_by_day_cur.items() if len(v) >= 3}
 
-PRICE_DEVIATION_PCT = 15  # порог отклонения курса от медианы дня
-
+PRICE_DEVIATION_PCT = 15
 price_outliers = []
 for o in orders:
-    if o.currency != "USDT":
-        continue
     price = f(getattr(o, "price", 0))
     if price <= 0:
         continue
     day = o.created_at.astimezone(MSK).date()
-    med = median_price_by_day.get(day)
+    med = median_price.get((o.currency, day))
     if med is None:
         continue
     dev_pct = abs(price - med) / med * 100
     if dev_pct > PRICE_DEVIATION_PCT:
         price_outliers.append((o, med, dev_pct))
 
-print(f"\n[{len(price_outliers)}] КУРС СИЛЬНО ОТЛИЧАЕТСЯ ОТ РЫНОЧНОГО КУРСА ДНЯ (>{PRICE_DEVIATION_PCT}%)")
-for o, med, dev in sorted(price_outliers, key=lambda x: -x[2])[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    print(f"    id={o.id} user={name} {o.operation_type} price={f(o.price):.2f} "
-          f"(рынок дня≈{med:.2f}, откл {dev:.0f}%) amount={f(o.amount):.2f} "
-          f"cost={f(o.cost):.2f} exch={o.exchange_type} @ {o.created_at.astimezone(MSK)}")
-if len(price_outliers) > 20:
-    print(f"    ... и ещё {len(price_outliers) - 20}")
-
-# ── 2. Аномальное количество (относительно типичного размера сделки юзера) ──
+# ============================================================
+# 2. КОЛИЧЕСТВО: percentile-метод (p95 * 10), исключая нач. остаток,
+#    отдельно по (user, currency) - не путаем USDT и TON
+# ============================================================
 amounts_by_user_cur = defaultdict(list)
 for o in orders:
+    if (getattr(o, "exchange_type", "") or "") == "Остаток (до 1 фев)":
+        continue  # легитимный разовый перенос остатка, не для базовой линии
     amt = f(o.amount)
     if amt > 0:
         amounts_by_user_cur[(o.user_id, o.currency)].append(amt)
 
-median_amt = {k: median(v) for k, v in amounts_by_user_cur.items() if len(v) >= 5}
+p95_by_user_cur = {}
+for key, vals in amounts_by_user_cur.items():
+    if len(vals) >= 10:  # нужно достаточно сделок для устойчивого перцентиля
+        s = sorted(vals)
+        p95_by_user_cur[key] = s[int(len(s) * 0.95)]
 
-AMOUNT_MULTIPLIER_HIGH = 5    # в 5+ раз больше типичного
-AMOUNT_MULTIPLIER_LOW = 0.15  # меньше 15% от типичного (не пыль/сдача)
-
+AMOUNT_MULTIPLIER = 10  # порог: экстремальный хвост ЗА ПРЕДЕЛАМИ обычного разброса юзера (p95)
 amount_outliers = []
 for o in orders:
+    if (getattr(o, "exchange_type", "") or "") == "Остаток (до 1 фев)":
+        continue
     amt = f(o.amount)
     if amt <= 0:
         continue
     key = (o.user_id, o.currency)
-    med = median_amt.get(key)
-    if med is None or med <= 0:
+    p95 = p95_by_user_cur.get(key)
+    if p95 is None or p95 <= 0:
         continue
-    ratio = amt / med
-    if ratio > AMOUNT_MULTIPLIER_HIGH or ratio < AMOUNT_MULTIPLIER_LOW:
-        amount_outliers.append((o, med, ratio))
+    if amt > p95 * AMOUNT_MULTIPLIER:
+        amount_outliers.append((o, p95, amt / p95))
 
-print(f"\n[{len(amount_outliers)}] АНОМАЛЬНОЕ КОЛИЧЕСТВО (сильно отличается от типичной сделки юзера)")
-for o, med, ratio in sorted(amount_outliers, key=lambda x: -abs(x[2] if x[2] > 1 else 1/x[2]))[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    print(f"    id={o.id} user={name} {o.operation_type} {o.currency} amount={f(o.amount):.4f} "
-          f"(типично≈{med:.4f}, x{ratio:.1f}) cost={f(o.cost):.2f} exch={o.exchange_type} "
-          f"@ {o.created_at.astimezone(MSK)}")
-if len(amount_outliers) > 20:
-    print(f"    ... и ещё {len(amount_outliers) - 20}")
-
-# ── 3. exchange_commission_rate на BUY (должен быть только на SELL) ──
-buy_with_exch_comm = []
+# ============================================================
+# 3. exchange_commission_rate на BUY - ПОДТВЕРЖДЕНО КОДОМ: НЕ ВЛИЯЕТ НА РАСЧЁТЫ.
+#    Ставится автоматически при создании любого ордера (снимок комиссии биржи
+#    на момент сделки), используется только для SELL. Оставляем ИНФОРМАЦИОННО.
+# ============================================================
+buy_with_exch_comm_by_user = defaultdict(int)
 for o in orders:
-    if o.operation_type == "BUY":
-        ecr = f(getattr(o, "exchange_commission_rate", 0))
-        if ecr != 0:
-            buy_with_exch_comm.append(o)
+    if o.operation_type == "BUY" and f(getattr(o, "exchange_commission_rate", 0)) != 0:
+        buy_with_exch_comm_by_user[o.user_id] += 1
 
-print(f"\n[{len(buy_with_exch_comm)}] КОМИССИЯ БИРЖИ ЗАПОЛНЕНА НА BUY (должна быть только на SELL — похоже на перепутанное поле)")
-for o in buy_with_exch_comm[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    print(f"    id={o.id} user={name} BUY amount={f(o.amount):.4f} "
-          f"exchange_commission_rate={f(o.exchange_commission_rate)} "
-          f"commission={f(o.commission)}({o.commission_type}) @ {o.created_at.astimezone(MSK)}")
-if len(buy_with_exch_comm) > 20:
-    print(f"    ... и ещё {len(buy_with_exch_comm) - 20}")
-
-# ── 4. Подозрительно большая комиссия банка (похоже на перепутанное поле биржи) ──
-COMMISSION_PERCENT_CEILING = 5    # больше 5% для банковской комиссии нетипично
-FIXED_COMMISSION_RATIO_CEILING = 0.10  # фикс. комиссия > 10% от cost — подозрительно
-
+# ============================================================
+# 4. Подозрительно большая комиссия банка
+# ============================================================
+COMMISSION_PERCENT_CEILING = 5
+FIXED_COMMISSION_RATIO_CEILING = 0.10
 big_bank_comm = []
 for o in orders:
     comm = f(getattr(o, "commission", 0))
@@ -135,17 +119,11 @@ for o in orders:
     if ct == "PERCENT" and 0 < comm <= 100 and comm > COMMISSION_PERCENT_CEILING:
         big_bank_comm.append((o, f"PERCENT={comm}%"))
     elif ct in ("MONEY", "RUB", "FIX") and cost > 0 and comm > cost * FIXED_COMMISSION_RATIO_CEILING:
-        big_bank_comm.append((o, f"FIX={comm}₽ (это {comm/cost*100:.0f}% от cost={cost:.2f})"))
+        big_bank_comm.append((o, f"FIX={comm}руб ({comm/cost*100:.0f}% от cost)"))
 
-print(f"\n[{len(big_bank_comm)}] ПОДОЗРИТЕЛЬНО БОЛЬШАЯ КОМИССИЯ БАНКА (>{COMMISSION_PERCENT_CEILING}% или >{int(FIXED_COMMISSION_RATIO_CEILING*100)}% от cost — похоже на перепутанное поле)")
-for o, desc in big_bank_comm[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    print(f"    id={o.id} user={name} {o.operation_type} {desc} "
-          f"exch_comm_rate={f(o.exchange_commission_rate)} @ {o.created_at.astimezone(MSK)}")
-if len(big_bank_comm) > 20:
-    print(f"    ... и ещё {len(big_bank_comm) - 20}")
-
-# ── 5. Ручные/Telegram ордера с рассогласованием cost vs amount*price ──
+# ============================================================
+# 5. Ручные ордера (Telegram/OB-/OS-) с рассогласованием cost
+# ============================================================
 def is_manual_order(o):
     exch = (getattr(o, "exchange_type", "") or "").lower()
     ext = getattr(o, "external_id", "") or ""
@@ -155,54 +133,141 @@ def is_manual_order(o):
         return True
     return False
 
-MANUAL_TOLERANCE = 0.02  # для ручных ордеров порог строже — 2%
-
+MANUAL_TOLERANCE = 0.02
 manual_cost_mismatch = []
 for o in orders:
     if not is_manual_order(o):
         continue
-    amount = f(o.amount)
-    price = f(getattr(o, "price", 0))
-    cost = f(o.cost)
+    amount = f(o.amount); price = f(getattr(o, "price", 0)); cost = f(o.cost)
     if amount > 0 and price > 0 and cost > 0:
         expected = amount * price
         if expected > 0 and abs(cost - expected) / expected > MANUAL_TOLERANCE:
             manual_cost_mismatch.append((o, expected))
 
-print(f"\n[{len(manual_cost_mismatch)}] РУЧНЫЕ ОРДЕРА (Telegram/OB-/OS-) С РАССОГЛАСОВАНИЕМ cost (>{int(MANUAL_TOLERANCE*100)}%) — высокий риск опечатки при вводе")
-for o, expected in sorted(manual_cost_mismatch, key=lambda x: -abs(f(x[0].cost) - x[1]))[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    diff_pct = (f(o.cost) - expected) / expected * 100
-    print(f"    id={o.id} user={name} {o.operation_type} amount={f(o.amount):.4f} price={f(o.price):.2f} "
-          f"cost={f(o.cost):.2f} ожидалось≈{expected:.2f} ({diff_pct:+.0f}%) "
-          f"ext={o.external_id} exch={o.exchange_type} @ {o.created_at.astimezone(MSK)}")
-if len(manual_cost_mismatch) > 20:
-    print(f"    ... и ещё {len(manual_cost_mismatch) - 20}")
-
-# ── 6. Явный паттерн "все три поля равны" (amount=price=cost) — типичный фейк-ввод ──
+# ============================================================
+# 6. amount == price == cost (битый/тестовый ввод)
+# ============================================================
 triple_equal = []
 for o in orders:
-    amount = f(o.amount)
-    price = f(getattr(o, "price", 0))
-    cost = f(o.cost)
+    amount = f(o.amount); price = f(getattr(o, "price", 0)); cost = f(o.cost)
     if amount > 0 and amount == price == cost:
         triple_equal.append(o)
 
-print(f"\n[{len(triple_equal)}] ORDER С amount == price == cost (явный признак битого/тестового ввода)")
-for o in triple_equal[:20]:
-    name = uid_to_name.get(o.user_id, f"id{o.user_id}")
-    print(f"    id={o.id} user={name} {o.operation_type} {o.currency} значение={f(o.amount)} @ {o.created_at.astimezone(MSK)}")
-if len(triple_equal) > 20:
-    print(f"    ... и ещё {len(triple_equal) - 20}")
+# ============================================================
+# ЗАПИСЬ В EXCEL
+# ============================================================
+print("Формирую Excel-отчёт...")
+wb = Workbook()
 
-print("\n" + "=" * 70)
-print("СВОДКА ПО КАТЕГОРИЯМ:")
-print(f"  1. Курс далёк от рыночного:            {len(price_outliers)}")
-print(f"  2. Аномальное количество:               {len(amount_outliers)}")
-print(f"  3. Комиссия биржи на BUY:                {len(buy_with_exch_comm)}")
-print(f"  4. Подозрительно большая комиссия банка: {len(big_bank_comm)}")
-print(f"  5. Ручные ордера с рассогласованием cost:{len(manual_cost_mismatch)}")
-print(f"  6. amount==price==cost (битый ввод):     {len(triple_equal)}")
-print("=" * 70)
-print("Аудит завершён. БД не изменялась.")
-print("=" * 70)
+HEADER_FILL = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
+HEADER_FONT = Font(bold=True, color="FFFFFF")
+RISK_HIGH = PatternFill(start_color="F5B7B1", end_color="F5B7B1", fill_type="solid")
+RISK_LOW = PatternFill(start_color="D5F5E3", end_color="D5F5E3", fill_type="solid")
+
+def style_header(ws, row=1):
+    for cell in ws[row]:
+        cell.fill = HEADER_FILL
+        cell.font = HEADER_FONT
+        cell.alignment = Alignment(horizontal="center")
+
+def autosize(ws):
+    for col_cells in ws.columns:
+        length = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells)
+        col_letter = get_column_letter(col_cells[0].column)
+        ws.column_dimensions[col_letter].width = min(max(length + 2, 10), 60)
+
+# ── Лист 0: Сводка ──
+ws0 = wb.active
+ws0.title = "Сводка"
+ws0.append(["Категория", "Кол-во", "Риск", "Комментарий"])
+style_header(ws0)
+summary_rows = [
+    ("1. Курс сильно отличается от рынка дня (USDT+TON раздельно)", len(price_outliers), "Высокий",
+     f">{PRICE_DEVIATION_PCT}% откл. от медианы дня по своей валюте"),
+    ("2. Аномальное количество (экстрим за пределами обычного для юзера)", len(amount_outliers), "Высокий",
+     f"percentile-метод: >{AMOUNT_MULTIPLIER}x от p95 юзера, искл. нач. остаток"),
+    ("3. Комиссия биржи проставлена на BUY", sum(buy_with_exch_comm_by_user.values()), "НЕ ВЛИЯЕТ",
+     "Подтверждено кодом: ставится системой всегда, используется только для SELL. Не аномалия."),
+    ("4. Подозрительно большая комиссия банка", len(big_bank_comm), "Средний",
+     f">{COMMISSION_PERCENT_CEILING}% или >{int(FIXED_COMMISSION_RATIO_CEILING*100)}% от cost"),
+    ("5. Ручные ордера (Telegram/OB-/OS-) с расхождением cost", len(manual_cost_mismatch), "Высокий",
+     f">{int(MANUAL_TOLERANCE*100)}% расхождение cost vs amount*price - высокий риск опечатки"),
+    ("6. amount == price == cost (битый ввод)", len(triple_equal), "Высокий", "Явный признак тестовых/битых данных"),
+]
+for row in summary_rows:
+    ws0.append(row)
+autosize(ws0)
+
+# ── Лист 1: Курс USDT ──
+ws1 = wb.create_sheet("Курс USDT")
+ws1.append(["ID", "Пользователь", "Тип", "Курс ордера", "Медиана дня", "Откл. %", "Кол-во", "Сумма", "Биржа", "Дата"])
+style_header(ws1)
+for o, med, dev in sorted([x for x in price_outliers if x[0].currency == "USDT"], key=lambda x: -x[2]):
+    ws1.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.operation_type, round(f(o.price), 2),
+                round(med, 2), round(dev, 0), round(f(o.amount), 4), round(f(o.cost), 2),
+                o.exchange_type, o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws1)
+
+# ── Лист 2: Курс TON ──
+ws2 = wb.create_sheet("Курс TON")
+ws2.append(["ID", "Пользователь", "Тип", "Курс ордера", "Медиана дня", "Откл. %", "Кол-во", "Сумма", "Биржа", "Дата"])
+style_header(ws2)
+for o, med, dev in sorted([x for x in price_outliers if x[0].currency == "TON"], key=lambda x: -x[2]):
+    ws2.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.operation_type, round(f(o.price), 4),
+                round(med, 4), round(dev, 0), round(f(o.amount), 4), round(f(o.cost), 2),
+                o.exchange_type, o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws2)
+
+# ── Лист 3: Аномальное количество ──
+ws3 = wb.create_sheet("Аномальное кол-во")
+ws3.append(["ID", "Пользователь", "Валюта", "Тип", "Кол-во", "p95 юзера", "Во сколько раз больше", "Сумма", "Биржа", "Дата"])
+style_header(ws3)
+for o, p95, ratio in sorted(amount_outliers, key=lambda x: -x[2]):
+    ws3.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.currency, o.operation_type,
+                round(f(o.amount), 4), round(p95, 4), round(ratio, 1), round(f(o.cost), 2),
+                o.exchange_type, o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws3)
+
+# ── Лист 4: Комиссия банка ──
+ws4 = wb.create_sheet("Большая комиссия банка")
+ws4.append(["ID", "Пользователь", "Тип", "Описание", "Комиссия биржи (справочно)", "Дата"])
+style_header(ws4)
+for o, desc in big_bank_comm:
+    ws4.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.operation_type, desc,
+                f(o.exchange_commission_rate), o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws4)
+
+# ── Лист 5: Ручные ордера ──
+ws5 = wb.create_sheet("Ручные ордера (cost)")
+ws5.append(["ID", "Пользователь", "Тип", "Кол-во", "Курс", "Cost факт", "Cost ожидаемый", "Откл. %", "External ID", "Биржа", "Дата"])
+style_header(ws5)
+for o, expected in sorted(manual_cost_mismatch, key=lambda x: -abs(f(x[0].cost) - x[1])):
+    diff_pct = (f(o.cost) - expected) / expected * 100
+    ws5.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.operation_type, round(f(o.amount), 4),
+                round(f(o.price), 2), round(f(o.cost), 2), round(expected, 2), round(diff_pct, 0),
+                o.external_id, o.exchange_type, o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws5)
+
+# ── Лист 6: Triple equal ──
+ws6 = wb.create_sheet("Битый ввод (a=p=c)")
+ws6.append(["ID", "Пользователь", "Валюта", "Тип", "Значение", "Дата"])
+style_header(ws6)
+for o in triple_equal:
+    ws6.append([o.id, uid_to_name.get(o.user_id, o.user_id), o.currency, o.operation_type,
+                f(o.amount), o.created_at.astimezone(MSK).strftime("%d.%m.%Y %H:%M")])
+autosize(ws6)
+
+# ── Лист 7: Комиссия биржи на BUY (информационно, по юзерам) ──
+ws7 = wb.create_sheet("Комса биржи на BUY (инфо)")
+ws7.append(["Пользователь", "Кол-во BUY-ордеров с exchange_commission_rate != 0"])
+style_header(ws7)
+ws7.append(["ПРИМЕЧАНИЕ: это НЕ аномалия — поле проставляется системой автоматически", ""])
+ws7.append(["на все ордера (снимок комиссии биржи), но используется в расчётах ТОЛЬКО для SELL.", ""])
+for uid, cnt in sorted(buy_with_exch_comm_by_user.items(), key=lambda x: -x[1]):
+    ws7.append([uid_to_name.get(uid, uid), cnt])
+autosize(ws7)
+
+wb.save(OUTPUT_PATH)
+print(f"\nГотово! Отчёт сохранён: {OUTPUT_PATH}")
+print(f"Скачай его командой (с локальной машины): scp ubuntu@<сервер>:{OUTPUT_PATH} .")
+print("БД не изменялась.")
