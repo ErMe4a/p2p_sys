@@ -967,20 +967,11 @@ def user_profit_view(request):
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
 
-
-
-# Добавление в orders/views.py (или views_fns_user_v2.py)
-
-from datetime import date, timedelta
-
-
 def _deadline_25th(year, end_month):
     """
     Срок подачи документа: 25-е число месяца, следующего за концом
     отчётного периода. Если попадает на выходной (суббота/воскресенье) -
     переносится на ближайший понедельник (перенос по НК РФ).
-    Праздничные дни НЕ учитываются (упрощение) - если понадобится точный
-    производственный календарь, нужен отдельный справочник праздников.
     """
     next_month = end_month + 1
     next_year = year
@@ -996,40 +987,41 @@ def _deadline_25th(year, end_month):
 def get_required_fns_documents(user, year):
     """
     ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
-    сейчас актуальны для пользователя. Используется и страницей /fns/,
-    и расчётом точки статуса в админке - изменения в правилах (даты,
-    пороги, скрытие Q1 и т.п.) достаточно внести в одном месте.
- 
-    Возвращает список dict: kind, period_key, sort_month, title, url,
-    ok (bool), error (если not ok).
+    сейчас актуальны для пользователя.
     """
     today = timezone.now()
     documents = []
- 
+
     for period_key, period in UVED_PERIODS.items():
         last_month = period['last_month']
         period_ended = (year < today.year) or (year == today.year and today.month > last_month)
         if not period_ended:
             continue
         try:
-            build_uvedomlenie(user, year, period_key)
+            filename, xml_bytes, info = build_uvedomlenie(user, year, period_key)
         except ValueError as e:
             msg = str(e)
             if any(m in msg for m in _FNS_SKIP_MARKERS):
                 continue
             documents.append({
                 'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-                'title': f"Уведомление об авансовом платеже — {period['label']}",
+                'quarter_num': (last_month + 2) // 3,
+                'title': "Уведомление об авансовом платеже",
                 'url': None, 'ok': False, 'error': msg,
+                'deadline': _deadline_25th(year, last_month),
             })
             continue
+
+        total_amount = sum(a for _, a in info['blocks'])
         documents.append({
             'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-            'title': f"Уведомление об авансовом платеже — {period['label']}",
+            'quarter_num': (last_month + 2) // 3,
+            'title': "Уведомление об авансовом платеже",
             'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
-            'ok': True,
+            'ok': True, 'amount': total_amount,
+            'deadline': _deadline_25th(year, last_month),
         })
- 
+
     for q_key, q in NDS_QUARTERS.items():
         if q_key == 'Q1':
             continue
@@ -1045,19 +1037,29 @@ def get_required_fns_documents(user, year):
                 continue
             documents.append({
                 'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-                'title': f"Декларация по НДС — {q['label']}",
+                'quarter_num': (end_month + 2) // 3,
+                'title': "Декларация по НДС",
                 'url': None, 'ok': False, 'error': msg,
+                'deadline': _deadline_25th(year, end_month),
             })
             continue
         documents.append({
             'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-            'title': f"Декларация по НДС — {q['label']}",
+            'quarter_num': (end_month + 2) // 3,
+            'title': "Декларация по НДС",
             'url': f"/fns/export/nds/?year={year}&quarter={q_key}",
             'ok': True,
+            'deadline': _deadline_25th(year, end_month),
         })
- 
-    documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
+
+    for d in documents:
+        d['deadline_str'] = d['deadline'].strftime('%d.%m.%Y')
+
+    documents.sort(key=lambda d: (-d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
+
+
+
 
 
 
