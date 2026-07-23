@@ -967,11 +967,17 @@ def user_profit_view(request):
     default_banks = BankDetail.objects.filter(is_deleted=False)
     return render(request, 'orders/profit.html', {'default_banks': default_banks})
 
+# Добавление в orders/views.py (или views_fns_user_v2.py)
+
+
+
 def _deadline_25th(year, end_month):
     """
     Срок подачи документа: 25-е число месяца, следующего за концом
     отчётного периода. Если попадает на выходной (суббота/воскресенье) -
     переносится на ближайший понедельник (перенос по НК РФ).
+    Праздничные дни НЕ учитываются (упрощение) - если понадобится точный
+    производственный календарь, нужен отдельный справочник праздников.
     """
     next_month = end_month + 1
     next_year = year
@@ -988,9 +994,22 @@ def get_required_fns_documents(user, year):
     """
     ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
     сейчас актуальны для пользователя.
+
+    ИЗМЕНЕНИЯ (группировка по кварталам для страницы /fns/):
+      - для уведомлений добавлено поле 'amount' - сумма налога к уплате
+        (сумма всех КБК-блоков из info['blocks']);
+      - для всех документов добавлено 'deadline' (datetime.date) и
+        'deadline_str' (ДД.ММ.ГГГГ) - срок подачи;
+      - добавлено 'quarter_num' - номер квартала для группировки
+        в шаблоне (1/2/3/4), считается от sort_month.
     """
     today = timezone.now()
     documents = []
+
+    tax_type = (getattr(user, "tax_type", "") or "").upper()
+    is_osno = tax_type in ("OSNO", "OCH")
+    uved_title = ("Уведомление об авансовом платеже НДФЛ" if is_osno
+                  else "Уведомление об авансовом платеже УСН")
 
     for period_key, period in UVED_PERIODS.items():
         last_month = period['last_month']
@@ -1006,7 +1025,7 @@ def get_required_fns_documents(user, year):
             documents.append({
                 'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
                 'quarter_num': (last_month + 2) // 3,
-                'title': "Уведомление об авансовом платеже",
+                'title': uved_title,
                 'url': None, 'ok': False, 'error': msg,
                 'deadline': _deadline_25th(year, last_month),
             })
@@ -1016,13 +1035,23 @@ def get_required_fns_documents(user, year):
         documents.append({
             'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
             'quarter_num': (last_month + 2) // 3,
-            'title': "Уведомление об авансовом платеже",
+            'title': uved_title,
             'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
             'ok': True, 'amount': total_amount,
             'deadline': _deadline_25th(year, last_month),
         })
 
-    for q_key, q in NDS_QUARTERS.items():
+    # НДС в принципе не показываем не-ОСНО - не как "Недоступно" с ошибкой,
+    # а просто не добавляем в список вообще (Патент никогда не платит НДС;
+    # УСН показываем НДС только если реально превышен порог по доходу -
+    # эта проверка всё равно есть внутри build_nds_declaration, но для
+    # UI-чистоты сразу скипаем явные "точно нет НДС" случаи -
+    # НДС им может понадобиться позже (порог УСН), поэтому для USN_INCOME/
+    # USN_INCOME_OUTCOME цикл всё же выполняем (может показать НДС при
+    # превышении порога), а вот для остальных (PATENT и т.п.) - не пытаемся.
+    show_nds_block = is_osno or tax_type in ("USN_INCOME", "USN_INCOME_OUTCOME")
+
+    for q_key, q in (NDS_QUARTERS.items() if show_nds_block else []):
         if q_key == 'Q1':
             continue
         end_month = q['end_month']
@@ -1052,9 +1081,12 @@ def get_required_fns_documents(user, year):
             'deadline': _deadline_25th(year, end_month),
         })
 
+    # Форматируем deadline_str для шаблона (Django не умеет .strftime в тегах без фильтра date)
     for d in documents:
         d['deadline_str'] = d['deadline'].strftime('%d.%m.%Y')
 
+    # Свежий квартал сверху (убывание по месяцу), внутри квартала
+    # уведомление показываем раньше декларации НДС.
     documents.sort(key=lambda d: (-d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
 
