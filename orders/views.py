@@ -996,49 +996,40 @@ def _deadline_25th(year, end_month):
 def get_required_fns_documents(user, year):
     """
     ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
-    сейчас актуальны для пользователя.
-
-    ИЗМЕНЕНИЯ (группировка по кварталам для страницы /fns/):
-      - для уведомлений добавлено поле 'amount' - сумма налога к уплате
-        (сумма всех КБК-блоков из info['blocks']);
-      - для всех документов добавлено 'deadline' (datetime.date) и
-        'deadline_str' (ДД.ММ.ГГГГ) - срок подачи;
-      - добавлено 'quarter_num' - номер квартала для группировки
-        в шаблоне (1/2/3/4), считается от sort_month.
+    сейчас актуальны для пользователя. Используется и страницей /fns/,
+    и расчётом точки статуса в админке - изменения в правилах (даты,
+    пороги, скрытие Q1 и т.п.) достаточно внести в одном месте.
+ 
+    Возвращает список dict: kind, period_key, sort_month, title, url,
+    ok (bool), error (если not ok).
     """
     today = timezone.now()
     documents = []
-
+ 
     for period_key, period in UVED_PERIODS.items():
         last_month = period['last_month']
         period_ended = (year < today.year) or (year == today.year and today.month > last_month)
         if not period_ended:
             continue
         try:
-            filename, xml_bytes, info = build_uvedomlenie(user, year, period_key)
+            build_uvedomlenie(user, year, period_key)
         except ValueError as e:
             msg = str(e)
             if any(m in msg for m in _FNS_SKIP_MARKERS):
                 continue
             documents.append({
                 'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-                'quarter_num': (last_month + 2) // 3,
-                'title': "Уведомление об авансовом платеже",
+                'title': f"Уведомление об авансовом платеже — {period['label']}",
                 'url': None, 'ok': False, 'error': msg,
-                'deadline': _deadline_25th(year, last_month),
             })
             continue
-
-        total_amount = sum(a for _, a in info['blocks'])
         documents.append({
             'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
-            'quarter_num': (last_month + 2) // 3,
-            'title': "Уведомление об авансовом платеже",
+            'title': f"Уведомление об авансовом платеже — {period['label']}",
             'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
-            'ok': True, 'amount': total_amount,
-            'deadline': _deadline_25th(year, last_month),
+            'ok': True,
         })
-
+ 
     for q_key, q in NDS_QUARTERS.items():
         if q_key == 'Q1':
             continue
@@ -1054,30 +1045,19 @@ def get_required_fns_documents(user, year):
                 continue
             documents.append({
                 'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-                'quarter_num': (end_month + 2) // 3,
-                'title': "Декларация по НДС",
+                'title': f"Декларация по НДС — {q['label']}",
                 'url': None, 'ok': False, 'error': msg,
-                'deadline': _deadline_25th(year, end_month),
             })
             continue
         documents.append({
             'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
-            'quarter_num': (end_month + 2) // 3,
-            'title': "Декларация по НДС",
+            'title': f"Декларация по НДС — {q['label']}",
             'url': f"/fns/export/nds/?year={year}&quarter={q_key}",
             'ok': True,
-            'deadline': _deadline_25th(year, end_month),
         })
-
-    # Форматируем deadline_str для шаблона (Django не умеет .strftime в тегах без фильтра date)
-    for d in documents:
-        d['deadline_str'] = d['deadline'].strftime('%d.%m.%Y')
-
-    # Свежий квартал сверху (убывание по месяцу), внутри квартала
-    # уведомление показываем раньше декларации НДС.
-    documents.sort(key=lambda d: (-d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
+ 
+    documents.sort(key=lambda d: (d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
-
 
 
 
@@ -1085,16 +1065,17 @@ def is_fns_all_submitted(user, year):
     """
     Точка статуса для админки: True, если ВСЕ актуальные документы
     пользователя отмечены как отправленные (или их нет вообще -
-    считаем это тоже "зелёным", по договорённости). Кэшируется на
-    5 минут, сбрасывается сразу при отметке чекбокса.
+    считаем это тоже "зелёным", по договорённости).
+ 
+    БЕЗ КЭША: этот расчёт вызывается только из admin_fns_status_bulk,
+    который и так асинхронный (не блокирует загрузку страницы
+    пользователей) - кэш только создавал риск "залипания" точки
+    при нескольких gunicorn-воркерах (LocMemCache не общий между
+    процессами, а cache.delete() при отметке чекбокса чистит кэш
+    только в том воркере, который обработал POST-запрос).
     """
-    cache_key = f"fns_status_{user.id}_{year}"
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-
     docs = get_required_fns_documents(user, year)
-
+ 
     result = True
     if docs:
         submitted_set = set(
@@ -1103,15 +1084,12 @@ def is_fns_all_submitted(user, year):
             .values_list('doc_type', 'period_key')
         )
         for d in docs:
-            # Документ с ошибкой данных (не хватает ОКТМО и т.п.) -
-            # по договорённости считаем "не отправлено" (простая точка,
-            # без отдельного жёлто-красного состояния).
             if not d['ok'] or (d['kind'], d['period_key']) not in submitted_set:
                 result = False
                 break
-
-    cache.set(cache_key, result, 300)  # 5 минут
+ 
     return result
+ 
 
 
 @login_required(login_url='login')
@@ -1119,9 +1097,9 @@ def my_fns_documents(request):
     """Личная страница пользователя: список документов, требующих подачи."""
     user = request.user
     year = int(request.GET.get('year') or timezone.now().year)
-
+ 
     documents = get_required_fns_documents(user, year)
-
+ 
     submissions = {
         (s.doc_type, s.period_key): s
         for s in DocumentSubmission.objects.filter(user=user, year=year)
@@ -1130,51 +1108,51 @@ def my_fns_documents(request):
         if d['ok']:
             sub = submissions.get((d['kind'], d['period_key']))
             d['submitted'] = bool(sub and sub.submitted)
-
+ 
     return render(request, 'orders/fns.html', {
         'year': year,
         'documents': documents,
     })
-
-
+ 
+ 
 @login_required(login_url='login')
 def user_export_uvedomlenie(request):
     """Скачивание СВОЕГО уведомления. user_id не принимается - только request.user."""
     year = int(request.GET.get('year') or timezone.now().year)
     period_key = request.GET.get('period', 'Q1')
-
+ 
     if period_key not in UVED_PERIODS:
         return JsonResponse({'error': 'Неверный период.'}, status=400)
-
+ 
     try:
         filename, xml_bytes, info = build_uvedomlenie(request.user, year, period_key)
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)
-
+ 
     response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
-
-
+ 
+ 
 @login_required(login_url='login')
 def user_export_nds(request):
     """Скачивание СВОЕЙ декларации НДС. user_id не принимается - только request.user."""
     year = int(request.GET.get('year') or timezone.now().year)
     quarter_key = request.GET.get('quarter', 'Q2')
-
+ 
     if quarter_key not in NDS_QUARTERS or quarter_key == 'Q1':
         return JsonResponse({'error': 'Неверный квартал.'}, status=400)
-
+ 
     try:
         filename, xml_bytes, info = build_nds_declaration(request.user, year, quarter_key)
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)
-
+ 
     response = HttpResponse(xml_bytes, content_type='application/xml; charset=windows-1251')
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
-
-
+ 
+ 
 @login_required(login_url='login')
 @require_POST
 def toggle_document_submission(request):
@@ -1187,12 +1165,12 @@ def toggle_document_submission(request):
     period_key = request.POST.get('period_key')
     year = request.POST.get('year')
     submitted = request.POST.get('submitted') == 'true'
-
+ 
     if not (doc_type and period_key and year):
         return JsonResponse({'error': 'Некорректные данные.'}, status=400)
     if doc_type not in ('uvedomlenie', 'nds'):
         return JsonResponse({'error': 'Некорректный тип документа.'}, status=400)
-
+ 
     year = int(year)
     obj, _ = DocumentSubmission.objects.get_or_create(
         user=request.user, doc_type=doc_type, period_key=period_key, year=year
@@ -1200,10 +1178,13 @@ def toggle_document_submission(request):
     obj.submitted = submitted
     obj.submitted_at = timezone.now() if submitted else None
     obj.save()
-
+ 
     cache.delete(f"fns_status_{request.user.id}_{year}")
-
+ 
     return JsonResponse({'ok': True, 'submitted': obj.submitted})
+ 
+
+
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
