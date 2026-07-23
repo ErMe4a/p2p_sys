@@ -970,7 +970,6 @@ def user_profit_view(request):
 # Добавление в orders/views.py (или views_fns_user_v2.py)
 
 
-
 def _deadline_25th(year, end_month):
     """
     Срок подачи документа: 25-е число месяца, следующего за концом
@@ -990,7 +989,7 @@ def _deadline_25th(year, end_month):
     return d
 
 
-def get_required_fns_documents(user, year):
+def get_required_fns_documents(user, year, for_user_id=None):
     """
     ОБЩАЯ ФУНКЦИЯ - единый источник правды о том, какие документы ФНС
     сейчас актуальны для пользователя.
@@ -1036,7 +1035,8 @@ def get_required_fns_documents(user, year):
             'kind': 'uvedomlenie', 'period_key': period_key, 'sort_month': last_month,
             'quarter_num': (last_month + 2) // 3,
             'title': uved_title,
-            'url': f"/fns/export/uvedomlenie/?year={year}&period={period_key}",
+            'url': (f"/admin-panel/export/uvedomlenie/?user_id={for_user_id}&year={year}&period={period_key}"
+                    if for_user_id else f"/fns/export/uvedomlenie/?year={year}&period={period_key}"),
             'ok': True, 'amount': total_amount,
             'deadline': _deadline_25th(year, last_month),
         })
@@ -1076,7 +1076,8 @@ def get_required_fns_documents(user, year):
             'kind': 'nds', 'period_key': q_key, 'sort_month': end_month,
             'quarter_num': (end_month + 2) // 3,
             'title': "Декларация по НДС",
-            'url': f"/fns/export/nds/?year={year}&quarter={q_key}",
+            'url': (f"/admin-panel/export/nds/?user_id={for_user_id}&year={year}&quarter={q_key}"
+                    if for_user_id else f"/fns/export/nds/?year={year}&quarter={q_key}"),
             'ok': True,
             'deadline': _deadline_25th(year, end_month),
         })
@@ -1089,8 +1090,6 @@ def get_required_fns_documents(user, year):
     # уведомление показываем раньше декларации НДС.
     documents.sort(key=lambda d: (-d['sort_month'], 0 if d['kind'] == 'uvedomlenie' else 1))
     return documents
-
-
 
 
 
@@ -3339,7 +3338,7 @@ def admin_fns_documents(request):
         selected_user = User.objects.filter(id=selected_user_id).first()
 
     if selected_user:
-        documents = get_required_fns_documents(selected_user, year)
+        documents = get_required_fns_documents(selected_user, year, for_user_id=selected_user.id)
 
     return render(request, 'custom_admin/fns_documents.html', {
         'users': users,
