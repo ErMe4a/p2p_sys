@@ -188,15 +188,84 @@ for o in orders:
 # ============================================================
 # 7. НАРУШЕНИЕ ПРИНЦИПА "не фискализировать неверифицированные данные" —
 #    прямая проверка: чек отправлен (есть uuid), а ордер при этом не
-#    is_verified и не is_manual. В норме таких быть не должно вообще.
+#    is_verified и не is_manual.
+#
+#    ВАЖНОЕ УТОЧНЕНИЕ (после разбора реального прогона): API-верификация
+#    (exchange_api.get_order_from_exchange) технически существует ТОЛЬКО
+#    для Bybit и MEXC — для остальных бирж (HTX/Gate/BingX/Telegram/...)
+#    is_verified=False это ОЖИДАЕМАЯ архитектурная особенность, а не
+#    обход защиты. Поэтому делим находку на три:
+#      7А — биржа без API-верификации в принципе (не баг, справочно)
+#      7Б — биржа С API-верификацией (Bybit/MEXC), но чек всё равно ушёл
+#           без неё — это и есть настоящий обход существующей защиты
+#      7В — из 7Б: сколько случилось УЖЕ ПОСЛЕ FIX_DATE, когда в
+#           tasks.py появился жёсткий барьер (см. git log -S на фразу
+#           "НИКОГДА не бьётся" в orders/tasks.py) — то есть актуально
+#           прямо сейчас, а не исторический хвост до фикса.
 # ============================================================
-invariant_violations = []
+FIX_DATE = datetime(2026, 7, 13, tzinfo=MSK)  # когда барьер появился в tasks.py
+
+
+def has_api_verification(exchange_type):
+    """Совпадает с классификацией в exchange_api.get_order_from_exchange()."""
+    ex = (exchange_type or "").lower()
+    return ("bybit" in ex) or ("mexc" in ex)
+
+
+def _receipt_sent_at(receipt):
+    ts = receipt.get("timestamp")
+    if not ts:
+        return None
+    try:
+        return datetime.strptime(ts, "%d.%m.%Y %H:%M:%S").replace(tzinfo=MSK)
+    except (TypeError, ValueError):
+        return None
+
+
+no_api_violations = []      # 7А — справочно, не баг
+bypass_violations = []      # 7Б — биржа с API, но чек ушёл без верификации
+bypass_recent = []          # 7В — подмножество 7Б, отправлено после FIX_DATE
+
 for o in orders:
     receipt = o.receipt if isinstance(o.receipt, dict) else {}
-    if receipt.get("uuid") and not o.is_verified and not o.is_manual:
-        invariant_violations.append(
-            (o, f"Чек {receipt.get('uuid')} отправлен без верификации и без пометки is_manual")
+    if not receipt.get("uuid") or o.is_verified or o.is_manual:
+        continue
+
+    if not has_api_verification(o.exchange_type):
+        no_api_violations.append(
+            (o, f"Чек {receipt.get('uuid')} без верификации — у биржи {o.exchange_type!r} нет API-подтверждения ордеров")
         )
+        continue
+
+    sent_at = _receipt_sent_at(receipt)
+    note = f"Чек {receipt.get('uuid')} отправлен без верификации, хотя API {o.exchange_type} доступен"
+    bypass_violations.append((o, note))
+    if sent_at and sent_at >= FIX_DATE:
+        bypass_recent.append((o, note + f" (отправлен {sent_at.isoformat()}, ПОСЛЕ фикса 13.07)"))
+
+# invariant_violations сохранён для обратной совместимости имени переменной
+invariant_violations = no_api_violations + bypass_violations
+
+by_exchange_no_api = defaultdict(int)
+by_exchange_bypass = defaultdict(int)
+by_exchange_bypass_recent = defaultdict(int)
+for o, _ in no_api_violations:
+    by_exchange_no_api[o.exchange_type] += 1
+for o, _ in bypass_violations:
+    by_exchange_bypass[o.exchange_type] += 1
+for o, _ in bypass_recent:
+    by_exchange_bypass_recent[o.exchange_type] += 1
+
+print(f"\n[Блок 7] Всего 'чек без verified/manual': {len(invariant_violations)}")
+print(f"  7А. Нет API-верификации у биржи (не баг): {len(no_api_violations)}")
+for exch, cnt in sorted(by_exchange_no_api.items(), key=lambda x: -x[1]):
+    print(f"       {exch:30s} {cnt}")
+print(f"  7Б. ЕСТЬ API-верификация (Bybit/MEXC), но чек ушёл без неё: {len(bypass_violations)}  <-- обход защиты")
+for exch, cnt in sorted(by_exchange_bypass.items(), key=lambda x: -x[1]):
+    print(f"       {exch:30s} {cnt}")
+print(f"  7В. ...из них ПОСЛЕ фикса 13.07 (актуально сейчас): {len(bypass_recent)}")
+for exch, cnt in sorted(by_exchange_bypass_recent.items(), key=lambda x: -x[1]):
+    print(f"       {exch:30s} {cnt}")
 
 
 # ============================================================
@@ -402,8 +471,12 @@ summary = [
      "Выпадает из помесячного расчёта прибыли молча. См. AUDIT_PLAN.md п.5"],
     ["6", "Правки ордера ПОСЛЕ отправки чека", len(post_fiscal_edits), "Критично",
      "Цифра в уже отправленном чеке разошлась с текущим отчётом — комплаенс-инцидент, не баг-тикет. См. AUDIT_PLAN.md п.6"],
-    ["7", "Чек отправлен без verified/manual", len(invariant_violations), "Критично",
-     "Прямое нарушение принципа 'не фискализировать неверифицированное'. См. AUDIT_PLAN.md п.7"],
+    ["7А", "...из них: биржа БЕЗ API-верификации в принципе (HTX/Gate/BingX/Telegram/...)", len(no_api_violations), "Средний",
+     "Не обход защиты — у этих бирж API-подтверждения ордеров вообще не существует (exchange_api.py). Архитектурная особенность: понять, чем ещё подтверждаются эти чеки."],
+    ["7Б", "...из них: биржа С API-верификацией (Bybit/MEXC), но чек ушёл без неё", len(bypass_violations), "Критично",
+     "Это и есть настоящий обход существующей защиты — API для проверки был доступен, но не использован/не сработал."],
+    ["7В", "......из 7Б: отправлено ПОСЛЕ фикса 13.07.2026 (актуально прямо сейчас)", len(bypass_recent), "Критично",
+     "Если >0 — защита обходится ПРЯМО СЕЙЧАС под текущим кодом, а не только исторический хвост до фикса. Разбирать в первую очередь."],
     ["8", "Часовой пояс сервера", "—", tz_risk, tz_note],
     ["9", "Ордера у границы месяца (риск смещения периода)", len(month_boundary_orders),
      "Средний" if not tz_mismatch else "Критично",
@@ -442,7 +515,9 @@ write_order_sheet("3. Нулевые-отрицательные", bad_values)
 write_order_sheet("4. Курс×Кол-во vs Сумма", cost_mismatch)
 write_order_sheet("5. Валюта вне USDT-TON", bad_currency)
 write_order_sheet("6. Правки после чека", post_fiscal_edits)
-write_order_sheet("7. Чек без верификации", invariant_violations)
+write_order_sheet("7А. Нет API-верификации у биржи", no_api_violations)
+write_order_sheet("7Б. Обход защиты (Bybit-MEXC)", bypass_violations)
+write_order_sheet("7В. Обход ПОСЛЕ фикса 13.07", bypass_recent)
 write_order_sheet("9. Граница месяца", month_boundary_orders)
 
 # ── Лист 11: конфликты ручных записей ──

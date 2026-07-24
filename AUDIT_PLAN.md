@@ -183,24 +183,72 @@ a direct receipt-vs-report divergence — treat any hit as a compliance issue, n
 
 ## 7. Direct check of the "never fiscalize unverified data" invariant
 
+**IMPORTANT — confirmed against a real run (2026-07-25) and must be read with this context:**
+API-based verification (`exchange_api.get_order_from_exchange`) only exists for **Bybit and MEXC** — for every
+other exchange (HTX/Gate/BingX/Telegram/...) `is_verified=False` is the *expected* state, not a bypass. Also, the
+hard barrier itself ("receipt is never sent on unverified data") was only added to `orders/tasks.py` on
+**2026-07-13** (`git log -S"НИКОГДА не бьётся" -- orders/tasks.py`); the `is_verified` column was added on
+**2026-04-12** with no backfill migration (`orders/migrations/0020_order_is_verified.py` — plain
+`AddField(default=False)`). Given the dataset starts at `SYSTEM_START = 2026-02-01`, a large share of any raw
+count here is legacy data from before the column/barrier existed, not an active exploit of today's code. Split the
+finding into three before treating it as critical:
+
 ```bash
 cd /opt/p2p_sys && venv/bin/python manage.py shell -c "
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from collections import defaultdict
 from orders.models import Order
 
-violations = (Order.objects
-              .exclude(receipt__uuid__isnull=True).exclude(receipt={})
-              .filter(is_verified=False, is_manual=False))
-print('INVARIANT VIOLATIONS (receipt sent without verification or manual flag):', violations.count())
-for o in violations[:30]:
-    print(o.id, o.user_id, o.external_id, o.exchange_type, o.receipt.get('uuid'))
+MSK = ZoneInfo('Europe/Moscow')
+FIX_DATE = datetime(2026, 7, 13, tzinfo=MSK)  # when the hard barrier landed in tasks.py
+
+def has_api_verification(exchange_type):
+    ex = (exchange_type or '').lower()
+    return ('bybit' in ex) or ('mexc' in ex)
+
+qs = (Order.objects
+      .exclude(receipt__uuid__isnull=True).exclude(receipt={})
+      .filter(is_verified=False, is_manual=False))
+
+no_api, bypass, bypass_recent = defaultdict(int), defaultdict(int), defaultdict(int)
+no_api_total = bypass_total = bypass_recent_total = 0
+
+for o in qs.iterator():
+    if not has_api_verification(o.exchange_type):
+        no_api[o.exchange_type] += 1
+        no_api_total += 1
+        continue
+    bypass[o.exchange_type] += 1
+    bypass_total += 1
+    ts = (o.receipt or {}).get('timestamp')
+    try:
+        sent_at = datetime.strptime(ts, '%d.%m.%Y %H:%M:%S').replace(tzinfo=MSK) if ts else None
+    except Exception:
+        sent_at = None
+    if sent_at and sent_at >= FIX_DATE:
+        bypass_recent[o.exchange_type] += 1
+        bypass_recent_total += 1
+
+print('7A. No API verification exists for this exchange (architectural, not a bug):', no_api_total)
+for k, v in sorted(no_api.items(), key=lambda x: -x[1]): print(' ', k, v)
+print('7B. API verification EXISTS (Bybit/MEXC) but receipt sent without it — real bypass:', bypass_total)
+for k, v in sorted(bypass.items(), key=lambda x: -x[1]): print(' ', k, v)
+print('7C. ...of 7B, sent AFTER the 2026-07-13 fix (live/current bypass, not historical):', bypass_recent_total)
+for k, v in sorted(bypass_recent.items(), key=lambda x: -x[1]): print(' ', k, v)
 "
 ```
 
-**Norm:** 0 — the code paths in `tasks._try_send_receipt` and `api_views.order` both gate on
-`is_verified or is_manual` before calling `create_or_update_and_send_receipt`. **Signal:** any row here means the
-gate was bypassed (e.g. an old row from before the "аудит" fixes landed, or a new code path that forgot the
-check) — cross-reference `o.receipt.get('timestamp')` against the deploy date of the current `tasks.py`/
-`api_views.py` to tell historical vs. live.
+**How to read the three numbers:**
+- **7A is not a finding to act on.** It's the expected state for exchanges that have no verification API at all —
+  treat it as a separate, lower-priority question ("how, if at all, are these receipts corroborated?"), not as a
+  bypass of anything.
+- **7B is the real "bypass of an existing protection" number** — Bybit/MEXC support API verification and it still
+  didn't happen. On the 2026-07-25 run this was non-zero but small relative to 7A; **investigate every row here.**
+- **7C is the priority-one subset of 7B** — receipts sent *after* the 2026-07-13 fix landed. A non-zero 7C means
+  the current code, right now, is still capable of fiscalizing unverified Bybit/MEXC data — that's an active defect
+  to root-cause (not just historical debt), and every row should be traced through `api_views.order` /
+  `tasks.verify_and_receipt_later` to find the exact path that let it through.
 
 ---
 
