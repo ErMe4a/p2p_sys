@@ -28,3 +28,12 @@ media/
 # db dumps
 *.sql
 
+# audit / report exports — contain real user names, order amounts and
+# compliance findings; never belongs in git history, only on disk locally.
+*.xlsx
+*.xls
+~$*.xlsx
+~$*.xls
+scratchpad_build/
+scratchpad_*.txt
+

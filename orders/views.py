@@ -1126,7 +1126,6 @@ def is_fns_all_submitted(user, year):
 
 
 @login_required(login_url='login')
-@user_passes_test(lambda u: u.username == 'maks', login_url='my_orders')
 def my_fns_documents(request):
     """Личная страница пользователя: список документов, требующих подачи."""
     user = request.user
@@ -1150,7 +1149,6 @@ def my_fns_documents(request):
  
  
 @login_required(login_url='login')
-@user_passes_test(lambda u: u.username == 'maks', login_url='my_orders')
 def user_export_uvedomlenie(request):
     """Скачивание СВОЕГО уведомления. user_id не принимается - только request.user."""
     year = int(request.GET.get('year') or timezone.now().year)
@@ -1170,7 +1168,6 @@ def user_export_uvedomlenie(request):
  
  
 @login_required(login_url='login')
-@user_passes_test(lambda u: u.username == 'maks', login_url='my_orders')
 def user_export_nds(request):
     """Скачивание СВОЕЙ декларации НДС. user_id не принимается - только request.user."""
     year = int(request.GET.get('year') or timezone.now().year)
@@ -1191,7 +1188,6 @@ def user_export_nds(request):
  
 @login_required(login_url='login')
 @require_POST
-@user_passes_test(lambda u: u.username == 'maks', login_url='my_orders')
 def toggle_document_submission(request):
     """
     Сохраняет отметку "Отправлено" для конкретного документа текущего
