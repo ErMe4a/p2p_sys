@@ -7,6 +7,7 @@
     .form-control { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
     .api-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin: 0 auto; transition: 0.3s; }
     .api-dot.active { background: #58d68d; box-shadow: 0 0 6px #58d68d; }
+    .api-dot.neutral { background: #95a5a6; box-shadow: 0 0 4px #95a5a6; }
     .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin-right: 5px; }
     .indicator.ok { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
     .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
@@ -763,10 +764,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const statuses = data.statuses || {};
             document.querySelectorAll('[data-fns-dot]').forEach(el => {
                 const uid = el.getAttribute('data-user-id');
-                const ok = statuses[uid];
-                if (ok) {
+                const status = statuses[uid];
+                if (status === 'ok') {
                     el.classList.add('active');
                     el.title = `Все документы за ${data.year} год отправлены`;
+                } else if (status === 'none') {
+                    el.classList.add('neutral');
+                    el.title = `Нет торговой активности за ${data.year} год - отправлять нечего`;
                 } else {
                     el.title = 'Не все документы отмечены как отправленные';
                 }

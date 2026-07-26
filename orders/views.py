@@ -1096,9 +1096,17 @@ def get_required_fns_documents(user, year, for_user_id=None):
 
 def is_fns_all_submitted(user, year):
     """
-    Точка статуса для админки: True, если ВСЕ актуальные документы
-    пользователя отмечены как отправленные (или их нет вообще -
-    считаем это тоже "зелёным", по договорённости).
+    Точка статуса для админки. Возвращает одну из трёх строк:
+      'ok'      - есть обязательные документы за год, и ВСЕ отмечены
+                  отправленными;
+      'pending' - есть обязательные документы, но не все отмечены
+                  отправленными;
+      'none'    - у пользователя за этот год вообще нет ни одного
+                  обязательного документа (не было торговой активности).
+                  ВАЖНО: раньше это тоже считалось "зелёным"/True наравне
+                  с 'ok' - из-за этого у неактивных пользователей всегда
+                  горела галочка "отправлено", хотя отправлять им было
+                  нечего. Теперь это отдельное (серое) состояние.
  
     БЕЗ КЭША: этот расчёт вызывается только из admin_fns_status_bulk,
     который и так асинхронный (не блокирует загрузку страницы
@@ -1108,20 +1116,19 @@ def is_fns_all_submitted(user, year):
     только в том воркере, который обработал POST-запрос).
     """
     docs = get_required_fns_documents(user, year)
- 
-    result = True
-    if docs:
-        submitted_set = set(
-            DocumentSubmission.objects
-            .filter(user=user, year=year, submitted=True)
-            .values_list('doc_type', 'period_key')
-        )
-        for d in docs:
-            if not d['ok'] or (d['kind'], d['period_key']) not in submitted_set:
-                result = False
-                break
- 
-    return result
+    if not docs:
+        return 'none'
+
+    submitted_set = set(
+        DocumentSubmission.objects
+        .filter(user=user, year=year, submitted=True)
+        .values_list('doc_type', 'period_key')
+    )
+    for d in docs:
+        if not d['ok'] or (d['kind'], d['period_key']) not in submitted_set:
+            return 'pending'
+
+    return 'ok'
  
 
 
