@@ -120,10 +120,8 @@
 
             <a class="nav-link {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" 
                href="{% url 'settings' %}">Настройки</a>
-            {% comment %}
             <a class="nav-link {% if request.resolver_match.url_name == 'my_fns' %}active{% endif %}" 
                 href="{% url 'my_fns' %}">ФНС</a>
-            {% endcomment %}
         </nav>
 
         <div class="d-flex align-items-center gap-3">
