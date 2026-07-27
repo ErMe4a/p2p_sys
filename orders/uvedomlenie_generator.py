@@ -209,6 +209,88 @@ def calc_system_ytd_base(user, year, last_month):
     return Decimal(str(base))
 
 
+def calc_system_usn_base(user, year, last_month):
+    """
+    База для УСН СТРОГО тем же путём, что и вкладка Прибыль/ОСНО-расчёт:
+    ордера от SYSTEM_START, приоритет ручных Excel-записей в месяцах без
+    активности по ордерам. Раньше УСН считался наивно (calc_tax_base) -
+    просто суммой Order из таблицы без учёта ручных записей, из-за чего
+    расходились суммы, если у юзера в БД лежат "сырые" ордера за январь
+    (до SYSTEM_START), а на вкладке Прибыль за этот месяц показывается
+    ручная Excel-запись (обычно БОЛЬШЕ сырых данных, т.к. бухгалтер видит
+    полную картину, включая то, что не успело засинкаться) - генератор
+    считал по сырым данным и занижал налог. Теперь оба пути (доход для
+    "доходы" и доход/расход для "доходы-расходы") идут через один и тот
+    же механизм, что и остальные отчёты - расхождений быть не должно.
+
+    Возвращает dict {"income": Decimal, "expenses": Decimal, "profit": Decimal}.
+    last_month=0 -> все нули.
+    """
+    if not last_month:
+        return {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)}
+
+    from collections import defaultdict
+    from zoneinfo import ZoneInfo
+    from .views import SYSTEM_START, _calc_month_profit_from_orders
+    from .models import MonthlyManualEntry, UserExpense
+
+    MSK = ZoneInfo("Europe/Moscow")
+    year_end = datetime(year + 1, 1, 1, tzinfo=MSK)
+
+    orders = list(
+        Order.objects
+        .filter(user=user, created_at__gte=SYSTEM_START, created_at__lt=year_end)
+        .order_by("created_at")
+    )
+    all_orders_by_user = {user.id: orders}
+
+    manuals_by_user_month = {}
+    for m in MonthlyManualEntry.objects.filter(user=user, month__startswith=str(year)):
+        manuals_by_user_month[(user.id, m.month)] = m
+
+    expenses_by_user_month = defaultdict(float)
+    for e in (UserExpense.objects
+              .filter(user=user, month__startswith=str(year))
+              .values("user_id", "month", "amount")):
+        expenses_by_user_month[(e["user_id"], e["month"])] += float(e["amount"])
+
+    total_income = Decimal(0)
+    total_expenses = Decimal(0)
+
+    for mo in range(1, last_month + 1):
+        ms_start = datetime(year, mo, 1, tzinfo=MSK)
+        ms_end = (datetime(year + 1, 1, 1, tzinfo=MSK)
+                  if mo == 12 else datetime(year, mo + 1, 1, tzinfo=MSK))
+        mo_key = f"{year}-{str(mo).zfill(2)}"
+
+        calc = _calc_month_profit_from_orders(user.id, ms_start, ms_end, all_orders_by_user)
+        has_activity = calc["month_buy_qty"] > 0 or calc["month_sell_qty"] > 0
+
+        if has_activity:
+            sell_cost = calc["month_sell_cost"]
+            # eq_buy_cost + комиссии = фактический расход месяца (как в Excel-отчёте)
+            month_expenses_calc = (calc["eq_buy_cost"] + calc["month_buy_comm"]
+                                    + calc["month_sell_comm"] + calc["month_exch_usdt"] * 0)
+        else:
+            manual = manuals_by_user_month.get((user.id, mo_key))
+            if manual:
+                sell_cost = float(manual.sell_cost)
+                month_expenses_calc = float(getattr(manual, "buy_cost", 0) or 0) + \
+                                       float(getattr(manual, "buy_comm", 0) or 0) + \
+                                       float(getattr(manual, "sell_comm", 0) or 0)
+            else:
+                sell_cost = 0.0
+                month_expenses_calc = 0.0
+
+        other_expenses = expenses_by_user_month.get((user.id, mo_key), 0.0)
+
+        total_income += Decimal(str(sell_cost))
+        total_expenses += Decimal(str(month_expenses_calc)) + Decimal(str(other_expenses))
+
+    profit = total_income - total_expenses
+    return {"income": total_income, "expenses": total_expenses, "profit": profit}
+
+
 # ============================================================
 # РАСЧЕТ НАЛОГА ПО РЕЖИМАМ
 # ============================================================
@@ -293,9 +375,8 @@ def build_uvedomlenie(user, year, period_key):
         info_income = info_expenses = None
         info_profit = base_cum_val
     elif tax_type in ("USN_INCOME", "USN_INCOME_OUTCOME"):
-        base_cum = calc_tax_base(user.id, year, last_month)
-        base_prev = (calc_tax_base(user.id, year, prev_month)
-                     if prev_month else {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)})
+        base_cum = calc_system_usn_base(user, year, last_month)
+        base_prev = calc_system_usn_base(user, year, prev_month)
         if tax_type == "USN_INCOME":
             blocks = calc_usn_income(base_cum, base_prev)
         else:
