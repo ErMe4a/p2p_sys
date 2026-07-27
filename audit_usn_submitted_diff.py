@@ -1,12 +1,14 @@
-# audit_usn_submitted_diff.py
+# audit_usn_all_diff.py
 # READ-ONLY. Сравнивает СТАРЫЙ (наивный, calc_tax_base) и НОВЫЙ (системный,
-# calc_system_usn_base) расчёт УСН для всех уведомлений, которые
-# ПОЛЬЗОВАТЕЛИ УЖЕ ОТМЕТИЛИ как "Отправлено" (DocumentSubmission).
-# Ничего не меняет в БД, только читает и печатает.
+# calc_system_usn_base) расчёт УСН для ВСЕХ пользователей на УСН и ВСЕХ
+# уже наступивших сроков подачи (Q1/H1/M9 2026), НЕЗАВИСИМО от того,
+# отмечен ли чекбокс "Отправлено". Ничего не меняет в БД.
 #
-# Запуск:  python manage.py shell < audit_usn_submitted_diff.py
+# Запуск:  python manage.py shell < audit_usn_all_diff.py
 
 from decimal import Decimal
+from datetime import datetime
+from django.utils import timezone
 
 from orders.models import User, DocumentSubmission
 from orders.uvedomlenie_generator import (
@@ -15,84 +17,98 @@ from orders.uvedomlenie_generator import (
     PERIODS,
 )
 
-print("=" * 90)
-print("СРАВНЕНИЕ СТАРОГО И НОВОГО РАСЧЁТА УСН ПО УЖЕ ОТПРАВЛЕННЫМ УВЕДОМЛЕНИЯМ")
-print("=" * 90)
+YEAR = 2026
+today = timezone.now()
 
-submissions = (
-    DocumentSubmission.objects
-    .filter(doc_type="uvedomlenie", submitted=True)
-    .select_related("user")
-    .order_by("user__username", "year", "period_key")
-)
+print("=" * 100)
+print(f"ПОЛНАЯ СВЕРКА УСН: СТАРЫЙ vs НОВЫЙ РАСЧЁТ, ВСЕ ЮЗЕРЫ, ВСЕ ПРОШЕДШИЕ ПЕРИОДЫ {YEAR}")
+print("=" * 100)
 
-print(f"Всего отмеченных 'Отправлено' уведомлений: {submissions.count()}\n")
+usn_users = User.objects.filter(tax_type__in=["USN_INCOME", "USN_INCOME_OUTCOME"])
+print(f"Пользователей на УСН: {usn_users.count()}\n")
 
-affected = []
-checked = 0
+# Предзагрузка отметок "Отправлено" одним запросом
+submitted_map = {
+    (s.user_id, s.period_key, s.year): s
+    for s in DocumentSubmission.objects.filter(doc_type="uvedomlenie", year=YEAR)
+}
 
-for sub in submissions:
-    user = sub.user
+results = []
+
+for user in usn_users:
     tax_type = (user.tax_type or "").upper()
-    if tax_type not in ("USN_INCOME", "USN_INCOME_OUTCOME"):
-        continue  # интересует только УСН, ОСНО не затронуто этим багом
 
-    period_key = sub.period_key
-    year = sub.year
-    if period_key not in PERIODS:
-        print(f"  ⚠ {user.username}: неизвестный period_key={period_key!r}, пропуск")
-        continue
+    for period_key, period in PERIODS.items():
+        last_month = period["last_month"]
+        period_ended = today.month > last_month  # текущий год, простая проверка
+        if not period_ended:
+            continue
 
-    period = PERIODS[period_key]
-    last_month = period["last_month"]
-    prev_month = {3: 0, 6: 3, 9: 6}[last_month]
-    checked += 1
+        prev_month = {3: 0, 6: 3, 9: 6}[last_month]
 
-    # --- СТАРЫЙ расчёт (наивный, как было отправлено) ---
-    old_cum = calc_tax_base(user.id, year, last_month)
-    old_prev = (calc_tax_base(user.id, year, prev_month) if prev_month
-                else {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)})
+        old_cum = calc_tax_base(user.id, YEAR, last_month)
+        old_prev = (calc_tax_base(user.id, YEAR, prev_month) if prev_month
+                    else {"income": Decimal(0), "expenses": Decimal(0), "profit": Decimal(0)})
 
-    # --- НОВЫЙ расчёт (системный, правильный) ---
-    new_cum = calc_system_usn_base(user, year, last_month)
-    new_prev = calc_system_usn_base(user, year, prev_month)
+        new_cum = calc_system_usn_base(user, YEAR, last_month)
+        new_prev = calc_system_usn_base(user, YEAR, prev_month)
 
-    if tax_type == "USN_INCOME":
-        old_blocks = calc_usn_income(old_cum, old_prev)
-        new_blocks = calc_usn_income(new_cum, new_prev)
-    else:
-        old_blocks = calc_usn_income_outcome(old_cum, old_prev)
-        new_blocks = calc_usn_income_outcome(new_cum, new_prev)
+        if tax_type == "USN_INCOME":
+            old_blocks = calc_usn_income(old_cum, old_prev)
+            new_blocks = calc_usn_income(new_cum, new_prev)
+        else:
+            old_blocks = calc_usn_income_outcome(old_cum, old_prev)
+            new_blocks = calc_usn_income_outcome(new_cum, new_prev)
 
-    old_amount = sum(a for _, a in old_blocks)
-    new_amount = sum(a for _, a in new_blocks)
-    diff = new_amount - old_amount
+        old_amount = sum(a for _, a in old_blocks)
+        new_amount = sum(a for _, a in new_blocks)
+        diff = new_amount - old_amount
 
-    if abs(diff) > 1:  # существенное расхождение (не просто копейка округления)
-        affected.append({
+        if abs(diff) <= 1:
+            continue  # совпадает, не интересно
+
+        sub = submitted_map.get((user.id, period_key, YEAR))
+        is_submitted = bool(sub and sub.submitted)
+
+        results.append({
             "user": user.username,
             "tax_type": tax_type,
-            "period": f"{year} / {period['label']}",
+            "period": period["label"],
             "old_amount": old_amount,
             "new_amount": new_amount,
             "diff": diff,
-            "submitted_at": sub.submitted_at,
+            "submitted": is_submitted,
         })
 
-print(f"Проверено уведомлений (УСН, отмеченных отправленными): {checked}")
-print(f"Из них с расхождением старой/новой суммы: {len(affected)}\n")
+print(f"Всего найдено расхождений (по всем юзерам/периодам): {len(results)}\n")
 
-if not affected:
-    print("✅ Расхождений не найдено - все ранее отправленные УСН-уведомления совпадают со старым и новым расчётом.")
+if not results:
+    print("Расхождений не найдено вообще ни у кого.")
 else:
-    print("НАЙДЕНЫ РАСХОЖДЕНИЯ - ниже список, требующий проверки/корректировки:")
-    print("-" * 90)
-    for a in sorted(affected, key=lambda x: -abs(x["diff"])):
-        sign = "занижено" if a["diff"] > 0 else "завышено"
-        print(f"  {a['user']:20s} | {a['tax_type']:20s} | {a['period']:20s} | "
-              f"было отправлено: {a['old_amount']:>10.0f} ₽ | должно быть: {a['new_amount']:>10.0f} ₽ | "
-              f"{sign} на {abs(a['diff']):>10.0f} ₽ | отмечено отправленным: {a['submitted_at']}")
+    confirmed_submitted = [r for r in results if r["submitted"]]
+    not_submitted = [r for r in results if not r["submitted"]]
 
-print("\n" + "=" * 90)
+    print("=" * 100)
+    print(f"УЖЕ ОТМЕЧЕНО 'ОТПРАВЛЕНО' С НЕВЕРНОЙ СУММОЙ ({len(confirmed_submitted)}) - "
+          "требует проверки, возможно уже подано в ФНС:")
+    print("-" * 100)
+    for a in sorted(confirmed_submitted, key=lambda x: -abs(x["diff"])):
+        sign = "занижено" if a["diff"] > 0 else "завышено"
+        print(f"  {a['user']:20s} | {a['tax_type']:20s} | {a['period']:15s} | "
+              f"было: {a['old_amount']:>10.0f} руб | должно быть: {a['new_amount']:>10.0f} руб | "
+              f"{sign} на {abs(a['diff']):>10.0f} руб")
+
+    print()
+    print("=" * 100)
+    print(f"РАСХОЖДЕНИЕ ЕСТЬ, НО ЧЕКБОКС НЕ ОТМЕЧЕН ({len(not_submitted)}) - "
+          "скорее всего ещё не подавали, но пересчитать/проверить стоит:")
+    print("-" * 100)
+    for a in sorted(not_submitted, key=lambda x: -abs(x["diff"])):
+        sign = "занижено" if a["diff"] > 0 else "завышено"
+        print(f"  {a['user']:20s} | {a['tax_type']:20s} | {a['period']:15s} | "
+              f"старый расчёт: {a['old_amount']:>10.0f} руб | правильно: {a['new_amount']:>10.0f} руб | "
+              f"{sign} на {abs(a['diff']):>10.0f} руб")
+
+print("\n" + "=" * 100)
 print("Диагностика завершена. БД не изменялась.")
-print("=" * 90)
+print("=" * 100)
