@@ -99,10 +99,42 @@
         {% endfor %}
     {% endif %}
 </div>
+
+<!-- Модалка подтверждения расходов (самодостаточная, не зависит от admin_base.html) -->
+<div class="modal-overlay" id="expensesConfirmModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center; backdrop-filter: blur(4px);">
+    <div class="modal-content-custom" style="background: var(--bg-card, #1a1f2e); border-radius: 14px; padding: 24px; max-width: 420px; width: 90%; border: 1px solid var(--border-color); box-shadow: 0 20px 60px rgba(0,0,0,0.5);">
+        <p style="font-size: 0.95rem; margin-bottom: 20px;">
+            Подтверждаете ли вы, что внесли все расходы за указанный квартал,
+            а текущий остаток криптовалюты совпадает с фактическим?
+        </p>
+        <div class="d-flex justify-content-end gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="_expensesConfirmResolve(false)">Нет</button>
+            <button class="btn btn-sm btn-outline-blue" onclick="_expensesConfirmResolve(true)">Да</button>
+        </div>
+    </div>
+</div>
+<style>#expensesConfirmModal.active { display: flex !important; }</style>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+let _expensesConfirmResolver = null;
+
+function askExpensesConfirm() {
+    return new Promise((resolve) => {
+        _expensesConfirmResolver = resolve;
+        document.getElementById('expensesConfirmModal').classList.add('active');
+    });
+}
+
+function _expensesConfirmResolve(result) {
+    document.getElementById('expensesConfirmModal').classList.remove('active');
+    if (_expensesConfirmResolver) {
+        _expensesConfirmResolver(result);
+        _expensesConfirmResolver = null;
+    }
+}
+
 async function fnsDownload(url, kind, btnEl) {
     if (kind === 'uvedomlenie') {
         const confirmed = await askExpensesConfirm();
