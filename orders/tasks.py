@@ -353,7 +353,7 @@ def recheck_mexc_keys_task(self):
     return recovered
 
 
-@shared_task(bind=True, max_retries=0, queue="sync")
+@shared_task(bind=True, max_retries=0, queue="receipt")
 def recompute_fns_status_task(self):
     """
     ДИСПЕТЧЕР: не считает статус сам, а раскидывает пересчёт по одной
@@ -363,16 +363,21 @@ def recompute_fns_status_task(self):
     (реально требуют тяжёлого расчёта - build_uvedomlenie/
     build_nds_declaration на всю глубину года), у части - по 3000-6600
     ордеров. Один последовательный таск на всех них был бы одним
-    длинным блокирующим куском работы в очереди "sync" - воркеру
-    неоткуда взять параллелизм внутри ОДНОЙ задачи, и на это время
-    синхронизация Bybit/MEXC (та же очередь) стояла бы за ним в хвосте.
-    Раскидав по отдельным задачам, воркер обрабатывает юзеров реально
-    параллельно (сколько позволяет concurrency), и синхронизация бирж
-    может интерлиться между ними, а не ждать одного гигантского таска.
+    длинным блокирующим куском работы в очереди воркера.
+
+    ПОЧЕМУ ОЧЕРЕДЬ "receipt", А НЕ "sync": на проде обнаружилось, что
+    "sync" уже хронически забита (sync_bybit_orders_task/
+    recheck_mexc_keys_task копятся быстрее, чем успевают выполняться,
+    concurrency там всего ~1-3) - 122 моих задачи встали бы в хвост
+    этой существующей пробки и не выполнились бы часами. "receipt"
+    (celery-receipt.service, concurrency=8) оказалась гораздо свободнее.
+    Семантически не идеально (это не про чеки), но прагматично - не
+    требует новой очереди/сервиса. Если когда-нибудь заведут отдельную
+    выделенную очередь под это - перенести туда.
 
     Сам диспетчер лёгкий (только id юзеров + apply_async) - выполняется
     почти мгновенно. Ставится в django_celery_beat КАЖДЫЕ 5 МИНУТ
-    (queue="sync").
+    (queue="receipt").
     """
     # Тяжёлый расчёт (build_uvedomlenie/build_nds_declaration) реально
     # нужен только ОСНО/УСН - для остальных тратим время просто на вызов
@@ -384,20 +389,21 @@ def recompute_fns_status_task(self):
     )
 
     for user_id in user_ids:
-        refresh_fns_status_for_user_task.apply_async(args=[user_id], queue="sync")
+        refresh_fns_status_for_user_task.apply_async(args=[user_id], queue="receipt")
 
     logger.info("recompute_fns_status_task: поставлено в очередь %d задач.", len(user_ids))
     return len(user_ids)
 
 
-@shared_task(bind=True, max_retries=0, queue="sync")
+@shared_task(bind=True, max_retries=0, queue="receipt")
 def refresh_fns_status_for_user_task(self, user_id):
     """
     Пересчитывает User.fns_status_cached для ОДНОГО юзера и сохраняет
     в БД — как bybit_key_valid/mexc_key_valid, обычное поле, которое
     шаблон списка пользователей читает напрямую, без AJAX и без кэша.
     Ставится в очередь диспетчером recompute_fns_status_task, по одной
-    задаче на юзера (см. его докстринг про причину фан-аута).
+    задаче на юзера (см. его докстринг про причину фан-аута и выбора
+    очереди "receipt").
     """
     from django.utils import timezone
     from .views import refresh_fns_status_cached
