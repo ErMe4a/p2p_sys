@@ -4,10 +4,7 @@ from .models import User, Order
 from .bybit_api import sync_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .models import UnprocessedOrder
-
 logger = logging.getLogger(__name__)
-
-MAX_EVOTOR_REPORT_RETRIES = 6  # 30с,60с,120с,240с,240с,240с ~ до 15 минут
 
 # ── Расписание ретраев верификации ────────────────────────────────────────────
 # ИСПРАВЛЕНО: было 5 попыток с фолбэком "бьём чек из БД". Теперь чек
@@ -123,6 +120,12 @@ def verify_and_receipt_later(self, order_id: int):
         user=o.user,
         order_id=o.external_id,
         exchange_name=o.exchange_type,
+        order_date=o.created_at,  # ИСПРАВЛЕНО: без этого pagination-поиск
+        # стороны для MEXC искал в окне "последние 3 дня от текущего момента",
+        # а не от даты создания ордера — для ордеров старше нескольких дней
+        # (например, зависших и допробиваемых через retry_blocked_orders_task)
+        # окно поиска промахивалось мимо реальной даты сделки, и верификация
+        # проваливалась даже при рабочем ключе и существующем ордере.
     )
 
     if api_data:
@@ -306,8 +309,6 @@ def _try_send_receipt(order: Order):
         )
     except Exception as e:
         logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
-
-
 
 
 @shared_task(bind=True, max_retries=0, queue="sync")
