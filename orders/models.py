@@ -34,6 +34,20 @@ class User(AbstractUser):
     kod_no = models.CharField(max_length=4,  blank=True, default="", verbose_name="Код налогового органа")
     # orders/models.py -> class User
     phone = models.CharField(max_length=15, blank=True, default="", verbose_name="Телефон")
+
+    # Статус ФНС (уведомления/НДС), пересчитывается фоновой задачей
+    # tasks.recompute_fns_status_task — как bybit_key_valid/mexc_key_valid,
+    # обычное поле, читается в шаблоне напрямую, без AJAX и без кэша.
+    FNS_STATUS_CHOICES = [
+        ('none', 'Нет активности'),
+        ('pending', 'Не всё отправлено'),
+        ('ok', 'Всё отправлено'),
+    ]
+    fns_status_cached = models.CharField(
+        max_length=10, choices=FNS_STATUS_CHOICES, default='none', blank=True,
+        verbose_name="Статус ФНС (кэш)"
+    )
+
     def __str__(self):
         return self.username
 

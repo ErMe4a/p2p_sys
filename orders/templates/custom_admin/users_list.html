@@ -60,7 +60,13 @@
                         {% if u.evotor_login and u.evotor_password %}<span class="api-dot active" title="Подключено"></span>{% else %}<span class="api-dot" title="Не настроено"></span>{% endif %}
                     </td>
                     <td class="col-center">
-                        <span class="api-dot" data-fns-dot data-user-id="{{ u.id }}" title="Загрузка статуса..."></span>
+                        {% if u.fns_status_cached == 'ok' %}
+                            <span class="api-dot active" title="Все документы за {{ fns_year }} год отправлены"></span>
+                        {% elif u.fns_status_cached == 'none' %}
+                            <span class="api-dot neutral" title="Нет торговой активности за {{ fns_year }} год - отправлять нечего"></span>
+                        {% else %}
+                            <span class="api-dot" title="Не все документы отмечены как отправленные"></span>
+                        {% endif %}
                     </td>
 
                     <td class="text-end">
@@ -756,32 +762,6 @@
             closeBalanceModal(); closeShareModal(); closeProfitModal();
         }
     }
-
-document.addEventListener('DOMContentLoaded', function () {
-    fetch('{% url "admin_fns_status_bulk" %}')
-        .then(r => r.json())
-        .then(data => {
-            const statuses = data.statuses || {};
-            document.querySelectorAll('[data-fns-dot]').forEach(el => {
-                const uid = el.getAttribute('data-user-id');
-                const status = statuses[uid];
-                if (status === 'ok') {
-                    el.classList.add('active');
-                    el.title = `Все документы за ${data.year} год отправлены`;
-                } else if (status === 'none') {
-                    el.classList.add('neutral');
-                    el.title = `Нет торговой активности за ${data.year} год - отправлять нечего`;
-                } else {
-                    el.title = 'Не все документы отмечены как отправленные';
-                }
-            });
-        })
-        .catch(() => {
-            document.querySelectorAll('[data-fns-dot]').forEach(el => {
-                el.title = 'Не удалось загрузить статус ФНС';
-            });
-        });
-});
 
 </script>
 {% endblock %}

@@ -12,7 +12,6 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, get_user_model, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.hashers import make_password
-from django.core.cache import cache
 from django.core.paginator import Paginator
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
@@ -1096,7 +1095,8 @@ def get_required_fns_documents(user, year, for_user_id=None):
 
 def is_fns_all_submitted(user, year):
     """
-    Точка статуса для админки. Возвращает одну из трёх строк:
+    ЧИСТЫЙ расчёт статуса ФНС (без побочных эффектов, без кэша).
+    Возвращает одну из трёх строк:
       'ok'      - есть обязательные документы за год, и ВСЕ отмечены
                   отправленными;
       'pending' - есть обязательные документы, но не все отмечены
@@ -1107,13 +1107,13 @@ def is_fns_all_submitted(user, year):
                   с 'ok' - из-за этого у неактивных пользователей всегда
                   горела галочка "отправлено", хотя отправлять им было
                   нечего. Теперь это отдельное (серое) состояние.
- 
-    БЕЗ КЭША: этот расчёт вызывается только из admin_fns_status_bulk,
-    который и так асинхронный (не блокирует загрузку страницы
-    пользователей) - кэш только создавал риск "залипания" точки
-    при нескольких gunicorn-воркерах (LocMemCache не общий между
-    процессами, а cache.delete() при отметке чекбокса чистит кэш
-    только в том воркере, который обработал POST-запрос).
+
+    Расчёт тяжёлый (строит XML уведомления/НДС на всю глубину года) —
+    поэтому сама эта функция больше НЕ вызывается напрямую со страницы
+    списка пользователей. См. refresh_fns_status_cached() и
+    User.fns_status_cached — как bybit_key_valid/mexc_key_valid, обычное
+    поле на юзере, которое обновляет фоновая задача
+    tasks.recompute_fns_status_task, а шаблон читает напрямую.
     """
     docs = get_required_fns_documents(user, year)
     if not docs:
@@ -1129,6 +1129,23 @@ def is_fns_all_submitted(user, year):
             return 'pending'
 
     return 'ok'
+
+
+def refresh_fns_status_cached(user, year=None):
+    """
+    Пересчитывает is_fns_all_submitted и сохраняет в User.fns_status_cached.
+    Вызывается: фоновой задачей recompute_fns_status_task (для всех
+    юзеров, по расписанию) и toggle_document_submission (сразу для
+    текущего юзера, чтобы после клика по чекбоксу не ждать следующего
+    прогона фоновой задачи).
+    """
+    if year is None:
+        year = timezone.now().year
+    status = is_fns_all_submitted(user, year)
+    if user.fns_status_cached != status:
+        user.fns_status_cached = status
+        user.save(update_fields=['fns_status_cached'])
+    return status
  
 
 
@@ -1219,7 +1236,7 @@ def toggle_document_submission(request):
     obj.submitted_at = timezone.now() if submitted else None
     obj.save()
  
-    cache.delete(f"fns_status_{request.user.id}_{year}")
+    refresh_fns_status_cached(request.user, year)
  
     return JsonResponse({'ok': True, 'submitted': obj.submitted})
  
@@ -1227,29 +1244,6 @@ def toggle_document_submission(request):
 
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-@login_required(login_url='admin_login')
-@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
-def admin_fns_status_bulk(request):
-    """
-    AJAX-эндпоинт: считает точку ФНС для ВСЕХ пользователей асинхронно,
-    ПОСЛЕ того как страница списка пользователей уже отрисовалась.
-    Тяжёлый расчёт (обращения к ордерам через is_fns_all_submitted)
-    больше не блокирует загрузку самой таблицы.
-
-    Каждый вызов is_fns_all_submitted внутри всё ещё кэшируется на
-    5 минут (см. views_fns_user_v2.py) - при повторных заходах на
-    страницу пользователей расчёт не повторяется, пока кэш не истёк
-    или не был сброшен отметкой чекбокса "Отправлено".
-    """
-    year = timezone.now().year
-    users = User.objects.all()
-
-    statuses = {}
-    for u in users:
-        statuses[u.id] = is_fns_all_submitted(u, year)
-
-    return JsonResponse({'year': year, 'statuses': statuses})
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
@@ -1473,7 +1467,10 @@ def admin_users_list(request):
         u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
         u.has_manual_entries = u.id in users_with_manual
 
-    return render(request, 'custom_admin/users_list.html', {'users': users})
+    return render(request, 'custom_admin/users_list.html', {
+        'users': users,
+        'fns_year': timezone.now().year,
+    })
 
 
 

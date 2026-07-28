@@ -351,3 +351,61 @@ def recheck_mexc_keys_task(self):
     if recovered:
         logger.info("recheck_mexc_keys_task: восстановлено %d ключей MEXC.", recovered)
     return recovered
+
+
+@shared_task(bind=True, max_retries=0, queue="sync")
+def recompute_fns_status_task(self):
+    """
+    ДИСПЕТЧЕР: не считает статус сам, а раскидывает пересчёт по одной
+    Celery-задаче на юзера (refresh_fns_status_for_user_task).
+
+    ПОЧЕМУ ФАН-АУТ, А НЕ ОДИН БОЛЬШОЙ ЦИКЛ: на проде 122 юзера ОСНО/УСН
+    (реально требуют тяжёлого расчёта - build_uvedomlenie/
+    build_nds_declaration на всю глубину года), у части - по 3000-6600
+    ордеров. Один последовательный таск на всех них был бы одним
+    длинным блокирующим куском работы в очереди "sync" - воркеру
+    неоткуда взять параллелизм внутри ОДНОЙ задачи, и на это время
+    синхронизация Bybit/MEXC (та же очередь) стояла бы за ним в хвосте.
+    Раскидав по отдельным задачам, воркер обрабатывает юзеров реально
+    параллельно (сколько позволяет concurrency), и синхронизация бирж
+    может интерлиться между ними, а не ждать одного гигантского таска.
+
+    Сам диспетчер лёгкий (только id юзеров + apply_async) - выполняется
+    почти мгновенно. Ставится в django_celery_beat КАЖДЫЕ 5 МИНУТ
+    (queue="sync").
+    """
+    # Тяжёлый расчёт (build_uvedomlenie/build_nds_declaration) реально
+    # нужен только ОСНО/УСН - для остальных тратим время просто на вызов
+    # и ValueError внутри. Сужаем сразу, чтобы не гонять лишних юзеров.
+    user_ids = list(
+        User.objects
+        .filter(tax_type__in=["OSNO", "OCH", "USN_INCOME", "USN_INCOME_OUTCOME"])
+        .values_list("id", flat=True)
+    )
+
+    for user_id in user_ids:
+        refresh_fns_status_for_user_task.apply_async(args=[user_id], queue="sync")
+
+    logger.info("recompute_fns_status_task: поставлено в очередь %d задач.", len(user_ids))
+    return len(user_ids)
+
+
+@shared_task(bind=True, max_retries=0, queue="sync")
+def refresh_fns_status_for_user_task(self, user_id):
+    """
+    Пересчитывает User.fns_status_cached для ОДНОГО юзера и сохраняет
+    в БД — как bybit_key_valid/mexc_key_valid, обычное поле, которое
+    шаблон списка пользователей читает напрямую, без AJAX и без кэша.
+    Ставится в очередь диспетчером recompute_fns_status_task, по одной
+    задаче на юзера (см. его докстринг про причину фан-аута).
+    """
+    from django.utils import timezone
+    from .views import refresh_fns_status_cached
+
+    try:
+        user = User.objects.get(id=user_id)
+        refresh_fns_status_cached(user, timezone.now().year)
+    except User.DoesNotExist:
+        return
+    except Exception as e:
+        logger.error("refresh_fns_status_for_user_task: ошибка для user_id=%s: %s", user_id, e, exc_info=True)
