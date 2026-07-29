@@ -7,7 +7,6 @@
     .form-control { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: #fff !important; }
     .api-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin: 0 auto; transition: 0.3s; }
     .api-dot.active { background: #58d68d; box-shadow: 0 0 6px #58d68d; }
-    .api-dot.neutral { background: #95a5a6; box-shadow: 0 0 4px #95a5a6; }
     .indicator { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: #3a3a4a; margin-right: 5px; }
     .indicator.ok { background: #58d68d; box-shadow: 0 0 5px #58d68d; }
     .form-section-inner { background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 15px; }
@@ -63,7 +62,7 @@
                         {% if u.fns_status_cached == 'ok' %}
                             <span class="api-dot active" title="Все документы за {{ fns_year }} год отправлены"></span>
                         {% elif u.fns_status_cached == 'none' %}
-                            <span class="api-dot neutral" title="Нет торговой активности за {{ fns_year }} год - отправлять нечего"></span>
+                            <span class="api-dot active" title="Нет торговой активности за {{ fns_year }} год - отправлять нечего"></span>
                         {% else %}
                             <span class="api-dot" title="Не все документы отмечены как отправленные"></span>
                         {% endif %}
