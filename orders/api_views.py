@@ -223,6 +223,18 @@ def order(request):
             amount      = api_data["amount"]
             op_type     = api_data["operation_type"]
             is_verified = True
+
+            # Фолбэк даты создания: если расширение не смогло распарсить дату
+            # со страницы (хрупкий DOM-парсинг, ломается при обновлениях
+            # вёрстки биржи) — берём дату прямо из API биржи, а не пишем
+            # "сейчас" по умолчанию.
+            if not created_at and api_data.get("created_at"):
+                created_at = api_data["created_at"]
+                logger.info(
+                    "Order %s [%s]: дата создания не пришла с расширения, взята из API: %s",
+                    external_id, exchange_name, created_at,
+                )
+
             logger.info(
                 "Order %s [%s]: данные из API — price=%s cost=%s amount=%s type=%s",
                 external_id, exchange_name, price, cost, amount, op_type,

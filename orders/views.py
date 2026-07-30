@@ -3234,6 +3234,11 @@ def admin_orders_editor(request):
                         currency=request.POST.get('currency', 'USDT'),  # ← добавить эту строку
                     )
 
+                    UnprocessedOrder.objects.filter(
+                        user=target_user,
+                        order_id=external_id,
+                    ).delete()
+
                     # Запоминаем последнего пользователя
                     request.session['admin_last_order_user_id'] = target_user.id
 

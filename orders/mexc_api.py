@@ -193,6 +193,31 @@ def sync_mexc_orders(user):
         UnprocessedOrder.objects.bulk_create(new_orders, ignore_conflicts=True)
         logger.info("MEXC [%s]: saved %d new orders.", user.username, len(new_orders))
 
+    # ── 6. Самоисправление гонки ──────────────────────────────────────────────
+    # processed_ids (шаг 2) — снимок НА МОМЕНТ НАЧАЛА синка. Пока мы тут
+    # постранично тянули ордера с биржи, юзер мог успеть провести и
+    # зафискализировать этот же ордер через расширение — тогда единственное
+    # штатное удаление из UnprocessedOrder (api_views.py/tasks.py, сразу
+    # после верификации) уже отработало на ещё не существующей строке, а мы
+    # только что вставили её заново. Подчищаем такие "призраки" при каждом
+    # синке — заодно лечится и то, что уже накопилось раньше.
+    stale_ids = (
+        set(
+            Order.objects.filter(user=user, exchange_type="MEXC")
+            .exclude(external_id="").exclude(external_id__isnull=True)
+            .values_list("external_id", flat=True)
+        )
+        & set(
+            UnprocessedOrder.objects.filter(user=user, exchange_type="MEXC")
+            .values_list("order_id", flat=True)
+        )
+    )
+    if stale_ids:
+        deleted, _ = UnprocessedOrder.objects.filter(
+            user=user, exchange_type="MEXC", order_id__in=stale_ids
+        ).delete()
+        logger.info("MEXC [%s]: подчищено %d гонок в Необработанных.", user.username, deleted)
+
     return len(new_orders)
 
 

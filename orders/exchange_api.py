@@ -106,11 +106,20 @@ def _get_bybit_order(user, order_id: str) -> dict | None:
         if amount == 0 and price > 0 and cost > 0:
             amount = round(cost / price, 8)
 
+        # Дата создания ордера на бирже — тот же формат (мс-таймстамп в
+        # createDate/createTime), что и в пагинации (bybit_api.py). Нужна как
+        # надёжный фолбэк, если расширение не смогло распарсить дату со
+        # страницы (вёрстка Bybit меняется, парсинг DOM хрупкий).
+        created_at = _parse_bybit_date(result.get("createDate") or result.get("createTime"))
+
         logger.info(
-            "Bybit [%s]: order %s — price=%s cost=%s amount=%s type=%s",
-            user.username, order_id, price, cost, amount, op,
+            "Bybit [%s]: order %s — price=%s cost=%s amount=%s type=%s created_at=%s",
+            user.username, order_id, price, cost, amount, op, created_at,
         )
-        return {"price": price, "cost": cost, "amount": amount, "operation_type": op}
+        return {
+            "price": price, "cost": cost, "amount": amount, "operation_type": op,
+            "created_at": created_at,
+        }
 
     except Exception as e:
         err_str = str(e)
@@ -385,3 +394,13 @@ def _to_float(value) -> float:
         return float(value or 0)
     except (ValueError, TypeError):
         return 0.0
+
+
+def _parse_bybit_date(ms) -> datetime | None:
+    try:
+        ms = int(ms or 0)
+        if ms > 0:
+            return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+    except (ValueError, TypeError, OSError):
+        pass
+    return None
