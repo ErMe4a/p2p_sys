@@ -224,15 +224,27 @@ def order(request):
             op_type     = api_data["operation_type"]
             is_verified = True
 
-            # Фолбэк даты создания: если расширение не смогло распарсить дату
-            # со страницы (хрупкий DOM-парсинг, ломается при обновлениях
-            # вёрстки биржи) — берём дату прямо из API биржи, а не пишем
-            # "сейчас" по умолчанию.
-            if not created_at and api_data.get("created_at"):
+            # Дата создания — приоритет у API биржи, а не у расширения.
+            # DOM-парсинг на странице хрупкий (ломается при обновлениях
+            # вёрстки) и, что хуже, JS-парсинг "YYYY-MM-DD HH:MM:SS" через
+            # new Date(...) трактует строку как ЛОКАЛЬНОЕ время браузера —
+            # если часовой пояс ОС трейдера не совпадает с тем, что рисует
+            # Bybit, дата тихо съезжает на несколько часов без всякой
+            # ошибки. API отдаёт мс-таймстамп напрямую от биржи — это
+            # авторитетный источник, используем его всегда, когда доступен.
+            # Данные с расширения — только запасной вариант, если по
+            # какой-то причине API не вернул дату.
+            if api_data.get("created_at"):
+                if created_at and created_at != api_data["created_at"]:
+                    logger.info(
+                        "Order %s [%s]: дата с расширения (%s) отличается от даты API (%s) — берём API.",
+                        external_id, exchange_name, created_at, api_data["created_at"],
+                    )
                 created_at = api_data["created_at"]
-                logger.info(
-                    "Order %s [%s]: дата создания не пришла с расширения, взята из API: %s",
-                    external_id, exchange_name, created_at,
+            elif not created_at:
+                logger.warning(
+                    "Order %s [%s]: дата не пришла ни с расширения, ни из API — будет проставлена дата отправки.",
+                    external_id, exchange_name,
                 )
 
             logger.info(

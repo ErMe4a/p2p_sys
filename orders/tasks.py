@@ -144,7 +144,18 @@ def verify_and_receipt_later(self, order_id: int):
             o.amount         = api_data["amount"]
             o.operation_type = api_data["operation_type"]
             o.is_verified    = True
-            o.save(update_fields=["price", "cost", "amount", "operation_type", "is_verified"])
+            update_fields = ["price", "cost", "amount", "operation_type", "is_verified"]
+
+            # Дата — авторитетно с биржи, если API её отдало (см. ту же
+            # логику и обоснование в api_views.order): дата с расширения
+            # могла быть не найдена на странице или сдвинута из-за
+            # часового пояса браузера при первом создании ордера — здесь
+            # она перезаписывается достоверной.
+            if api_data.get("created_at"):
+                o.created_at = api_data["created_at"]
+                update_fields.append("created_at")
+
+            o.save(update_fields=update_fields)
 
         UnprocessedOrder.objects.filter(
             user=o.user,
