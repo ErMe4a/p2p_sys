@@ -593,16 +593,28 @@ def user_profit_view(request):
         raw_manuals = (
             MonthlyManualEntry.objects
             .filter(user=user)
-            .values('user_id', 'month', 'gross')
+            .values('user_id', 'month', 'gross',
+                     'buy_qty', 'buy_cost', 'buy_comm',
+                     'sell_qty', 'sell_cost', 'sell_comm',
+                     'exch_comm_rub')
         )
 
         class _Manual:
-            __slots__ = ('gross',)
-            def __init__(self, gross): self.gross = gross
+            __slots__ = ('gross', 'buy_qty', 'buy_cost', 'buy_comm',
+                         'sell_qty', 'sell_cost', 'sell_comm', 'exch_comm_rub')
+            def __init__(self, m):
+                self.gross         = float(m.get('gross', 0) or 0)
+                self.buy_qty       = float(m.get('buy_qty', 0) or 0)
+                self.buy_cost      = float(m.get('buy_cost', 0) or 0)
+                self.buy_comm      = float(m.get('buy_comm', 0) or 0)
+                self.sell_qty      = float(m.get('sell_qty', 0) or 0)
+                self.sell_cost     = float(m.get('sell_cost', 0) or 0)
+                self.sell_comm     = float(m.get('sell_comm', 0) or 0)
+                self.exch_comm_rub = float(m.get('exch_comm_rub', 0) or 0)
 
         manuals_by_user_month = {}
         for m in raw_manuals:
-            manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m['gross'])
+            manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
 
         return all_orders_by_user, expenses_by_user_month, expenses_list_by_user, manuals_by_user_month
 
@@ -672,12 +684,11 @@ def user_profit_view(request):
             gross_raw_all  = gross_raw_usdt + gross_raw_ton
 
             has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
-            if not has_activity:
-                manual = manuals_by_user_month.get((uid, share_key))
-                if manual:
-                    gross_raw_all  = float(manual.gross)
-                    gross_raw_usdt = gross_raw_all
-                    gross_raw_ton  = 0.0
+            manual = manuals_by_user_month.get((uid, share_key))
+            if not has_activity and manual:
+                gross_raw_all  = manual.gross
+                gross_raw_usdt = gross_raw_all
+                gross_raw_ton  = 0.0
 
             pos_usdt  = max(0.0, gross_raw_usdt)
             pos_ton   = max(0.0, gross_raw_ton)
@@ -703,6 +714,14 @@ def user_profit_view(request):
             ytd_usdt = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
             ytd_ton  = ytd_base * (pos_ton  / pos_total) if pos_total > 0 else 0.0
 
+            # sell_cost для ИТОГО-колонки и налога — из ручной записи, если
+            # активности по ордерам не было (так же, как в admin_profit_view:
+            # sell_cost_all = calc['month_sell_cost'] if has_activity else
+            # manual_sell_cost). Раньше тут всегда стоял calc['month_sell_cost']
+            # (0 при фолбэке на manual), из-за чего налог УСН (1% от sell_cost)
+            # на личной странице занижался до нуля при ручных записях.
+            sell_cost_all = calc['month_sell_cost'] if has_activity else (manual.sell_cost if manual else 0.0)
+
             r_usdt = _calc_currency_full(
                 gross_raw_usdt, usdt['month_sell_cost'], tax_type, share_percent,
                 usdt_exp_share, ytd_usdt
@@ -712,7 +731,7 @@ def user_profit_view(request):
                 ton_exp_share, ytd_ton
             )
             r_all = _calc_currency_full(
-                gross_raw_all, calc['month_sell_cost'], tax_type, share_percent,
+                gross_raw_all, sell_cost_all, tax_type, share_percent,
                 month_expenses, ytd_base
             )
 
@@ -722,6 +741,16 @@ def user_profit_view(request):
             usdt_exch_comm = usdt['month_exch_comm_rub']
             ton_exch_comm  = ton['month_exch_comm_rub']
             all_exch_comm  = usdt_exch_comm + ton_exch_comm
+
+            # Те же "финальные" ВСЕ-значения для отображения (buy/sell cost,
+            # комиссии) — из manual при фолбэке, иначе занижаются до нуля
+            # точно как sell_cost_all выше.
+            final_buy_cost  = calc['month_buy_cost']  if has_activity else (manual.buy_cost  if manual else 0.0)
+            final_sell_cost = sell_cost_all
+            final_bank_comm = all_bank_comm           if has_activity else (
+                (manual.buy_comm + manual.sell_comm) if manual else 0.0
+            )
+            final_exch_comm = all_exch_comm           if has_activity else (manual.exch_comm_rub if manual else 0.0)
 
             months_data.append({
                 'key':           share_key,
@@ -734,10 +763,10 @@ def user_profit_view(request):
                 # ── ВСЕ ──────────────────────────────────────────
                 'remainder_qty':     round(usdt['remainder_qty_display'], 2),
                 'ton_remainder_qty': round(ton['remainder_qty_display'],  2),
-                'buy_cost':          round(calc['month_buy_cost'],  2),
-                'sell_cost':         round(calc['month_sell_cost'], 2),
-                'bank_comm':         round(all_bank_comm,  2),
-                'exch_comm_rub':     round(all_exch_comm,  2),
+                'buy_cost':          round(final_buy_cost,  2),
+                'sell_cost':         round(final_sell_cost, 2),
+                'bank_comm':         round(final_bank_comm, 2),
+                'exch_comm_rub':     round(final_exch_comm, 2),
                 'gross':             r_all['gross'],
                 'ndfl':              r_all['ndfl'],
                 'share_amount':      r_all['share'],
