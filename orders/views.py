@@ -820,8 +820,15 @@ def user_profit_view(request):
             except ValueError:
                 return JsonResponse({'error': 'Неверный формат даты'}, status=400)
         else:
-            period_start = timezone.now().replace(hour=0,  minute=0,  second=0)
-            period_end   = timezone.now().replace(hour=23, minute=59, second=59)
+            # ИСПРАВЛЕНО: timezone.now() — время в UTC, а .replace(hour=0,...)
+            # обнулял часы В UTC, а не в МСК (границы суток были сдвинуты на
+            # 3 часа — сделки с полуночи до 3:00 МСК попадали в "вчера", а
+            # с 23:00 до 2:59 следующего дня МСК — ложно в "сегодня"). Ордера
+            # у трейдеров пробиваются по МСК-времени биржи, поэтому сначала
+            # переводим "сейчас" в МСК и только потом обнуляем часы.
+            now_msk      = timezone.now().astimezone(MSK)
+            period_start = now_msk.replace(hour=0,  minute=0,  second=0, microsecond=0)
+            period_end   = now_msk.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         year      = period_start.year
         month     = period_start.month
