@@ -2413,13 +2413,26 @@ def _calc_currency_from_orders(user_id, month_start, month_end,
             pass  # оставляем прошлый carry если не смогли посчитать
 
     if result is None:
+        # ИСПРАВЛЕНО: целевой период (например "сегодня"/текущий месяц) мог
+        # не попасть ни в один ключ by_month, если в нём ещё нет ни одного
+        # ордера (юзер просто не успел ничего пробить в этом периоде).
+        # Раньше это приводило к полному обнулению остатка, хотя реальный
+        # перенос (prev_carry) из последнего месяца с активностью уже был
+        # посчитан циклом выше и просто отбрасывался. Берём его.
+        carry_qty   = float(prev_carry[0]) if prev_carry else 0.0
+        carry_price = float(prev_carry[1]) if prev_carry else 0.0
         result = {
-            'currency': currency, 'prev_balance_qty': 0.0, 'prev_balance_cost': 0.0,
-            'prev_avg_price': 0.0, 'month_buy_qty': 0.0, 'month_buy_cost': 0.0,
+            'currency': currency, 'prev_balance_qty': carry_qty,
+            'prev_balance_cost': carry_qty * carry_price,
+            'prev_avg_price': round(carry_price, 4) if prev_carry else 0.0,
+            'month_buy_qty': 0.0, 'month_buy_cost': 0.0,
             'month_buy_comm': 0.0, 'month_sell_qty': 0.0, 'month_sell_cost': 0.0,
             'month_sell_comm': 0.0, 'month_exch_comm': 0.0, 'month_exch_comm_rub': 0.0,
-            'total_buy_qty': 0.0, 'total_buy_cost': 0.0, 'remainder_qty_display': 0.0,
-            'remainder_cost': 0.0, 'avg_price': 0.0, 'eq_buy_cost': 0.0, 'gross': 0.0,
+            'total_buy_qty': carry_qty, 'total_buy_cost': carry_qty * carry_price,
+            'remainder_qty_display': carry_qty,
+            'remainder_cost': carry_qty * carry_price,
+            'avg_price': round(carry_price, 4) if prev_carry else 0.0,
+            'eq_buy_cost': 0.0, 'gross': 0.0,
         }
 
     return result
