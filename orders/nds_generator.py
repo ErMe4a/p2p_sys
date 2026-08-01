@@ -121,21 +121,60 @@ def calc_quarter_realization(user, year, start_month, end_month):
 # СБОРКА XML
 # ============================================================
 
+NDS_USN_THRESHOLD = Decimal("20000000")
+
+
 def build_nds_declaration(user, year, quarter_key):
     """
     Главная функция. Возвращает (filename, xml_bytes, info_dict).
-    Формируется только для ОСНО/ОСН. Требуемые поля пользователя:
-    inn, oktmo, kod_no, phone, ФИО (last_name/first_name/middle_name).
+    Требуемые поля пользователя: inn, oktmo, kod_no, phone, ФИО
+    (last_name/first_name/middle_name).
+
+    Формируется для ОСНО/ОСН всегда, и для УСН (доходы / доходы-расходы) —
+    только начиная с квартала, в котором накопительный с начала года
+    оборот по продаже (sell) превышает 20 000 000 ₽ (аналог освобождения
+    от НДС по ст.145 НК — пока оборот ниже порога, обязанности подавать
+    декларацию нет вообще). Реализация цифровой валюты НДС не облагается
+    НИКОГДА, ни у ОСНО, ни у УСН (пп. НК) — к уплате всегда 0, порог
+    влияет только на то, нужно ли вообще подавать декларацию и с какой
+    суммы вести отсчёт в разделе 7. Счётчик накопительного оборота
+    ежегодно обнуляется с 1 января.
     """
     tax_type = (user.tax_type or "").upper()
-    if tax_type not in ("OSNO", "OCH"):
+    q = QUARTERS[quarter_key]
+
+    if tax_type in ("OSNO", "OCH"):
+        realization = calc_quarter_realization(user, year, q["start_month"], q["end_month"])
+    elif tax_type in ("USN_INCOME", "USN_INCOME_OUTCOME"):
+        # Сколько было накопительно ДО этого квартала и НА КОНЕЦ этого
+        # квартала — чтобы понять, произошло ли пробитие порога именно
+        # сейчас, было пробито раньше в этом же году, или ещё не пробито.
+        cumulative_before = (
+            calc_quarter_realization(user, year, 1, q["start_month"] - 1)
+            if q["start_month"] > 1 else Decimal(0)
+        )
+        cumulative_end = calc_quarter_realization(user, year, 1, q["end_month"])
+
+        if cumulative_end <= NDS_USN_THRESHOLD:
+            raise ValueError(
+                "Накопительный оборот по продаже с начала года не превышает порог "
+                "20 000 000 ₽ — декларация по НДС не требуется."
+            )
+        if cumulative_before >= NDS_USN_THRESHOLD:
+            # Порог уже был пробит в одном из прошлых кварталов этого года —
+            # весь текущий квартал целиком идёт в раздел 7.
+            realization = calc_quarter_realization(user, year, q["start_month"], q["end_month"])
+        else:
+            # Порог пробивается именно в этом квартале — в раздел 7 идёт
+            # только часть оборота СВЕРХ 20 млн, а не весь квартал.
+            realization = cumulative_end - NDS_USN_THRESHOLD
+    else:
         raise ValueError(
-            "Декларация по НДС формируется только для режима ОСНО "
-            "(УСН и Патент НДС не платят)."
+            "Декларация по НДС формируется только для ОСНО и для УСН, "
+            "превысившей порог оборота по продаже 20 000 000 ₽ "
+            "(Патент НДС не платит)."
         )
 
-    q = QUARTERS[quarter_key]
-    realization = calc_quarter_realization(user, year, q["start_month"], q["end_month"])
     realization_r = _r(realization)
 
     # --- Реквизиты (те же проверки, что и в уведомлении) ---
