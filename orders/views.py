@@ -22,6 +22,7 @@ from decimal import Decimal, ROUND_DOWN
 import openpyxl
 from openpyxl.styles import Alignment, Border, Font, Side
 from django.contrib.auth.forms import AuthenticationForm
+from django.conf import settings
 
 # --- Проект ---
 from .bybit_api import sync_bybit_orders
@@ -410,6 +411,9 @@ def profile_settings(request):
 
     return render(request, 'orders/settings.html', {'user': user})
 
+UNPROCESSED_PAGE_SIZE = 200
+
+
 @login_required
 def unprocessed_orders_list(request):
     user = request.user
@@ -421,54 +425,35 @@ def unprocessed_orders_list(request):
     if not bybit_ok and not mexc_ok:
         messages.warning(request, "API ключи не настроены. Зайди в настройки.")
 
-    unprocessed_orders = (
+    unprocessed_qs = (
         UnprocessedOrder.objects
         .filter(user=user)
         .order_by('-created_at')
     )
 
-    # Считаем когда следующий запуск sync задачи
-    next_sync_ts = None
-    try:
-        from django_celery_beat.models import PeriodicTask
+    # Список бирж встречающихся у этого юзера в Необработанных — для фильтра
+    exchange_choices = list(
+        UnprocessedOrder.objects.filter(user=user)
+        .order_by('exchange_type').values_list('exchange_type', flat=True).distinct()
+    )
 
-        # ИСПРАВЛЕНО: ищем по task (python-путь до функции), а не по
-        # человекочитаемому name — name в БД может отличаться от того, что
-        # ожидает код, и тогда лукап тихо возвращал None.
-        task = PeriodicTask.objects.filter(
-            task='orders.tasks.sync_bybit_orders_task'
-        ).first()
+    exchange_filter = request.GET.get('exchange', '').strip()
+    if exchange_filter:
+        unprocessed_qs = unprocessed_qs.filter(exchange_type=exchange_filter)
 
-        if task and task.last_run_at:
-            interval_seconds = None
-
-            if task.interval:
-                # ИСПРАВЛЕНО: берём реальный интервал из IntervalSchedule,
-                # а не хардкодим 30 минут
-                period_seconds = {
-                    'seconds': 1,
-                    'minutes': 60,
-                    'hours': 3600,
-                    'days': 86400,
-                }.get(task.interval.period, 60)
-                interval_seconds = task.interval.every * period_seconds
-            elif task.crontab:
-                # Для crontab-расписания точный интервал не вычислить
-                # тривиально — честно не показываем таймер, чтобы не врать
-                interval_seconds = None
-
-            if interval_seconds:
-                next_run = task.last_run_at.timestamp() + interval_seconds
-                next_sync_ts = int(next_run * 1000)  # в миллисекундах для JS
-
-    except Exception as e:
-        print(f"next_sync_ts calc failed: {e}")  # ИСПРАВЛЕНО: было тихое pass (без логгера, как и остальной views.py)
+    # ИСПРАВЛЕНО: раньше рендерился весь queryset без ограничения — у
+    # некоторых юзеров тут тысячи строк (найдено до ~4200), страница была
+    # тяжёлой и на сервере, и в браузере. Теперь пагинация.
+    paginator = Paginator(unprocessed_qs, UNPROCESSED_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get('page'))
 
     context = {
-        'unprocessed_orders': unprocessed_orders,
+        'page_obj':           page_obj,
+        'unprocessed_orders': page_obj.object_list,
         'bybit_configured':   bybit_ok,
         'mexc_configured':    mexc_ok,
-        'next_sync_ts':       next_sync_ts,
+        'exchange_filter':    exchange_filter,
+        'exchange_choices':   exchange_choices,
     }
     return render(request, 'orders/unprocessed.html', context)
 
@@ -495,6 +480,41 @@ def delete_unprocessed_order(request, pk):
     except UnprocessedOrder.DoesNotExist:
         messages.error(request, "Ордер не найден.")
 
+    return redirect("unprocessed_orders")
+
+
+@login_required
+@require_POST
+def bulk_ignore_unprocessed_orders(request):
+    """
+    Массовое игнорирование — то же самое, что delete_unprocessed_order,
+    только за один запрос по списку id (галочки на странице "Необработанные").
+    Специально ограничено ТЕКУЩЕЙ СТРАНИЦЕЙ (галочки видны только в пределах
+    одной страницы пагинации) - юзер физически не может случайно выбрать
+    и снести тысячи строк одним кликом, максимум — размер страницы.
+    """
+    ids = request.POST.getlist('order_ids')
+    if not ids:
+        messages.warning(request, "Ничего не выбрано.")
+        return redirect("unprocessed_orders")
+
+    orders = list(UnprocessedOrder.objects.filter(pk__in=ids, user=request.user))
+
+    if not orders:
+        messages.error(request, "Выбранные ордера не найдены.")
+        return redirect("unprocessed_orders")
+
+    IgnoredOrder.objects.bulk_create(
+        [
+            IgnoredOrder(user=request.user, order_id=o.order_id, exchange_type=o.exchange_type)
+            for o in orders
+        ],
+        ignore_conflicts=True,
+    )
+    deleted_count = len(orders)
+    UnprocessedOrder.objects.filter(pk__in=[o.pk for o in orders]).delete()
+
+    messages.success(request, f"Проигнорировано ордеров: {deleted_count}.")
     return redirect("unprocessed_orders")
 
 
@@ -1280,6 +1300,26 @@ def toggle_document_submission(request):
 
 # --- АДМИН ПАНЕЛЬ ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+def _get_celery_queue_depths():
+    """
+    Длины celery-очередей напрямую из Redis (LLEN) — быстрый health-индикатор
+    для админки. Раньше затор в очереди "sync" (218 застрявших задач)
+    обнаружили только руками через redis-cli — с этим на виду это будет
+    заметно сразу на странице юзеров, а не только при ручной диагностике.
+    Порог "warn" подобран по факту застревания.
+    """
+    import redis as redis_lib
+    try:
+        r = redis_lib.from_url(settings.CELERY_BROKER_URL, socket_timeout=2)
+        depths = {q: r.llen(q) for q in ("sync", "receipt", "celery")}
+        depths["warn"] = depths.get("sync", 0) > 50 or depths.get("receipt", 0) > 50
+        depths["ok"] = True
+        return depths
+    except Exception as e:
+        print(f"_get_celery_queue_depths failed: {e}")
+        return {"ok": False}
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_users_list(request):
@@ -1505,6 +1545,7 @@ def admin_users_list(request):
     return render(request, 'custom_admin/users_list.html', {
         'users': users,
         'fns_year': timezone.now().year,
+        'queue_depths': _get_celery_queue_depths(),
     })
 
 

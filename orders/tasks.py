@@ -18,47 +18,76 @@ VERIFY_MAX_RETRIES = len(VERIFY_RETRY_SCHEDULE) + 48    # ~48 часов сум�
 @shared_task(bind=True, max_retries=0, queue="sync")
 def sync_bybit_orders_task(self):
     """
-    Синхронизирует завершённые ордера Bybit и MEXC для всех пользователей.
-    Пишет в UnprocessedOrder.
-    Юзеры с невалидными ключами пропускаются.
+    ДИСПЕТЧЕР: раскидывает синк Bybit/MEXC по одной задаче на юзера,
+    вместо одного большого последовательного цикла по всем сразу.
+
+    ПОЧЕМУ: раньше это был один task, обходящий всех юзеров с валидным
+    ключом ПОСЛЕДОВАТЕЛЬНО внутри себя — если у одного юзера зависал
+    сетевой запрос к бирже (у bybit_p2p до фикса не было timeout вообще),
+    весь task зависал на неопределённое время, занимая единственный
+    воркер-слот, а beat каждые 30 минут докидывал новые запуски поверх —
+    очередь "sync" копилась (обнаружено 218 застрявших). Теперь один
+    подвисший/упавший юзер не блокирует остальных, и синк идёт параллельно
+    в пределах доступного concurrency очереди "sync".
     """
 
-    bybit_users = (
+    bybit_user_ids = list(
         User.objects
         .filter(bybit_key_valid=True)
         .exclude(bybit_api_key__isnull=True).exclude(bybit_api_key="")
         .exclude(bybit_api_secret__isnull=True).exclude(bybit_api_secret="")
+        .values_list("id", flat=True)
     )
+    for user_id in bybit_user_ids:
+        sync_bybit_orders_for_user_task.apply_async(args=[user_id], queue="sync")
 
-    bybit_total = 0
-    for user in bybit_users:
-        try:
-            added = sync_bybit_orders(user)
-            if added > 0:
-                bybit_total += added
-                logger.info("Bybit [%s]: +%d новых ордеров.", user.username, added)
-        except Exception as e:
-            logger.error("Bybit sync error [%s]: %s", user.username, e, exc_info=True)
-
-    mexc_users = (
+    mexc_user_ids = list(
         User.objects
         .filter(mexc_key_valid=True)
         .exclude(mexc_api_key__isnull=True).exclude(mexc_api_key="")
         .exclude(mexc_api_secret__isnull=True).exclude(mexc_api_secret="")
+        .values_list("id", flat=True)
     )
+    for user_id in mexc_user_ids:
+        sync_mexc_orders_for_user_task.apply_async(args=[user_id], queue="sync")
 
-    mexc_total = 0
-    for user in mexc_users:
-        try:
-            added = sync_mexc_orders(user)
-            if added > 0:
-                mexc_total += added
-                logger.info("MEXC [%s]: +%d новых ордеров.", user.username, added)
-        except Exception as e:
-            logger.error("MEXC sync error [%s]: %s", user.username, e, exc_info=True)
+    logger.info(
+        "sync_bybit_orders_task: поставлено в очередь Bybit=%d, MEXC=%d задач.",
+        len(bybit_user_ids), len(mexc_user_ids),
+    )
+    return {"bybit_users": len(bybit_user_ids), "mexc_users": len(mexc_user_ids)}
 
-    logger.info("Sync завершена. Bybit: +%d, MEXC: +%d", bybit_total, mexc_total)
-    return {"bybit": bybit_total, "mexc": mexc_total}
+
+@shared_task(bind=True, max_retries=0, queue="sync")
+def sync_bybit_orders_for_user_task(self, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return 0
+    try:
+        added = sync_bybit_orders(user)
+        if added > 0:
+            logger.info("Bybit [%s]: +%d новых ордеров.", user.username, added)
+        return added
+    except Exception as e:
+        logger.error("Bybit sync error [%s]: %s", user.username, e, exc_info=True)
+        return 0
+
+
+@shared_task(bind=True, max_retries=0, queue="sync")
+def sync_mexc_orders_for_user_task(self, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        return 0
+    try:
+        added = sync_mexc_orders(user)
+        if added > 0:
+            logger.info("MEXC [%s]: +%d новых ордеров.", user.username, added)
+        return added
+    except Exception as e:
+        logger.error("MEXC sync error [%s]: %s", user.username, e, exc_info=True)
+        return 0
 
 
 @shared_task(bind=True, max_retries=VERIFY_MAX_RETRIES, queue="receipt")
@@ -322,9 +351,13 @@ def _try_send_receipt(order: Order):
         logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
 
 
-@shared_task(bind=True, max_retries=0, queue="sync")
+@shared_task(bind=True, max_retries=0, queue="receipt")
 def recheck_mexc_keys_task(self):
     """
+    Очередь "receipt", а не "sync" — эта задача логически с синком не
+    связана (не пишет в UnprocessedOrder, только пробует ключ и разблокирует
+    юзера), но раньше сидела на "sync" и страдала от того же затора.
+
     НОВОЕ: периодическая проверка "не ожил ли ключ MEXC сам по себе".
 
     В отличие от retry_blocked_orders_task (которую нужно вызывать явно

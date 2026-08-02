@@ -203,9 +203,13 @@ class P2PManager:
                 )
             )
 
-    def _send_request(self, request):
+    def _send_request(self, request, timeout=30):
+        # ИСПРАВЛЕНО: без явного timeout запрос requests может зависнуть
+        # навсегда при сетевых проблемах на стороне Bybit. Т.к. синк
+        # обрабатывает много юзеров подряд, один подвисший запрос блокировал
+        # весь Celery-воркер и очередь "sync" копилась часами.
         try:
-            return self.client.send(request)
+            return self.client.send(request, timeout=timeout)
         except (
                 requests.exceptions.ReadTimeout,
                 requests.exceptions.SSLError,
