@@ -431,11 +431,13 @@ def unprocessed_orders_list(request):
         .order_by('-created_at')
     )
 
-    # Список бирж встречающихся у этого юзера в Необработанных — для фильтра
-    exchange_choices = list(
+    # Список бирж для фильтра. Bybit/MEXC — всегда (это два основных
+    # интегрированных источника синка), даже если у юзера сейчас там пусто.
+    # Остальные (Telegram/HTX/Gate/...) — только те, что реально встречаются.
+    exchange_choices = sorted(set(
         UnprocessedOrder.objects.filter(user=user)
-        .order_by('exchange_type').values_list('exchange_type', flat=True).distinct()
-    )
+        .values_list('exchange_type', flat=True).distinct()
+    ) | {'Bybit', 'MEXC'})
 
     exchange_filter = request.GET.get('exchange', '').strip()
     if exchange_filter:
