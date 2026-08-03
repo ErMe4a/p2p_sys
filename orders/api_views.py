@@ -110,6 +110,16 @@ def details_delete(request, pk: int):
 @permission_classes([IsAuthenticated])
 def order(request):
     # === GET ===
+    # ВРЕМЕННО ОТКАЧЕНО: сервер снова отвечает как раньше (404 + без
+    # exists/hint) — пока пользователи на расширении 1.4.7, а не 1.4.8.
+    # У MEXC (mexc.js, старый checkOrderExists) "ордер существует"
+    # определялось просто по факту HTTP 200 — если сервер всегда отдаёт
+    # 200 (как в версии с hint), это сломало бы существующих юзеров на
+    # 1.4.7 прямо сейчас, ещё до всякого обновления расширения. Заготовка
+    # с hint (для предзаполнения формы из UnprocessedOrder) оставлена в
+    # content.js/mexc.js/order_api.js — код там уже готов и включится
+    # сам, как только это же самое (exists/hint) снова появится здесь,
+    # когда версия 1.4.8 будет раздана пользователям.
     if request.method == "GET":
         order_id    = (request.query_params.get("id") or "").strip()
         exchange_name = get_exchange_name(request.query_params.get("exchangeType", 1))

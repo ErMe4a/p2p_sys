@@ -225,8 +225,8 @@
             <div class="col-6 col-md">
                 <label class="field-label">Telegram</label>
                 <select name="telegram_commission" class="form-select">
-                    <option value="0.9" {% if user.telegram_commission|floatformat:"4" == "0.9000" or not user.telegram_commission %}selected{% endif %}>0.9%</option>
-                    <option value="1.2" {% if user.telegram_commission|floatformat:"4" == "1.2000" %}selected{% endif %}>1.2%</option>
+                    <option value="1.6" {% if user.telegram_commission|floatformat:"4" == "1.6000" or not user.telegram_commission %}selected{% endif %}>1.6%</option>
+                    <option value="2" {% if user.telegram_commission|floatformat:"4" == "2.0000" %}selected{% endif %}>2%</option>
                 </select>
             </div>
         </div>

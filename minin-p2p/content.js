@@ -1608,7 +1608,20 @@ function createCheckContent() {
                 console.log('P2P Analytics: Restored manualEdit=true from DB');
             } else {
                 lockFinancialFields();
-                waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
+                // Если ордер уже засинкан в Необработанных - у нас уже есть
+                // его price/amount/side из API биржи (тот же источник, что
+                // и верификация при сохранении). Предзаполняем оттуда -
+                // быстрее и надёжнее хрупкого DOM-парсинга страницы. Сам
+                // чек это не затрагивает - при сохранении сервер всё равно
+                // обязательно перепроверит данные через API заново.
+                if (orderResult.hint) {
+                    console.log('P2P Analytics: Предзаполняем из подсказки (Необработанные):', orderResult.hint);
+                    if (rateInput && orderResult.hint.price) rateInput.value = orderResult.hint.price;
+                    if (quantityInput && orderResult.hint.quantity) quantityInput.value = orderResult.hint.quantity;
+                    if (costInput && orderResult.hint.amount) costInput.value = orderResult.hint.amount;
+                } else {
+                    waitAndFillReceiptInputs(rateInput, quantityInput, costInput);
+                }
             }
 
             // Контакт всегда доступен

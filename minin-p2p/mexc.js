@@ -391,18 +391,19 @@ checkOrderExists = async (orderId) => {
             }
         });
 
-        // Обработка 404 (Ордера нет)
+        // Обработка 404 (defensive fallback - сервер теперь всегда 200)
         if (response.status === 404) {
             return {
                 success: true,
                 exists: false,
-                data: null
+                data: null,
+                hint: null
             };
         }
 
         const text = await response.text();
         let data = null;
-        
+
         try {
             data = text ? JSON.parse(text) : null;
         } catch (e) {
@@ -411,11 +412,17 @@ checkOrderExists = async (orderId) => {
         }
 
         if (response.ok) {
-            // Если сервер вернул 200, значит ордер есть
+            // Совместимо с двумя вариантами ответа сервера: новым (явное
+            // поле exists + hint, пока временно выключено на бэкенде) и
+            // старым (сервер отдаёт 404 при отсутствии ордера, поэтому
+            // сам факт HTTP 200 здесь = ордер есть). Если поля exists нет
+            // вообще - значит бэкенд старый, откатываемся на старую логику.
+            const orderExists = ('exists' in (data || {})) ? (data.exists === true) : true;
             return {
                 success: true,
-                exists: true,
-                data: data // Здесь теперь будет лежать receipt, если он есть
+                exists: orderExists,
+                data: orderExists ? data : null,
+                hint: (data && data.hint) || null
             };
         } else {
             return {
@@ -1714,6 +1721,19 @@ function createCheckContent() {
                         });
                     }
 
+                } else if (orderResult.hint) {
+                    // Ордер уже засинкан в Необработанных - есть price/amount
+                    // из API биржи (тот же источник, что и верификация при
+                    // сохранении). Предзаполняем оттуда, DOM не парсим -
+                    // быстрее и надёжнее. На сам чек не влияет, верификация
+                    // при сохранении всё равно обязательна.
+                    console.log('P2P Analytics MEXC: Предзаполняем из подсказки (Необработанные):', orderResult.hint);
+                    if (orderResult.hint.type === 'SELL') radioSell.checked = true;
+                    else if (orderResult.hint.type === 'BUY') radioBuy.checked = true;
+                    if (orderResult.hint.price) rateInput.value = orderResult.hint.price;
+                    if (orderResult.hint.quantity) quantityInput.value = orderResult.hint.quantity;
+                    if (orderResult.hint.amount && costInput) costInput.value = orderResult.hint.amount;
+                    lockFinancialFields();
                 } else {
                     waitForElement('[data-testid="info-row-price"]').then(() => {
                         rateInput.value = parsePriceFromPage();

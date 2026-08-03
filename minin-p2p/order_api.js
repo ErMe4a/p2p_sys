@@ -79,11 +79,16 @@ async function checkOrderExists(orderId, exchangeType) {
             }
         );
 
+        // ИЗМЕНЕНО: сервер больше не отдаёт 404 для "не найден" - всегда 200
+        // с явным exists:true/false (+ hint при false, если ордер уже есть
+        // в Необработанных - см. api_views.order). Оставляем обработку 404
+        // как defensive fallback на случай прокси/старых ответов.
         if (response.status === 404) {
             console.log('P2P Analytics: Order not found (404)');
             return {
                 success: true,
-                exists: false
+                exists: false,
+                hint: null
             };
         }
 
@@ -97,22 +102,28 @@ async function checkOrderExists(orderId, exchangeType) {
         }
 
         const order = await response.json();
-        
-        // Validate Order structure - check if orderId exists and matches
-        // Always compare as strings to handle large numbers correctly
-        const orderExists = order && order.orderId && String(order.orderId) === orderIdString;
-        
+
+        // Совместимо с двумя вариантами ответа сервера: новым (явное поле
+        // exists + hint, пока временно выключено на бэкенде) и старым
+        // (200 = существует, orderId в теле = подтверждение). Если сервер
+        // прислал явный exists - доверяем ему; если поля exists нет вообще
+        // (старый бэкенд) - откатываемся на старую эвристику по orderId.
+        const orderExists = (order && 'exists' in order)
+            ? order.exists === true
+            : !!(order && order.orderId && String(order.orderId) === orderIdString);
+
         console.log('P2P Analytics: Order check result:', {
             orderId: orderIdString,
             exchangeType: exchangeType,
-            responseOrderId: order?.orderId,
-            exists: orderExists
+            exists: orderExists,
+            hasHint: !!(order && order.hint)
         });
-        
+
         return {
             success: true,
             exists: orderExists,
-            data: order
+            data: orderExists ? order : undefined,
+            hint: (order && order.hint) || null
         };
     } catch (error) {
         console.error('Error checking order existence:', error);
