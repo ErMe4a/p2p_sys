@@ -394,7 +394,7 @@ def profile_settings(request):
         user.htx_commission      = float(request.POST.get('htx_commission') or 0)
         user.mexc_commission     = float(request.POST.get('mexc_commission') or 0)
         user.bitget_commission   = float(request.POST.get('bitget_commission') or 0)
-        user.telegram_commission = float(request.POST.get('telegram_commission') or 1.6)
+        user.telegram_commission = float(request.POST.get('telegram_commission') or 0.9)
 
         # 4. Логика смены пароля
         new_password = request.POST.get('new_password')
