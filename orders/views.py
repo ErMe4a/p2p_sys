@@ -166,6 +166,10 @@ def my_orders_list(request):
             commission_type=request.POST.get('commission_type'),
             exchange_commission_rate=user_comm_rate,
             screenshot=request.FILES.get('screenshot'),
+            # Второй скрин ("после исполнения") заполняется только для
+            # Telegram — форма для остальных бирж это поле не отправляет,
+            # request.FILES.get('screenshot_after') тогда просто None.
+            screenshot_after=request.FILES.get('screenshot_after'),
             created_at=order_date,
             currency=request.POST.get('currency', 'USDT').strip().upper(),
         )

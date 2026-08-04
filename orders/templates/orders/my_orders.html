@@ -288,8 +288,20 @@
         </div>
 
         <div id="fileInputWrapper" class="mt-3" style="display: none;">
-            <label class="form-label">Прикрепить скриншот</label>
-            <input type="file" name="screenshot" class="form-control">
+            <div id="fileInputSingle">
+                <label class="form-label">Прикрепить скриншот</label>
+                <input type="file" name="screenshot" class="form-control" id="singleScreenInput">
+            </div>
+            <div id="fileInputTelegramPair" style="display: none;">
+                <div class="mb-2">
+                    <label class="form-label">Скрин во время исполнения сделки</label>
+                    <input type="file" name="screenshot" class="form-control" id="telegramScreenDuring">
+                </div>
+                <div>
+                    <label class="form-label">Скрин после исполнения сделки</label>
+                    <input type="file" name="screenshot_after" class="form-control" id="telegramScreenAfter">
+                </div>
+            </div>
         </div>
     </form>
 </div>
@@ -411,7 +423,10 @@
                             <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
                         </form>
                         {% if order.screenshot %}
-                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть">👁️</a>
+                            <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть (во время сделки)">👁️</a>
+                        {% endif %}
+                        {% if order.screenshot_after %}
+                            <a href="{{ order.screenshot_after.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть (после сделки)">👁️²</a>
                         {% endif %}
                         <a href="{% url 'delete_order' order.id %}" class="btn btn-action btn-delete" onclick="return confirm('Удалить?')">Удалить</a>
                     </div>
@@ -640,6 +655,33 @@
         }
         syncReceiptUI();
     }
+
+    // === TELEGRAM: два скрина (во время и после сделки) вместо одного ===
+    function handleTelegramScreenshot() {
+        const single      = document.getElementById('fileInputSingle');
+        const pair        = document.getElementById('fileInputTelegramPair');
+        const singleInput = document.getElementById('singleScreenInput');
+        const during      = document.getElementById('telegramScreenDuring');
+        const after       = document.getElementById('telegramScreenAfter');
+
+        // Оба "во время" и одиночный инпут называются name="screenshot" -
+        // в форме они оба присутствуют в DOM одновременно (просто один
+        // скрыт через CSS), значит скрытый, но не очищенный инпут всё
+        // равно уйдёт на сервер вместе с видимым. Чистим неактивную пару
+        // при каждом переключении, в обе стороны.
+        if (createExchange.value === 'Telegram') {
+            single.style.display = 'none';
+            pair.style.display   = 'block';
+            if (singleInput) singleInput.value = '';
+        } else {
+            single.style.display = 'block';
+            pair.style.display   = 'none';
+            if (during) during.value = '';
+            if (after)  after.value  = '';
+        }
+    }
+    createExchange.addEventListener('change', handleTelegramScreenshot);
+    handleTelegramScreenshot(); // при загрузке страницы
 
     createExchange.addEventListener('change', handleIntelionReceipt);
     handleIntelionReceipt(); // при загрузке страницы

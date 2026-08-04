@@ -130,6 +130,10 @@ class Order(models.Model):
     commission = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commission_type = models.CharField(max_length=10, choices=COMMISSION_CHOICES, default='PERCENT')
     screenshot = models.ImageField(upload_to='orders/screenshots/', null=True, blank=True)
+    screenshot_after = models.ImageField(
+        upload_to='orders/screenshots/', null=True, blank=True,
+        verbose_name="Скрин после исполнения сделки (Telegram)"
+    )
     created_at = models.DateTimeField(default=timezone.now)
     exchange_commission_rate = models.DecimalField(
         max_digits=6,
