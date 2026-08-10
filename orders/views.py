@@ -126,6 +126,17 @@ def my_orders_list(request):
             request.session['order_error'] = f'Ордер {external_id} ({exchange_val}) уже существует в вашей системе'
             return redirect('my_orders')
 
+        # ЗАЩИТА 3: для Telegram оба скрина обязательны — это единственное
+        # доказательство сделки (нет ни расширения, ни автоверификации через
+        # API, как у Bybit/MEXC). Проверяем и на бэкенде, а не только в JS,
+        # чтобы нельзя было обойти отключением JS в браузере.
+        if exchange_val.lower() == 'telegram':
+            if not request.FILES.get('screenshot') or not request.FILES.get('screenshot_after'):
+                request.session['order_error'] = (
+                    'Для Telegram обязательны оба скриншота: во время исполнения сделки и после.'
+                )
+                return redirect('my_orders')
+
         bank_id = request.POST.get('details')
         bank_instance = None
         if bank_id:
@@ -1257,12 +1268,13 @@ def user_export_nds(request):
     """Скачивание СВОЕЙ декларации НДС. user_id не принимается - только request.user."""
     year = int(request.GET.get('year') or timezone.now().year)
     quarter_key = request.GET.get('quarter', 'Q2')
- 
+    correction_number = int(request.GET.get('correction') or 0)
+
     if quarter_key not in NDS_QUARTERS or quarter_key == 'Q1':
         return JsonResponse({'error': 'Неверный квартал.'}, status=400)
- 
+
     try:
-        filename, xml_bytes, info = build_nds_declaration(request.user, year, quarter_key)
+        filename, xml_bytes, info = build_nds_declaration(request.user, year, quarter_key, correction_number)
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)
  
@@ -3395,6 +3407,7 @@ def export_nds(request):
     user_id = request.GET.get('user_id')
     year = int(request.GET.get('year') or datetime.now().year)
     quarter_key = request.GET.get('quarter', 'Q1')
+    correction_number = int(request.GET.get('correction') or 0)
 
     if quarter_key not in QUARTERS:
         return JsonResponse({'error': 'Неверный квартал.'}, status=400)
@@ -3404,7 +3417,7 @@ def export_nds(request):
         return JsonResponse({'error': 'Пользователь не найден.'}, status=404)
 
     try:
-        filename, xml_bytes, info = build_nds_declaration(target, year, quarter_key)
+        filename, xml_bytes, info = build_nds_declaration(target, year, quarter_key, correction_number)
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)
 
@@ -3830,11 +3843,30 @@ def admin_manual_entry_upload_excel(request):
 
     month = request.POST.get('month', '').strip()  # '2026-01'
     files = request.FILES.getlist('excel_files')
+    # username'ы, для которых админ явно подтвердил перезапись поверх расхождения
+    force_usernames = {
+        u.strip().lower() for u in request.POST.get('force_usernames', '').split(',') if u.strip()
+    }
 
     if not month or not files:
         return JsonResponse({'error': 'month и файлы обязательны'}, status=400)
 
     results = []
+
+    MISMATCH_FIELDS = [
+        ('buy_qty',         'Кол-во покупок'),
+        ('buy_cost',        'Стоимость покупок'),
+        ('buy_comm',        'Комиссия банка (покупки)'),
+        ('sell_qty',        'Кол-во продаж'),
+        ('sell_cost',       'Стоимость продаж'),
+        ('sell_comm',       'Комиссия банка (продажи)'),
+        ('exch_comm_rub',   'Комиссия биржи, ₽'),
+        ('remainder_qty',   'Остаток, кол-во'),
+        ('remainder_price', 'Остаток, курс'),
+        ('remainder_cost',  'Остаток, стоимость'),
+        ('gross',           'Прибыль'),
+    ]
+    MISMATCH_TOLERANCE = 1.0  # ₽ / единицы — меньше считается округлением, не расхождением
 
     for f in files:
         username = f.name.rsplit('.', 1)[0].lower()  # 'simonenko.xlsx' -> 'simonenko'
@@ -3913,23 +3945,54 @@ def admin_manual_entry_upload_excel(request):
                 except Exception:
                     pass
 
+            new_values = {
+                'buy_qty':         buy_qty,
+                'buy_cost':        buy_cost,
+                'buy_comm':        buy_comm,
+                'sell_qty':        sell_qty,
+                'sell_cost':       sell_cost,
+                'sell_comm':       sell_comm,
+                'exch_comm_rub':   round(exch_comm_rub, 2),
+                'remainder_qty':   remainder_qty,
+                'remainder_price': remainder_price,
+                'remainder_cost':  remainder_cost,
+                'gross':           gross,
+            }
+
+            # Сверяем с уже сохранёнными данными (могли быть вручную поправлены) —
+            # если расходятся и это не подтверждено явно, блокируем перезапись.
+            existing = MonthlyManualEntry.objects.filter(user=user, month=month).first()
+            diffs = []
+            if existing:
+                for field, field_label in MISMATCH_FIELDS:
+                    old_v = float(getattr(existing, field, 0) or 0)
+                    new_v = float(new_values[field])
+                    if abs(old_v - new_v) > MISMATCH_TOLERANCE:
+                        diffs.append({
+                            'field': field, 'label': field_label,
+                            'old': old_v, 'new': new_v,
+                        })
+
+            if diffs and username not in force_usernames:
+                result['status']  = 'mismatch'
+                result['message'] = f'Расхождение с уже сохранёнными данными по {len(diffs)} полям — сохранение заблокировано'
+                result['diffs']   = diffs
+                result['data'] = {
+                    'buy_cost':  buy_cost,
+                    'sell_cost': sell_cost,
+                    'gross':     gross,
+                    'remainder': f'{remainder_qty} USDT × {remainder_price} ₽',
+                }
+                results.append(result)
+                continue
+
             # Сохраняем
             entry, created = MonthlyManualEntry.objects.update_or_create(
                 user=user,
                 month=month,
                 defaults={
-                    'buy_qty':         buy_qty,
-                    'buy_cost':        buy_cost,
-                    'buy_comm':        buy_comm,
-                    'sell_qty':        sell_qty,
-                    'sell_cost':       sell_cost,
-                    'sell_comm':       sell_comm,
-                    'exch_comm_rub':   round(exch_comm_rub, 2),
-                    'remainder_qty':   remainder_qty,
-                    'remainder_price': remainder_price,
-                    'remainder_cost':  remainder_cost,
-                    'gross':           gross,
-                    'source':          'excel',
+                    **new_values,
+                    'source': 'excel',
                 }
             )
 

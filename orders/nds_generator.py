@@ -124,11 +124,14 @@ def calc_quarter_realization(user, year, start_month, end_month):
 NDS_USN_THRESHOLD = Decimal("20000000")
 
 
-def build_nds_declaration(user, year, quarter_key):
+def build_nds_declaration(user, year, quarter_key, correction_number=0):
     """
     Главная функция. Возвращает (filename, xml_bytes, info_dict).
     Требуемые поля пользователя: inn, oktmo, kod_no, phone, ФИО
     (last_name/first_name/middle_name).
+
+    correction_number: 0 — первичная декларация, 1/2/... — номер
+    корректировки (порядковый номер уточнённой декларации за этот же период).
 
     Формируется для ОСНО/ОСН всегда, и для УСН (доходы / доходы-расходы) —
     только начиная с квартала, в котором накопительный с начала года
@@ -198,6 +201,10 @@ def build_nds_declaration(user, year, quarter_key):
     if not fam or not name:
         raise ValueError("Не заполнены фамилия/имя подписанта (настройки пользователя).")
 
+    correction_number = int(correction_number or 0)
+    if correction_number < 0:
+        raise ValueError("Номер корректировки не может быть отрицательным.")
+
     # --- Имя файла и ИдФайл (должны совпадать) ---
     today = datetime.now()
     guid = str(uuid.uuid4()).upper()
@@ -217,7 +224,7 @@ def build_nds_declaration(user, year, quarter_key):
         "Период": q["code"],
         "ОтчетГод": str(year),
         "КодНО": kod_no,
-        "НомКорр": "0",
+        "НомКорр": str(correction_number),
         "ПоМесту": PO_MESTU,
     })
     svnp = ET.SubElement(doc, "СвНП", {"Тлф": phone})

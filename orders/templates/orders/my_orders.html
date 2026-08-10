@@ -609,6 +609,21 @@
             alert('Ошибка! Комиссия банка указана в процентах и превышает 5% (' + commVal + '%). Проверьте, не перепутали ли вы поле — возможно нужно выбрать "₽" вместо "%".');
             return;
         }
+
+        // Для Telegram оба скрина обязательны - это единственное доказательство
+        // сделки (нет ни расширения, ни автоверификации через API, как у
+        // Bybit/MEXC).
+        if (createExchange.value === 'Telegram') {
+            const during = document.getElementById('telegramScreenDuring');
+            const after  = document.getElementById('telegramScreenAfter');
+            const hasDuring = during && during.files && during.files.length > 0;
+            const hasAfter  = after  && after.files  && after.files.length > 0;
+            if (!hasDuring || !hasAfter) {
+                e.preventDefault();
+                alert('Для Telegram обязательны ОБА скриншота: во время исполнения сделки и после.');
+                return;
+            }
+        }
     });
 
     function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency) {
@@ -663,6 +678,8 @@
         const singleInput = document.getElementById('singleScreenInput');
         const during      = document.getElementById('telegramScreenDuring');
         const after       = document.getElementById('telegramScreenAfter');
+        const screenBox   = document.getElementById('checkScreen');
+        const fileWrapper = document.getElementById('fileInputWrapper');
 
         // Оба "во время" и одиночный инпут называются name="screenshot" -
         // в форме они оба присутствуют в DOM одновременно (просто один
@@ -673,11 +690,26 @@
             single.style.display = 'none';
             pair.style.display   = 'block';
             if (singleInput) singleInput.value = '';
+
+            // Для Telegram скрины обязательны - чекбокс всегда включён и
+            // заблокирован, блок с полями всегда виден (нельзя случайно
+            // спрятать единственное доказательство сделки).
+            if (screenBox) {
+                screenBox.checked  = true;
+                screenBox.disabled = true;
+            }
+            if (fileWrapper) fileWrapper.style.display = 'block';
         } else {
             single.style.display = 'block';
             pair.style.display   = 'none';
             if (during) during.value = '';
             if (after)  after.value  = '';
+
+            if (screenBox) {
+                screenBox.disabled = false;
+                // Возвращаем к тому, что юзер сам выбирал (по умолчанию
+                // выключено, как и было для остальных бирж).
+            }
         }
     }
     createExchange.addEventListener('change', handleTelegramScreenshot);
