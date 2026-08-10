@@ -524,29 +524,13 @@ function createSubmitButton() {
             return;
         }
         
-        // Validate price, quantity, and amount - must not be 0 or null
-        if (!formData.price || formData.price === 0) {
-            showNotification('Ошибка: курс не может быть 0 или пустым', 'error');
-            return;
-        }
-        
-        if (!formData.quantity || formData.quantity === 0) {
-            showNotification('Ошибка: количество не может быть 0 или пустым', 'error');
-            return;
-        }
-        
-        if (!formData.amount || formData.amount === 0) {
-            showNotification('Ошибка: сумма не может быть 0 или пустой', 'error');
-            return;
-        }
-        
+        // Курс/количество/сумму/тип не блокируем, если не распарсились со страницы (0/пусто/UNKNOWN) —
+        // как и на Bybit, сервер всё равно подтянет и провалидирует реальные значения через MEXC API при верификации
+        // (для типа — даже строже: если сторону не удаётся достоверно определить через API, верификация вообще
+        // проваливается и уходит на ретрай, а не сохраняет угаданный тип).
+
         // createdAt now always uses current time if not found on page, so no validation needed
-        
-        if (!formData.type || formData.type === 'UNKNOWN') {
-            showNotification('Не удалось определить тип заказа (покупка/продажа)', 'error');
-            return;
-        }
-        
+
         // Wait for DOM to load and get order ID from HTML
         console.log('P2P Analytics MEXC: Getting order ID before submitting...');
         const orderId = await getOrderId();
