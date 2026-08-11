@@ -220,9 +220,26 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
         if price == 0 and amount > 0 and cost > 0:
             price = round(cost / amount, 2)
 
+        # ИСПРАВЛЕНО: order/detail отдаёт СВОЮ, авторитетную дату создания
+        # (createTime) — используем её для поиска в pagination вместо
+        # переданного order_date (который берётся из нашей БД и может быть
+        # неверным, например для ордеров, пробитых массово из списка задним
+        # числом — там order.created_at = момент пробития, а не реальная
+        # дата сделки на бирже, из-за чего окно поиска ±24ч промахивалось
+        # мимо ордера и верификация проваливалась навсегда). createTime из
+        # order/detail — это то же самое значение, что и в pagination, так
+        # что окно вокруг него гарантированно совпадёт.
+        created_at = None
+        raw_create_time = item.get("createTime")
+        if raw_create_time:
+            try:
+                created_at = datetime.fromtimestamp(int(raw_create_time) / 1000, tz=timezone.utc)
+            except (TypeError, ValueError):
+                created_at = None
+
         # ── Тип операции — ОТДЕЛЬНО, через pagination (side из order/detail
         # не используем — он подтверждённо перевёрнут) ──────────────────────
-        op = _get_mexc_side_via_pagination(user, order_id, order_date)
+        op = _get_mexc_side_via_pagination(user, order_id, created_at or order_date)
         if op is None:
             # ИСПРАВЛЕНО: раньше тут был fallback на side из order/detail —
             # но именно это поле перевёрнуто, доверять ему нельзя. Если не
@@ -238,10 +255,13 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
             return None
 
         logger.info(
-            "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s",
-            user.username, order_id, price, cost, amount, op,
+            "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s created_at=%s",
+            user.username, order_id, price, cost, amount, op, created_at,
         )
-        return {"price": price, "cost": cost, "amount": amount, "operation_type": op}
+        return {
+            "price": price, "cost": cost, "amount": amount, "operation_type": op,
+            "created_at": created_at,
+        }
 
     except Exception as e:
         logger.error("MEXC _get_mexc_order [%s] order %s: %s", user.username, order_id, e)
