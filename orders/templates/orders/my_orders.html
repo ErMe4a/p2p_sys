@@ -417,11 +417,18 @@
                             onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}')">
                             Изм.
                         </button>
-                        <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить">📷</button>
+                        <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить (во время сделки)">📷</button>
                         <form id="upload-form-{{ order.id }}" action="{% url 'upload_screenshot' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
                             {% csrf_token %}
                             <input type="file" id="file-input-{{ order.id }}" name="screenshot" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-{{ order.id }}').submit();">
                         </form>
+                        {% if order.exchange_type|lower == 'telegram' %}
+                        <button class="btn btn-action" onclick="triggerUploadAfter('{{ order.id }}')" title="Загрузить/Заменить (после сделки)">📷²</button>
+                        <form id="upload-form-after-{{ order.id }}" action="{% url 'upload_screenshot_after' order.id %}" method="post" enctype="multipart/form-data" style="display: none;">
+                            {% csrf_token %}
+                            <input type="file" id="file-input-after-{{ order.id }}" name="screenshot_after" accept="image/*,application/pdf" onchange="document.getElementById('upload-form-after-{{ order.id }}').submit();">
+                        </form>
+                        {% endif %}
                         {% if order.screenshot %}
                             <a href="{{ order.screenshot.url }}" target="_blank" class="btn btn-action text-decoration-none" title="Посмотреть (во время сделки)">👁️</a>
                         {% endif %}
@@ -654,6 +661,10 @@
 
     function triggerUpload(orderId) {
         document.getElementById('file-input-' + orderId).click();
+    }
+
+    function triggerUploadAfter(orderId) {
+        document.getElementById('file-input-after-' + orderId).click();
     }
 
     // === INTELION: чек недоступен, для остальных бирж стоит по дефолту ===

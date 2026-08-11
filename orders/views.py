@@ -360,9 +360,32 @@ def upload_screenshot(request, order_id):
 
         order.screenshot = file
         order.save()
-        
+
     return redirect('my_orders')
 
+
+@login_required
+def upload_screenshot_after(request, order_id):
+    """
+    Дозагрузка/замена ВТОРОГО скрина ("после исполнения сделки") для уже
+    существующего ордера — до этого кнопка 📷 умела писать только в
+    order.screenshot, для screenshot_after дозагрузки не было вообще
+    (можно было приложить только при самом создании Telegram-ордера).
+    """
+    if request.method == 'POST' and request.FILES.get('screenshot_after'):
+        order = get_object_or_404(Order, id=order_id, user=request.user)
+        file = request.FILES.get('screenshot_after')
+
+        order_key = str(order.external_id)
+        file.name = f"{order_key}_after.png"
+
+        if order.screenshot_after:
+            order.screenshot_after.delete(save=False)
+
+        order.screenshot_after = file
+        order.save()
+
+    return redirect('my_orders')
 
 
 @login_required

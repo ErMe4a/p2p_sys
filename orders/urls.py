@@ -17,6 +17,7 @@ urlpatterns = [
     path('delete/<int:order_id>/', views.delete_order, name='delete_order'),
     path('upload_screen/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
     path('upload-screenshot/<int:order_id>/', views.upload_screenshot, name='upload_screenshot'),
+    path('upload-screenshot-after/<int:order_id>/', views.upload_screenshot_after, name='upload_screenshot_after'),
     path('fns/', views.my_fns_documents, name='my_fns'),
     path('fns/export/uvedomlenie/', views.user_export_uvedomlenie, name='user_export_uvedomlenie'),
     path('fns/export/nds/', views.user_export_nds, name='user_export_nds'),
