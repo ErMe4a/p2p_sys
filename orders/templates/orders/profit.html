@@ -95,6 +95,7 @@
             <button type="button" class="quick-date-btn active" id="btnToday"    onclick="setView('today')">За текущий месяц</button>
             <button type="button" class="quick-date-btn"        id="btnMonth"    onclick="setView('month')">Сводка по месяцам</button>
             <button type="button" class="quick-date-btn"        id="btnExpenses" onclick="setView('expenses')">💸 Мои расходы</button>
+            <button type="button" class="quick-date-btn"        id="btnCorrection" onclick="setView('correction')">🔻 Коррекция остатка</button>
         </div>
 
         <!-- Фильтры: биржа + банк + валюта -->
@@ -257,6 +258,49 @@
             </div>
         </div>
     </div>
+
+    <div id="balanceCorrectionView" class="hidden">
+        <div class="form-section" style="background: rgba(255,108,108,0.05); border-color: rgba(255,108,108,0.2);">
+            <h5 style="margin-top: 0; margin-bottom: 4px; color: var(--danger); font-size: 15px;">🔻 Коррекция остатка</h5>
+            <p style="margin-top:0; margin-bottom:16px; color:var(--muted); font-size:12px;">
+                Списать часть остатка, если крипта выведена из оборота (не распродана обратно) — снижает «Текущий остаток» задним числом не влияя на реальные сделки.
+            </p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 2fr auto; gap: 12px; align-items: end;">
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Количество</label>
+                    <input type="number" id="corrAmount" class="input-profit" placeholder="0.00">
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Курс</label>
+                    <input type="number" id="corrPrice" class="input-profit" placeholder="0.00">
+                    <div id="corrPriceHint" style="margin-top:4px; font-size:11px; color:var(--muted);">Средний курс остатка на текущий момент</div>
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Криптовалюта</label>
+                    <select class="input-profit" id="corrCurrency" onchange="updateCorrPriceHint()">
+                        <option value="USDT">USDT</option>
+                        <option value="TON">TON</option>
+                        <option value="BTC">BTC</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Назначение</label>
+                    <input type="text" id="corrPurpose" class="input-profit" placeholder="Из-за чего списывается криптовалюта">
+                </div>
+                <div>
+                    <button class="btn-add-expense" onclick="addBalanceCorrection()">Добавить</button>
+                </div>
+            </div>
+        </div>
+        <div class="table-section" style="margin-top: 20px;">
+            <div class="table-header">
+                <div class="table-title" style="color:var(--text);">🔻 Журнал списаний остатка</div>
+            </div>
+            <div id="balanceCorrectionListContainer">
+                <div class="no-data">Загрузка...</div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -351,11 +395,12 @@
     // =====================================================================
     function setView(viewName) {
         currentView = viewName;
-        ['btnToday','btnMonth','btnExpenses'].forEach(function(id) {
+        ['btnToday','btnMonth','btnExpenses','btnCorrection'].forEach(function(id) {
             document.getElementById(id).classList.remove('active');
         });
         document.getElementById('resultsSection').classList.add('hidden');
         document.getElementById('expensesView').classList.add('hidden');
+        document.getElementById('balanceCorrectionView').classList.add('hidden');
         document.getElementById('filtersRow').classList.remove('hidden');
 
         if (viewName === 'today') {
@@ -372,6 +417,12 @@
             document.getElementById('filtersRow').classList.add('hidden');
             document.getElementById('expensesView').classList.remove('hidden');
             loadExpenses();
+        } else if (viewName === 'correction') {
+            document.getElementById('btnCorrection').classList.add('active');
+            document.getElementById('filtersRow').classList.add('hidden');
+            document.getElementById('balanceCorrectionView').classList.remove('hidden');
+            loadBalanceCorrections();
+            if (!lastTurnover) { loadTurnover().then(updateCorrPriceHint); } else { updateCorrPriceHint(); }
         }
     }
 
@@ -448,6 +499,81 @@
                       + '<div style="display:flex;align-items:center;gap:16px;"><span class="amount-cell expense-amount">' + formatMoney(exp.amount) + ' ₽</span>'
                       + '<button class="btn-delete-expense" onclick="deleteExpense(' + exp.id + ')">✖</button></div></div>';
             });
+        });
+        container.innerHTML = html;
+    }
+
+    // =====================================================================
+    // КОРРЕКЦИЯ ОСТАТКА
+    // =====================================================================
+    function updateCorrPriceHint() {
+        var currency = document.getElementById('corrCurrency').value;
+        var hint = document.getElementById('corrPriceHint');
+        if (!lastTurnover) { hint.textContent = 'Средний курс остатка на текущий момент'; return; }
+        var price = currency === 'TON' ? lastTurnover.ton_avg_price : lastTurnover.usdt_avg_price;
+        if (currency === 'BTC' || !price) {
+            hint.textContent = 'Средний курс остатка на текущий момент' + (currency === 'BTC' ? ' (BTC в системе не отслеживается — введите курс сами)' : '');
+        } else {
+            hint.textContent = 'Средний курс остатка на текущий момент: ' + formatMoney(price) + ' ₽';
+        }
+    }
+
+    async function loadBalanceCorrections() {
+        try {
+            var res  = await fetch(window.location.pathname + '?action=get_balance_corrections');
+            var data = await res.json();
+            renderBalanceCorrections(data.corrections || []);
+        } catch (e) {
+            document.getElementById('balanceCorrectionListContainer').innerHTML = '<div class="no-data" style="color:var(--danger)">Не удалось загрузить список</div>';
+        }
+    }
+
+    async function addBalanceCorrection() {
+        var amount   = safeFloat(document.getElementById('corrAmount').value);
+        var price    = safeFloat(document.getElementById('corrPrice').value);
+        var currency = document.getElementById('corrCurrency').value;
+        var purpose  = document.getElementById('corrPurpose').value.trim();
+
+        if (amount <= 0 || price <= 0 || !purpose) { alert('Заполните количество, курс и назначение.'); return; }
+
+        var ok = confirm(
+            'Для списания остатка необходимо указать средний курс остатка на текущий момент. ' +
+            'Данный курс будет верным только в случае, если у вас пробиты все ордера. ' +
+            'Если есть непробитые ордера — сначала пробейте их и только потом списывайте остаток. ' +
+            'Списываем остаток?'
+        );
+        if (!ok) return;
+
+        await fetch(window.location.pathname + '?action=add_balance_correction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify({ amount: amount, price: price, currency: currency, purpose: purpose })
+        });
+        document.getElementById('corrAmount').value = '';
+        document.getElementById('corrPrice').value = '';
+        document.getElementById('corrPurpose').value = '';
+        loadBalanceCorrections();
+        lastTurnover = null; // остаток изменился — переcчитаем при следующем заходе на "Сегодня"
+    }
+
+    async function deleteBalanceCorrection(id) {
+        if (!confirm('Удалить это списание остатка?')) return;
+        await fetch(window.location.pathname + '?action=delete_balance_correction', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
+            body: JSON.stringify({ id: id })
+        });
+        loadBalanceCorrections();
+        lastTurnover = null;
+    }
+
+    function renderBalanceCorrections(corrections) {
+        var container = document.getElementById('balanceCorrectionListContainer');
+        if (!corrections.length) { container.innerHTML = '<div class="no-data">Списаний остатка пока нет</div>'; return; }
+        var html = '';
+        corrections.forEach(function(c) {
+            html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">-' + formatMoney(c.amount) + ' ' + c.currency + ' по курсу ' + formatMoney(c.price) + ' ₽ — ' + c.purpose + '</span><span class="expense-date">' + c.date + '</span></div>'
+                  + '<div style="display:flex;align-items:center;gap:16px;"><button class="btn-delete-expense" onclick="deleteBalanceCorrection(' + c.id + ')">✖</button></div></div>';
         });
         container.innerHTML = html;
     }

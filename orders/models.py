@@ -218,6 +218,29 @@ class UserExpense(models.Model):
     def __str__(self):
         return f"{self.name} — {self.amount} ₽ ({self.month})"
 
+class BalanceCorrection(models.Model):
+    """
+    Ручное списание остатка ("вывели крипту из оборота, не распродавая").
+    Сама сумма/количество живут в связанном Order (BUY, отрицательные
+    amount/cost, external_id="Списание остатка") — он и даёт эффект на
+    остаток/отчёты через тот же LIFO-расчёт, что и обычные ордера. Эта
+    модель хранит только назначение (для истории/списка) и даёт удобное
+    "удалить" — удаление CASCADE'ится с Order на эту запись.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='balance_corrections')
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='balance_correction')
+    purpose = models.CharField(max_length=255, verbose_name="Назначение")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Коррекция остатка"
+        verbose_name_plural = "Коррекции остатка"
+
+    def __str__(self):
+        return f"{self.user.username}: {self.purpose} ({self.created_at:%Y-%m-%d})"
+
+
 class DocumentSubmission(models.Model):
     user = models.ForeignKey(
         User, on_delete=models.CASCADE,

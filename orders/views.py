@@ -29,7 +29,7 @@ from .bybit_api import sync_bybit_orders
 from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
-from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry
+from .models import BankDetail, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry, BalanceCorrection
 from .receipt_service import create_or_update_and_send_receipt
 from zoneinfo import ZoneInfo
 MSK = ZoneInfo('Europe/Moscow')
@@ -598,6 +598,82 @@ def user_profit_view(request):
             return JsonResponse({'error': str(e)}, status=400)
 
     # =====================================================================
+    # КОРРЕКЦИЯ ОСТАТКА
+    # =====================================================================
+    # Ручное списание остатка (крипта выведена из оборота, не распродана) —
+    # реализовано как обычный BUY Order с отрицательными amount/cost и
+    # фиксированным external_id="Списание остатка". Он естественно проходит
+    # через тот же LIFO-расчёт, что и обычные ордера (и на этой странице,
+    # и в Excel-отчёте), без дублирования логики в отдельном месте.
+    # BalanceCorrection хранит только "назначение" и даёт удобный список/удаление.
+    BALANCE_CORRECTION_CURRENCIES = ('USDT', 'TON', 'BTC')
+
+    if action == 'get_balance_corrections':
+        corrections = (
+            BalanceCorrection.objects
+            .filter(user=user)
+            .select_related('order')
+            .order_by('-created_at')
+        )
+        return JsonResponse({'corrections': [
+            {
+                'id': c.id,
+                'purpose': c.purpose,
+                'amount': float(abs(c.order.amount)),
+                'price': float(abs(c.order.price)),
+                'currency': c.order.currency,
+                'date': c.order.created_at.strftime('%d.%m.%Y'),
+            }
+            for c in corrections
+        ]})
+
+    if action == 'add_balance_correction':
+        try:
+            body     = _json.loads(request.body)
+            amount   = abs(float(body.get('amount', 0)))
+            price    = abs(float(body.get('price', 0)))
+            currency = str(body.get('currency', '')).strip().upper()
+            purpose  = str(body.get('purpose', '')).strip()
+
+            if amount <= 0 or price <= 0:
+                return JsonResponse({'error': 'Количество и курс должны быть больше 0'}, status=400)
+            if currency not in BALANCE_CORRECTION_CURRENCIES:
+                return JsonResponse({'error': 'Некорректная валюта'}, status=400)
+            if not purpose:
+                return JsonResponse({'error': 'Укажите назначение списания'}, status=400)
+
+            correction_order = Order.objects.create(
+                user=user,
+                external_id='Списание остатка',
+                exchange_type='Коррекция остатка',
+                operation_type='BUY',
+                currency=currency,
+                amount=Decimal(str(-amount)),
+                price=Decimal(str(price)),
+                cost=Decimal(str(-round(amount * price, 2))),
+                is_verified=True,
+                is_manual=True,
+                created_at=timezone.now(),
+            )
+            correction = BalanceCorrection.objects.create(
+                user=user, order=correction_order, purpose=purpose,
+            )
+            return JsonResponse({'ok': True, 'id': correction.id})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    if action == 'delete_balance_correction':
+        try:
+            body = _json.loads(request.body)
+            cid  = int(body.get('id', 0))
+            correction = BalanceCorrection.objects.filter(id=cid, user=user).first()
+            if correction:
+                correction.order.delete()  # BalanceCorrection удалится каскадом
+            return JsonResponse({'ok': True})
+        except Exception as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+    # =====================================================================
     # ОБЩАЯ ПРЕДЗАГРУЗКА ДАННЫХ
     # =====================================================================
     def _preload_user_data(year=None):
@@ -1049,6 +1125,8 @@ def user_profit_view(request):
             'month_expenses': round(month_expenses, 2),
             'usdt_balance':   round(usdt_balance, 4),
             'ton_balance':    round(ton_balance,  4),
+            'usdt_avg_price': round(usdt.get('avg_price', 0) or 0, 4),
+            'ton_avg_price':  round(ton.get('avg_price', 0) or 0, 4),
             'crypto_balance': round(usdt_balance + ton_balance, 4),
             'crypto_delta':   round(crypto_delta, 4),
             'buy_orders':     serialize(buy_orders,  is_sell=False),
@@ -1728,11 +1806,16 @@ def export_excel_report(request):
         if abs_qty == 0:
             return 0.0
 
-        # Только BUY ордера текущего месяца — от последнего к первому
+        # Только BUY ордера текущего месяца — от последнего к первому.
+        # qty <= 0 пропускаем — это не реальная покупка (например, строка
+        # "Списание остатка" от коррекции), у неё нет своего LIFO-слоя
+        # себестоимости, но её количество уже учтено в остатке через сумму.
         buys = []
         for o in reversed(month_orders_list):
             if o.operation_type == 'BUY':
-                qty   = float(o.amount or 0)
+                qty = float(o.amount or 0)
+                if qty <= 0:
+                    continue
                 cost  = float(o.cost   or 0)
                 price = float(o.price  or 0)
                 unit_price = cost / qty if qty > 0 else price
@@ -2140,7 +2223,9 @@ def _calc_lifo_price(buy_orders, remainder_qty, prev_avg_price=0.0):
 
     buys = []
     for o in reversed(buy_orders):
-        qty  = float(o.amount or 0)
+        qty = float(o.amount or 0)
+        if qty <= 0:
+            continue
         cost = float(o.cost or 0)
         price = float(o.price or 0)
         unit_price = cost / qty if qty > 0 else price
@@ -2336,7 +2421,9 @@ def _calc_lifo_price_excel(month_buy_orders, remainder_qty, prev_carry=None):
 
     buys = []
     for o in reversed(month_buy_orders):
-        qty   = float(o.amount or 0)
+        qty = float(o.amount or 0)
+        if qty <= 0:
+            continue
         cost  = float(o.cost or 0)
         price = float(o.price or 0)
         unit_price = cost / qty if qty > 0 else price
