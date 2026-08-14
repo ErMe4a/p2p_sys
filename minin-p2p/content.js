@@ -700,9 +700,14 @@ function collectFormData() {
     const rateInput = document.querySelector('#rate-input');
     const quantityInput = document.querySelector('#quantity-input');
     const costInput = document.querySelector('#cost-input');
+    const currencySelect = document.querySelector('#currency-select');
+    formData.currency = currencySelect ? currencySelect.value : 'USDT';
+
+    // BTC — до 8 знаков после запятой (сатоши), иначе (USDT/TON) — 3, как раньше
+    const qtyDecimals = formData.currency === 'BTC' ? 8 : 3;
 
     let finalPrice    = cleanAndParseFloat(rateInput ? rateInput.value : '', 2);
-    let finalQuantity = cleanAndParseFloat(quantityInput ? quantityInput.value : '', 3);
+    let finalQuantity = cleanAndParseFloat(quantityInput ? quantityInput.value : '', qtyDecimals);
     let finalAmount   = cleanAndParseFloat(costInput ? costInput.value : '', 2);
 
     if (!finalPrice) {
@@ -711,7 +716,7 @@ function collectFormData() {
     }
     if (!finalQuantity) {
         console.log('P2P Analytics: Quantity missing in input, parsing from page...');
-        finalQuantity = cleanAndParseFloat(parseQuantityFromPage(), 3);
+        finalQuantity = cleanAndParseFloat(parseQuantityFromPage(), qtyDecimals);
     }
     if (!finalAmount) {
         console.log('P2P Analytics: Amount missing in input, parsing from page...');
@@ -726,7 +731,8 @@ function collectFormData() {
         console.log('P2P Analytics: Collecting receipt data...');
         let validQtyForReceipt = finalQuantity;
         if (validQtyForReceipt !== null) {
-            validQtyForReceipt = Math.floor(validQtyForReceipt * 1000) / 1000;
+            const receiptQtyFactor = formData.currency === 'BTC' ? 100000000 : 1000;
+            validQtyForReceipt = Math.floor(validQtyForReceipt * receiptQtyFactor) / receiptQtyFactor;
         }
         const receiptData = {
             contact: contactInput ? contactInput.value.trim() : '',
@@ -837,10 +843,11 @@ async function handleFormSubmission() {
             type: formData.type,
             exchangeType: EXCHANGE_TYPE_BYBIT,
             
-            price: formData.price,       
-            quantity: formData.quantity, 
+            price: formData.price,
+            quantity: formData.quantity,
             amount: formData.amount,
-            manualEdit: formData.manualEdit 
+            manualEdit: formData.manualEdit,
+            currency: formData.currency
         };
         
         console.log('P2P Analytics: Order data prepared:', orderData);
@@ -1458,6 +1465,10 @@ function createCheckContent() {
     const costInput = costInputWrapper.querySelector('#cost-input');
     conditionalInputs.appendChild(costInputWrapper);
 
+    const currencySelectWrapper = createSelect('Валюта', 'currency-select', ['USDT', 'TON', 'BTC'], 'USDT');
+    const currencySelect = currencySelectWrapper.querySelector('#currency-select');
+    conditionalInputs.appendChild(currencySelectWrapper);
+
     checkContent.appendChild(checkboxWrapper);
     checkContent.appendChild(editCheckboxWrapper);
     checkContent.appendChild(warningMessage);
@@ -1637,6 +1648,31 @@ function createCheckContent() {
     });
 
     return checkContent;
+}
+
+function createSelect(labelText, selectId, options, defaultValue) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'p2p-analytics-input-wrapper';
+
+    const label = document.createElement('label');
+    label.className = 'p2p-analytics-label';
+    label.textContent = labelText;
+
+    const select = document.createElement('select');
+    select.className = 'p2p-analytics-input';
+    select.id = selectId;
+    options.forEach(opt => {
+        const optionEl = document.createElement('option');
+        optionEl.value = opt;
+        optionEl.textContent = opt;
+        if (opt === defaultValue) optionEl.selected = true;
+        select.appendChild(optionEl);
+    });
+
+    wrapper.appendChild(label);
+    wrapper.appendChild(select);
+
+    return wrapper;
 }
 
 function createInput(labelText, inputId, placeholder) {

@@ -119,15 +119,20 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     if raw_quantity <= 0:
         raw_quantity = 1.0
 
-    # Усекаем до 3 знаков
-    quantity  = _truncate(raw_quantity,  3)   # кол-во USDT:  125.123
-    total_sum = _truncate(raw_total_sum, 2)   # сумма в руб:  9999.999
+    # 6. Валюта — нужна до усечения количества: у BTC 3 знака после запятой
+    # обнулили бы небольшие суммы (0.00034521 BTC -> 0.000), поэтому для BTC
+    # берём точность до сатоши (8 знаков), для USDT/TON — как и раньше, 3.
+    currency_name = getattr(order, "currency", "USDT")
+    qty_decimals = 8 if currency_name == "BTC" else 3
+
+    # Усекаем до нужного числа знаков
+    quantity  = _truncate(raw_quantity,  qty_decimals)   # кол-во USDT: 125.123 / BTC: 0.00034521
+    total_sum = _truncate(raw_total_sum, 2)              # сумма в руб: 9999.999
 
     # Цена = сумма / кол-во, тоже усекаем до 3
     price = _truncate(total_sum / quantity, 2)
 
-    # 6. Позиции
-    currency_name = getattr(order, "currency", "USDT")
+    # 7. Позиции
     item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_name}"
 
     items_obj = [{

@@ -216,6 +216,7 @@
                     <select class="form-select currency-select" name="currency" id="main_currency">
                         <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
                         <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
+                        <option value="BTC"  {% if saved_data.currency == 'BTC' %}selected{% endif %}>BTC</option>
                     </select>
                 </div>
             </div>
@@ -533,6 +534,7 @@
                                 <select class="form-select currency-select" name="currency" id="modal_currency">
                                     <option value="USDT">USDT</option>
                                     <option value="TON">TON</option>
+                                    <option value="BTC">BTC</option>
                                 </select>
                             </div>
                         </div>

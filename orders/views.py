@@ -205,13 +205,16 @@ def my_orders_list(request):
             if not contact_email:
                 contact_email = request.user.email
             currency = request.POST.get('currency', 'USDT').strip().upper()
-            if currency not in ('USDT', 'TON'):
+            if currency not in ('USDT', 'TON', 'BTC'):
                 currency = 'USDT'
+            # У BTC нужна точность до сатоши (8 знаков) — 3, как для USDT/TON,
+            # обнулили бы небольшие суммы (0.00034521 BTC -> 0.000).
+            amount_places = 8 if currency == 'BTC' else 3
             receipt_data = {
                 "contact": contact_email,
                 "sum":    truncate(order.cost,   2),
                 "price":  truncate(order.price,  2),
-                "amount": truncate(order.amount, 3),
+                "amount": truncate(order.amount, amount_places),
                 "purpose": f"Цифровая валюта {currency}",
             }
             create_or_update_and_send_receipt(order, receipt_data)
@@ -320,9 +323,9 @@ def edit_order(request, order_id):
         order.exchange_type  = request.POST.get('exchange')
         order.commission_type = request.POST.get('commission_type')
 
-        # 3. Валюта (USDT / TON)
+        # 3. Валюта (USDT / TON / BTC)
         currency = request.POST.get('currency', '').strip().upper()
-        if currency in ('USDT', 'TON'):
+        if currency in ('USDT', 'TON', 'BTC'):
             order.currency = currency
 
         # 4. Дата

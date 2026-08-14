@@ -180,6 +180,13 @@ def order(request):
     commission_type = data.get("commissionType", "PERCENT")
     is_manual       = bool(data.get("manualEdit", False))
 
+    # ИСПРАВЛЕНО: раньше currency вообще не читалась из payload — все ордера
+    # с расширения молча получали дефолт модели (USDT), независимо от того,
+    # что реально выбрано в форме (при ручном редактировании).
+    currency = str(data.get("currency") or "").strip().upper()
+    if currency not in ("USDT", "TON", "BTC"):
+        currency = None  # не трогаем текущее значение при обновлении / дефолт модели при создании
+
     # ── Защита от ошибочного ввода комиссии (опечатки типа 50 вместо 0.5) ──
     try:
         commission_value = float(commission)
@@ -323,6 +330,8 @@ def order(request):
         o.amount          = amount
         o.is_verified     = is_verified
         o.is_manual       = is_manual
+        if currency:
+            o.currency = currency
 
         if receipt_dict and not (o.receipt and o.receipt.get("uuid")):
             o.receipt = receipt_dict
