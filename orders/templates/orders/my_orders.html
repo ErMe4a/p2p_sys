@@ -619,21 +619,6 @@
             return;
         }
 
-        // Для Telegram оба скрина обязательны - это единственное доказательство
-        // сделки (нет ни расширения, ни автоверификации через API, как у
-        // Bybit/MEXC). Но только если включена галочка "Скрин" - если она
-        // снята, значит скриншоты для этого ордера осознанно не прикладываются.
-        if (createExchange.value === 'Telegram' && document.getElementById('checkScreen').checked) {
-            const during = document.getElementById('telegramScreenDuring');
-            const after  = document.getElementById('telegramScreenAfter');
-            const hasDuring = during && during.files && during.files.length > 0;
-            const hasAfter  = after  && after.files  && after.files.length > 0;
-            if (!hasDuring || !hasAfter) {
-                e.preventDefault();
-                alert('Для Telegram обязательны ОБА скриншота: во время исполнения сделки и после.');
-                return;
-            }
-        }
     });
 
     function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency) {

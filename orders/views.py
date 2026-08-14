@@ -126,20 +126,6 @@ def my_orders_list(request):
             request.session['order_error'] = f'Ордер {external_id} ({exchange_val}) уже существует в вашей системе'
             return redirect('my_orders')
 
-        # ЗАЩИТА 3: для Telegram оба скрина обязательны — это единственное
-        # доказательство сделки (нет ни расширения, ни автоверификации через
-        # API, как у Bybit/MEXC). Проверяем и на бэкенде, а не только в JS,
-        # чтобы нельзя было обойти отключением JS в браузере.
-        # Требование действует, только если включена галочка "Скрин" —
-        # если пользователь её снял, значит скриншоты для этого ордера
-        # осознанно не прикладываются вообще (как и для остальных бирж).
-        if exchange_val.lower() == 'telegram' and request.POST.get('use_screen'):
-            if not request.FILES.get('screenshot') or not request.FILES.get('screenshot_after'):
-                request.session['order_error'] = (
-                    'Для Telegram обязательны оба скриншота: во время исполнения сделки и после.'
-                )
-                return redirect('my_orders')
-
         bank_id = request.POST.get('details')
         bank_instance = None
         if bank_id:
