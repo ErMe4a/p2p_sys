@@ -261,10 +261,7 @@
 
     <div id="balanceCorrectionView" class="hidden">
         <div class="form-section" style="background: rgba(255,108,108,0.05); border-color: rgba(255,108,108,0.2);">
-            <h5 style="margin-top: 0; margin-bottom: 4px; color: var(--danger); font-size: 15px;">🔻 Коррекция остатка</h5>
-            <p style="margin-top:0; margin-bottom:16px; color:var(--muted); font-size:12px;">
-                Списать часть остатка, если крипта выведена из оборота (не распродана обратно) — снижает «Текущий остаток» задним числом не влияя на реальные сделки.
-            </p>
+            <h5 style="margin-top: 0; margin-bottom: 16px; color: var(--danger); font-size: 15px;">🔻 Коррекция остатка</h5>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 2fr auto; gap: 12px; align-items: end;">
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Количество</label>
@@ -272,8 +269,7 @@
                 </div>
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Курс</label>
-                    <input type="number" id="corrPrice" class="input-profit" placeholder="0.00">
-                    <div id="corrPriceHint" style="margin-top:4px; font-size:11px; color:var(--muted);">Средний курс остатка на текущий момент</div>
+                    <input type="number" id="corrPrice" class="input-profit" placeholder="0.00" title="Средний курс остатка на текущий момент">
                 </div>
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Криптовалюта</label>
@@ -507,14 +503,17 @@
     // КОРРЕКЦИЯ ОСТАТКА
     // =====================================================================
     function updateCorrPriceHint() {
-        var currency = document.getElementById('corrCurrency').value;
-        var hint = document.getElementById('corrPriceHint');
-        if (!lastTurnover) { hint.textContent = 'Средний курс остатка на текущий момент'; return; }
+        var currency  = document.getElementById('corrCurrency').value;
+        var priceInput = document.getElementById('corrPrice');
+        var base = 'Средний курс остатка на текущий момент';
+        if (!lastTurnover) { priceInput.title = base; priceInput.placeholder = '0.00'; return; }
         var price = currency === 'TON' ? lastTurnover.ton_avg_price : lastTurnover.usdt_avg_price;
         if (currency === 'BTC' || !price) {
-            hint.textContent = 'Средний курс остатка на текущий момент' + (currency === 'BTC' ? ' (BTC в системе не отслеживается — введите курс сами)' : '');
+            priceInput.title = base + (currency === 'BTC' ? ' (BTC в системе не отслеживается — введите курс сами)' : '');
+            priceInput.placeholder = '0.00';
         } else {
-            hint.textContent = 'Средний курс остатка на текущий момент: ' + formatMoney(price) + ' ₽';
+            priceInput.title = base + ': ' + formatMoney(price) + ' ₽';
+            priceInput.placeholder = formatMoney(price);
         }
     }
 
