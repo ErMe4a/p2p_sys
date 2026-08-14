@@ -689,27 +689,16 @@
             single.style.display = 'none';
             pair.style.display   = 'block';
             if (singleInput) singleInput.value = '';
-
-            // Для Telegram скрины обязательны - чекбокс всегда включён и
-            // заблокирован, блок с полями всегда виден (нельзя случайно
-            // спрятать единственное доказательство сделки).
-            if (screenBox) {
-                screenBox.checked  = true;
-                screenBox.disabled = true;
-            }
-            if (fileWrapper) fileWrapper.style.display = 'block';
         } else {
             single.style.display = 'block';
             pair.style.display   = 'none';
             if (during) during.value = '';
             if (after)  after.value  = '';
-
-            if (screenBox) {
-                screenBox.disabled = false;
-                // Возвращаем к тому, что юзер сам выбирал (по умолчанию
-                // выключено, как и было для остальных бирж).
-            }
         }
+
+        // Галочка "Скрин" всегда управляется юзером и показывает/скрывает
+        // блок загрузки - одинаково для Telegram и остальных бирж.
+        if (fileWrapper && screenBox) fileWrapper.style.display = screenBox.checked ? 'block' : 'none';
     }
     createExchange.addEventListener('change', handleTelegramScreenshot);
     handleTelegramScreenshot(); // при загрузке страницы
