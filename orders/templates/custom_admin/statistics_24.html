@@ -13,10 +13,10 @@
     /* Твои старые стили для карточек (сокращенно для примера) */
     .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
     .stat-card { background: var(--bg-card); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); }
-    .stat-value { font-size: 1.4rem; font-weight: bold; color: #fff; }
+    .stat-value { font-size: 1.4rem; font-weight: bold; color: var(--text-main); }
     .filters-section { background: var(--bg-card); padding: 20px; border-radius: 10px; border: 1px solid var(--border-color); margin-bottom: 20px; }
     .filters-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; }
-    .input { background: var(--bg-input); border: 1px solid var(--border-color); color: #fff; padding: 8px; border-radius: 4px; width: 100%; }
+    .input { background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-main); padding: 8px; border-radius: 4px; width: 100%; }
 </style>
 {% endblock %}
 
@@ -26,7 +26,7 @@
     <div class="text-center">
         <div class="spinner mb-3 mx-auto"></div>
         <div style="color:white; font-size: 1.2rem;">Синхронизация с Bybit...</div>
-        <small style="color:#aaa;">Это может занять несколько секунд</small>
+        <small style="color:var(--text-muted);">Это может занять несколько секунд</small>
     </div>
 </div>
 
@@ -35,7 +35,7 @@
         <div class="filters-section">
             <div class="filters-row">
                 <div style="flex: 1; min-width: 200px;">
-                    <label style="color:#aaa; font-size:0.8rem;">Пользователь</label>
+                    <label style="color:var(--text-muted); font-size:0.8rem;">Пользователь</label>
                     <select name="user" class="input">
                         <option value="">Все пользователи</option>
                         {% for u in users %}
@@ -47,7 +47,7 @@
                 </div>
 
                 <div style="flex: 1; min-width: 150px;">
-                    <label style="color:#aaa; font-size:0.8rem;">Источник</label>
+                    <label style="color:var(--text-muted); font-size:0.8rem;">Источник</label>
                     <select name="exchange" class="input">
                         <option value="">Все источники</option>
                         <option value="1" {% if current_exchange == '1' %}selected{% endif %}>Bybit</option>
@@ -55,7 +55,7 @@
                 </div>
 
                 <div style="flex: 1; min-width: 150px;">
-                    <label style="color:#aaa; font-size:0.8rem;">Тип</label>
+                    <label style="color:var(--text-muted); font-size:0.8rem;">Тип</label>
                     <select name="type" class="input">
                         <option value="">Все типы</option>
                         <option value="BUY" {% if current_type == 'BUY' %}selected{% endif %}>Покупка</option>
@@ -64,7 +64,7 @@
                 </div>
 
                 <div style="flex: 0 0 100px;">
-                    <label style="color:#aaa; font-size:0.8rem;">Кол-во</label>
+                    <label style="color:var(--text-muted); font-size:0.8rem;">Кол-во</label>
                     <select name="limit" class="input">
                         <option value="25" {% if current_limit == '25' %}selected{% endif %}>25</option>
                         <option value="50" {% if current_limit == '50' %}selected{% endif %}>50</option>
@@ -84,25 +84,25 @@
 
     <div class="stats-summary">
         <div class="stat-card">
-            <div style="color:#aaa; font-size:0.8rem;">Всего заказов</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Всего заказов</div>
             <div class="stat-value">{{ total_orders }}</div>
         </div>
         <div class="stat-card">
-            <div style="color:#aaa; font-size:0.8rem;">Покупки</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Покупки</div>
             <div class="stat-value" style="color:#00c087;">{{ buy_count }}</div>
         </div>
         <div class="stat-card">
-            <div style="color:#aaa; font-size:0.8rem;">Продажи</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Продажи</div>
             <div class="stat-value" style="color:#f84960;">{{ sell_count }}</div>
         </div>
         <div class="stat-card">
-            <div style="color:#aaa; font-size:0.8rem;">Оборот (Fiat)</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Оборот (Fiat)</div>
             <div class="stat-value" style="color:#3498db;">{{ total_amount|floatformat:0 }} ₽</div>
         </div>
     </div>
 
     <div class="table-container" style="background: var(--bg-card); border-radius: 10px; border: 1px solid var(--border-color); overflow:hidden;">
-        <table class="table mb-0" style="color: #ddd;">
+        <table class="table mb-0" style="color: var(--text-main);">
             <thead style="background: rgba(255,255,255,0.05);">
                 <tr>
                     <th>ID</th>

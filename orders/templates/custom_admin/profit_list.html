@@ -10,7 +10,7 @@
         color: var(--text-muted); padding: 8px 18px; border-radius: 8px;
         text-decoration: none; font-size: 0.85rem; transition: 0.2s; white-space: nowrap;
     }
-    .month-tab:hover { background: rgba(255,255,255,0.08); color: #fff; }
+    .month-tab:hover { background: rgba(255,255,255,0.08); color: var(--text-main); }
     .month-tab.active { background: rgba(108,140,255,0.15); border-color: var(--accent-blue); color: var(--accent-blue); font-weight: bold; }
 
     .finance-block { display: flex; flex-direction: column; gap: 5px; font-size: 0.82rem; }
@@ -35,7 +35,7 @@
     .balance-negative { color: #ff6c6c; }
 
     .filters-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    .filter-select { background: var(--bg-input); color: #fff; border: 1px solid var(--border-color); width: 140px; }
+    .filter-select { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); width: 140px; }
 
     .search-wrapper { position: relative; display: inline-block; }
     .search-wrapper input { width: 220px !important; padding-right: 30px !important; }
@@ -70,7 +70,7 @@
     .expense-tooltip { position: relative; display: inline-block; cursor: pointer; width: 100%; }
     .expense-tooltip .tooltip-box {
         display: none; position: absolute; right: 0; top: 100%;
-        background: #1a2035; border: 1px solid var(--border-color);
+        background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-main);
         border-radius: 8px; padding: 10px 14px; min-width: 220px;
         z-index: 999; box-shadow: 0 4px 20px rgba(0,0,0,0.5); font-size: 12px; white-space: nowrap;
     }
@@ -85,7 +85,7 @@
     .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
 
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-    .sortable:hover { color: #fff; }
+    .sortable:hover { color: var(--text-main); }
     .sort-icon { display: inline-block; margin-left: 4px; font-size: 10px; opacity: 0.5; }
     .sortable.sort-asc  .sort-icon::after { content: ' ▲'; opacity: 1; color: #6c8cff; }
     .sortable.sort-desc .sort-icon::after { content: ' ▼'; opacity: 1; color: #6c8cff; }
@@ -123,7 +123,7 @@
                 <span class="search-icon">🔍</span>
                 <div id="searchDropdown" style="
                     display:none; position:absolute; top:100%; left:0; right:0;
-                    background:#1a2035; border:1px solid var(--border-color);
+                    background:var(--bg-card); border:1px solid var(--border-color);
                     border-radius:8px; z-index:1000; margin-top:4px;
                     box-shadow:0 4px 20px rgba(0,0,0,0.5); overflow:hidden;
                 "></div>
@@ -306,7 +306,7 @@
                                 </div>
                                 {% if stat.top_bank_comm_orders %}
                                 <div class="tooltip-box">
-                                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">🏦 Топ-3 крупнейших комиссий</div>
+                                    <div style="font-weight: 600; color: var(--text-main); margin-bottom: 6px;">🏦 Топ-3 крупнейших комиссий</div>
                                     {% for row in stat.top_bank_comm_orders %}
                                     <div class="tooltip-row">
                                         <span style="color: var(--text-muted);">{{ row.op }} {{ row.date }} ({{ row.cost }}₽)</span>
@@ -332,7 +332,7 @@
                                     <span style="font-size:10px;color:var(--text-muted);">₽</span>
                                 </div>
                                 <div class="tooltip-box">
-                                    <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">📋 Расходы за месяц</div>
+                                    <div style="font-weight: 600; color: var(--text-main); margin-bottom: 6px;">📋 Расходы за месяц</div>
                                     {% for exp in stat.expenses_list %}
                                     <div class="tooltip-row">
                                         <span style="color: var(--text-muted);">{{ exp.name }}</span>
