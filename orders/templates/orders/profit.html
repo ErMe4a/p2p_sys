@@ -351,8 +351,10 @@
     // КАРТОЧКА БАЛАНСА
     // =====================================================================
     function updateBalanceCard(data) {
-        const usdt  = safeFloat(data.usdt_balance);
-        const ton   = safeFloat(data.ton_balance);
+        const usdt      = safeFloat(data.usdt_balance);
+        const ton       = safeFloat(data.ton_balance);
+        const usdtPrice = safeFloat(data.usdt_avg_price);
+        const tonPrice  = safeFloat(data.ton_avg_price);
         const card  = document.getElementById('balanceCard');
         const title = document.getElementById('balanceCardTitle');
         const value = document.getElementById('cryptoBalance');
@@ -366,22 +368,24 @@
             title.textContent = 'Остаток USDT';
             value.style.color = 'var(--ok)';
             value.textContent = usdt.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT';
-            sub.textContent   = '';
+            sub.textContent   = usdtPrice ? ('курс ' + formatMoney(usdtPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток USDT';
         } else if (currentCurrency === 'ton') {
             card.classList.add('balance-ton');
             title.textContent = 'Остаток TON';
             value.style.color = 'var(--ton)';
             value.textContent = ton.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TON';
-            sub.textContent   = '';
+            sub.textContent   = tonPrice ? ('курс ' + formatMoney(tonPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток TON';
         } else {
             card.classList.add('balance-all');
             title.textContent = 'Текущий остаток';
             value.style.color = '#6c8cff';
             value.textContent = '';
-            sub.innerHTML = '<div style="color:var(--ok);line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT</div>'
-                          + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON</div>';
+            sub.innerHTML = '<div style="color:var(--ok);line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT'
+                          + (usdtPrice ? ' · курс ' + formatMoney(usdtPrice) + ' ₽' : '') + '</div>'
+                          + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON'
+                          + (tonPrice ? ' · курс ' + formatMoney(tonPrice) + ' ₽' : '') + '</div>';
             hint.textContent = 'Глобальный остаток крипты';
         }
     }
