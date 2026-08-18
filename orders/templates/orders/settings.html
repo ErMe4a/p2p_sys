@@ -254,9 +254,9 @@
         <div class="row">
             <div class="col-md-6">
                 <label class="field-label">Банки — какие показывать при ручном пробитии</label>
-                {% if allowed_banks %}
+                {% if all_banks %}
                     <div class="access-checkbox-list">
-                        {% for bank in allowed_banks %}
+                        {% for bank in all_banks %}
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="visible_banks"
                                        value="{{ bank.id }}" id="vb_{{ bank.id }}"
@@ -266,14 +266,14 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <small style="color: var(--text-muted);">Вам пока не разрешён ни один банк — обратитесь к администратору.</small>
+                    <small style="color: var(--text-muted);">Банков в системе пока нет.</small>
                 {% endif %}
             </div>
             <div class="col-md-6">
                 <label class="field-label">Биржи — какие показывать при ручном пробитии</label>
-                {% if allowed_exchanges %}
+                {% if all_exchanges %}
                     <div class="access-checkbox-list">
-                        {% for exchange in allowed_exchanges %}
+                        {% for exchange in all_exchanges %}
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="visible_exchanges"
                                        value="{{ exchange.id }}" id="ve_{{ exchange.id }}"
@@ -283,7 +283,7 @@
                         {% endfor %}
                     </div>
                 {% else %}
-                    <small style="color: var(--text-muted);">Вам пока не разрешена ни одна биржа — обратитесь к администратору.</small>
+                    <small style="color: var(--text-muted);">Бирж в системе пока нет.</small>
                 {% endif %}
             </div>
         </div>

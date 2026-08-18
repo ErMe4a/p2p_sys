@@ -450,14 +450,12 @@ def profile_settings(request):
         user.bitget_commission   = float(request.POST.get('bitget_commission') or 0)
         user.telegram_commission = float(request.POST.get('telegram_commission') or 0.9)
 
-        # 3.5 Какие банки/биржи показывать (уровень 2 — личный выбор юзера,
-        # ограниченный сверху тем, что разрешено админом — allowed_banks/
-        # allowed_exchanges). Пересечение через __in защищает от того, что
-        # кто-то руками подсунет в POST id банка, к которому доступа нет.
+        # 3.5 Какие банки/биржи показывать при ручном пробитии — личный выбор
+        # юзера из общего каталога (BankDetail/Exchange, один на всю систему).
         selected_bank_ids     = request.POST.getlist('visible_banks')
         selected_exchange_ids = request.POST.getlist('visible_exchanges')
-        user.visible_banks.set(user.allowed_banks.filter(id__in=selected_bank_ids))
-        user.visible_exchanges.set(user.allowed_exchanges.filter(id__in=selected_exchange_ids))
+        user.visible_banks.set(BankDetail.objects.filter(id__in=selected_bank_ids, is_deleted=False))
+        user.visible_exchanges.set(Exchange.objects.filter(id__in=selected_exchange_ids, is_deleted=False))
 
         # 4. Логика смены пароля
         new_password = request.POST.get('new_password')
@@ -472,15 +470,15 @@ def profile_settings(request):
 
         return redirect('settings')
 
-    allowed_banks      = user.allowed_banks.filter(is_deleted=False).order_by('id')
-    allowed_exchanges  = user.allowed_exchanges.filter(is_deleted=False).order_by('id')
+    all_banks      = BankDetail.objects.filter(is_deleted=False).order_by('id')
+    all_exchanges  = Exchange.objects.filter(is_deleted=False).order_by('id')
     visible_bank_ids     = set(user.visible_banks.values_list('id', flat=True))
     visible_exchange_ids = set(user.visible_exchanges.values_list('id', flat=True))
 
     return render(request, 'orders/settings.html', {
         'user': user,
-        'allowed_banks':         allowed_banks,
-        'allowed_exchanges':     allowed_exchanges,
+        'all_banks':             all_banks,
+        'all_exchanges':         all_exchanges,
         'visible_bank_ids':      visible_bank_ids,
         'visible_exchange_ids':  visible_exchange_ids,
     })
@@ -1539,15 +1537,15 @@ def admin_users_list(request):
             )
 
             # Дефолт для новых юзеров (по задаче): из банков — только
-            # Сбербанк, из бирж — всё кроме Intelion. Дальше юзер сам
-            # донастраивает в /settings/, или админ донастраивает за него.
+            # Сбербанк, из бирж — всё кроме Intelion показано сразу. Банки/
+            # биржи — общий каталог на всю систему, юзер сам донастраивает
+            # в /settings/ (может добавить что угодно из каталога, это уже
+            # не ограничено админом).
             sberbank = BankDetail.objects.filter(is_deleted=False, name__icontains='сбер').first()
             if sberbank:
-                new_user.allowed_banks.set([sberbank])
                 new_user.visible_banks.set([sberbank])
 
             default_exchanges = list(Exchange.objects.filter(is_deleted=False).exclude(name='Intelion'))
-            new_user.allowed_exchanges.set(default_exchanges)
             new_user.visible_exchanges.set(default_exchanges)
 
             messages.success(request, f"Пользователь {username} создан.")
@@ -1655,34 +1653,7 @@ def admin_users_list(request):
 
         return redirect('admin_users')
 
-    # === 5. Доступ к банкам и биржам (уровень 1 — что юзеру разрешено) ===
-    if request.method == 'POST' and request.POST.get('action') == 'edit_access':
-        user_id = request.POST.get('user_id')
-        try:
-            user_to_edit = User.objects.get(id=user_id)
-
-            bank_ids     = request.POST.getlist('allowed_banks')
-            exchange_ids = request.POST.getlist('allowed_exchanges')
-
-            new_banks     = BankDetail.objects.filter(id__in=bank_ids)
-            new_exchanges = Exchange.objects.filter(id__in=exchange_ids)
-
-            user_to_edit.allowed_banks.set(new_banks)
-            user_to_edit.allowed_exchanges.set(new_exchanges)
-
-            # Уровень 2 (то, что юзер сам себе показывает) не может содержать
-            # больше, чем только что разрешили на уровне 1 — если что-то убрали
-            # здесь, оно должно пропасть и из личного выбора юзера тоже.
-            user_to_edit.visible_banks.set(user_to_edit.visible_banks.filter(id__in=bank_ids))
-            user_to_edit.visible_exchanges.set(user_to_edit.visible_exchanges.filter(id__in=exchange_ids))
-
-            messages.success(request, f"Доступ к банкам/биржам для {user_to_edit.username} обновлён.")
-        except User.DoesNotExist:
-            messages.error(request, "Пользователь не найден.")
-
-        return redirect('admin_users')
-
-    # === 6. Вывод списка пользователей ===
+    # === 5. Вывод списка пользователей ===
     users = User.objects.all().order_by('id')
 
     # Один запрос — все user_id у которых есть manual entries
@@ -1714,16 +1685,6 @@ def admin_users_list(request):
     )
     balance_map = {row['user_id']: row for row in balance_qs}
 
-    # Доступные банки/биржи по каждому юзеру — одним запросом на всех,
-    # чтобы не плодить N+1 при рендере кнопки "🏦 Банки/Биржи" в таблице.
-    allowed_banks_map = defaultdict(list)
-    for row in User.allowed_banks.through.objects.values('user_id', 'bankdetail_id'):
-        allowed_banks_map[row['user_id']].append(row['bankdetail_id'])
-
-    allowed_exchanges_map = defaultdict(list)
-    for row in User.allowed_exchanges.through.objects.values('user_id', 'exchange_id'):
-        allowed_exchanges_map[row['user_id']].append(row['exchange_id'])
-
     for u in users:
         bal = balance_map.get(u.id, {})
         bought = float(bal.get('total_buy',  0) or 0)
@@ -1747,15 +1708,10 @@ def admin_users_list(request):
         u.shares_json       = json.dumps(u.profit_shares) if u.profit_shares else "{}"
         u.has_manual_entries = u.id in users_with_manual
 
-        u.allowed_bank_ids_json     = json.dumps(allowed_banks_map.get(u.id, []))
-        u.allowed_exchange_ids_json = json.dumps(allowed_exchanges_map.get(u.id, []))
-
     return render(request, 'custom_admin/users_list.html', {
         'users': users,
         'fns_year': timezone.now().year,
         'queue_depths': _get_celery_queue_depths(),
-        'all_banks':     BankDetail.objects.filter(is_deleted=False).order_by('id'),
-        'all_exchanges': Exchange.objects.filter(is_deleted=False).order_by('id'),
     })
 
 

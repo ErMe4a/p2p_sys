@@ -48,19 +48,14 @@ class User(AbstractUser):
         verbose_name="Статус ФНС (кэш)"
     )
 
-    # Доступ к банкам/биржам — два уровня:
-    #   allowed_* — что админ разрешил юзеру вообще (редактируется только в админке).
-    #   visible_* — что из разрешённого юзер сам решил показывать себе в списке при
-    #               ручном пробитии ордера (редактируется юзером в /settings/, но не
-    #               может выйти за пределы allowed_* — см. profile_settings/admin_users_list).
-    allowed_banks = models.ManyToManyField(
-        'BankDetail', blank=True, related_name='allowed_users', verbose_name="Разрешённые банки"
-    )
+    # Банки/биржи — один общий каталог для всей системы (BankDetail/Exchange,
+    # редактируется в /admin/). visible_* — что из этого общего каталога юзер
+    # сам решил показывать себе в списке при ручном пробитии ордера,
+    # редактируется юзером в /settings/. Никакого отдельного admin-разрешения
+    # "уровня 1" больше нет — раньше было (allowed_banks/allowed_exchanges),
+    # убрано по прямому запросу: один общий список на всех, без грантов.
     visible_banks = models.ManyToManyField(
         'BankDetail', blank=True, related_name='visible_users', verbose_name="Показывать банки"
-    )
-    allowed_exchanges = models.ManyToManyField(
-        'Exchange', blank=True, related_name='allowed_users', verbose_name="Разрешённые биржи"
     )
     visible_exchanges = models.ManyToManyField(
         'Exchange', blank=True, related_name='visible_users', verbose_name="Показывать биржи"
