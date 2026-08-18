@@ -94,7 +94,7 @@ def users_me(request):
 @permission_classes([IsAuthenticated])
 def details(request):
     if request.method == "GET":
-        qs = BankDetail.objects.filter(is_deleted=False).order_by("id")
+        qs = request.user.visible_banks.filter(is_deleted=False).order_by("id")
         return Response([{"id": d.id, "name": d.name} for d in qs])
     return Response({"message": "Creating banks is disabled via API"}, status=403)
 

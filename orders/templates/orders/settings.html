@@ -78,6 +78,23 @@
         color: #fff !important; /* При наведении текст всегда белый */
     }
     
+    .access-checkbox-list {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px 12px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 12px 14px;
+        margin-bottom: 15px;
+        max-height: 220px;
+        overflow-y: auto;
+    }
+    .access-checkbox-list .form-check-label {
+        font-size: 0.85rem;
+        color: var(--text-main);
+    }
+
     .footer-link {
         text-align: center;
         font-size: 0.75rem;
@@ -233,6 +250,44 @@
             </div>
         </div>
         
+        <div class="section-divider">Мои банки и биржи</div>
+        <div class="row">
+            <div class="col-md-6">
+                <label class="field-label">Банки — какие показывать при ручном пробитии</label>
+                {% if allowed_banks %}
+                    <div class="access-checkbox-list">
+                        {% for bank in allowed_banks %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="visible_banks"
+                                       value="{{ bank.id }}" id="vb_{{ bank.id }}"
+                                       {% if bank.id in visible_bank_ids %}checked{% endif %}>
+                                <label class="form-check-label" for="vb_{{ bank.id }}">{{ bank.name }}</label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <small style="color: var(--text-muted);">Вам пока не разрешён ни один банк — обратитесь к администратору.</small>
+                {% endif %}
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Биржи — какие показывать при ручном пробитии</label>
+                {% if allowed_exchanges %}
+                    <div class="access-checkbox-list">
+                        {% for exchange in allowed_exchanges %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="visible_exchanges"
+                                       value="{{ exchange.id }}" id="ve_{{ exchange.id }}"
+                                       {% if exchange.id in visible_exchange_ids %}checked{% endif %}>
+                                <label class="form-check-label" for="ve_{{ exchange.id }}">{{ exchange.name }}</label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <small style="color: var(--text-muted);">Вам пока не разрешена ни одна биржа — обратитесь к администратору.</small>
+                {% endif %}
+            </div>
+        </div>
+
         <div class="section-divider">Безопасность</div>
         <div class="row">
             <div class="col-md-12">

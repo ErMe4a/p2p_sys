@@ -48,6 +48,24 @@ class User(AbstractUser):
         verbose_name="Статус ФНС (кэш)"
     )
 
+    # Доступ к банкам/биржам — два уровня:
+    #   allowed_* — что админ разрешил юзеру вообще (редактируется только в админке).
+    #   visible_* — что из разрешённого юзер сам решил показывать себе в списке при
+    #               ручном пробитии ордера (редактируется юзером в /settings/, но не
+    #               может выйти за пределы allowed_* — см. profile_settings/admin_users_list).
+    allowed_banks = models.ManyToManyField(
+        'BankDetail', blank=True, related_name='allowed_users', verbose_name="Разрешённые банки"
+    )
+    visible_banks = models.ManyToManyField(
+        'BankDetail', blank=True, related_name='visible_users', verbose_name="Показывать банки"
+    )
+    allowed_exchanges = models.ManyToManyField(
+        'Exchange', blank=True, related_name='allowed_users', verbose_name="Разрешённые биржи"
+    )
+    visible_exchanges = models.ManyToManyField(
+        'Exchange', blank=True, related_name='visible_users', verbose_name="Показывать биржи"
+    )
+
     def __str__(self):
         return self.username
 
@@ -55,6 +73,20 @@ class User(AbstractUser):
 
 class BankDetail(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название банка")
+    is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
+
+    def __str__(self):
+        return self.name
+
+
+class Exchange(models.Model):
+    """
+    Каталог бирж для ручного ввода ордеров (по образцу BankDetail).
+    НЕ связана с Order.exchange_type (это свободное текстовое поле,
+    сюда не трогаем) — только каталог для доступа/показа в выпадающих
+    списках на my_orders.html, см. User.allowed_exchanges/visible_exchanges.
+    """
+    name = models.CharField(max_length=255, verbose_name="Название биржи")
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
 
     def __str__(self):

@@ -231,16 +231,9 @@
             </div>
             <div class="col-md-3">
                 <select class="form-select" name="exchange" id="createExchange">
-                    <option value="Bybit"    {% if saved_data.exchange == 'Bybit' %}selected{% endif %}>Bybit</option>
-                    <option value="HTX"      {% if saved_data.exchange == 'HTX' %}selected{% endif %}>HTX</option>
-                    <option value="MEXC"     {% if saved_data.exchange == 'MEXC' %}selected{% endif %}>MEXC</option>
-                    <option value="Telegram" {% if saved_data.exchange == 'Telegram' %}selected{% endif %}>Telegram</option>
-                    <option value="Bitget"   {% if saved_data.exchange == 'Bitget' %}selected{% endif %}>Bitget</option>
-                    <option value="Gate"     {% if saved_data.exchange == 'Gate' %}selected{% endif %}>Gate</option>
-                    <option value="EMCD"     {% if saved_data.exchange == 'EMCD' %}selected{% endif %}>EMCD</option>
-                    <option value="BingX"    {% if saved_data.exchange == 'BingX' %}selected{% endif %}>BingX</option>
-                    <option value="Rapira"   {% if saved_data.exchange == 'Rapira' %}selected{% endif %}>Rapira</option>
-                    <option value="Intelion" {% if saved_data.exchange == 'Intelion' %}selected{% endif %}>Intelion</option>
+                    {% for exchange in visible_exchanges %}
+                        <option value="{{ exchange.name }}" {% if saved_data.exchange == exchange.name %}selected{% endif %}>{{ exchange.name }}</option>
+                    {% endfor %}
                 </select>
             </div>
         </div>
@@ -249,7 +242,7 @@
             <div class="col-md-3">
                 <select class="form-select" name="details" required>
                     <option disabled value="" {% if not saved_data.details %}selected{% endif %}>Выберите банк...</option>
-                    {% for bank in default_banks %}
+                    {% for bank in visible_banks %}
                         <option value="{{ bank.id }}" {% if saved_data.details|stringformat:"s" == bank.id|stringformat:"s" %}selected{% endif %}>{{ bank.name }}</option>
                     {% endfor %}
                 </select>
@@ -392,10 +385,12 @@
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
                 <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
                 <td>{{ order.price|floatformat:"-2" }}</td>
-                <td>{{ order.amount|floatformat:"-4" }}</td>
+                <td>{% if order.currency == 'BTC' %}{{ order.amount|floatformat:"-8" }}{% else %}{{ order.amount|floatformat:"-4" }}{% endif %}</td>
                 <td>
                     {% if order.currency == 'TON' %}
                         <span style="color:#3d9af5; font-weight:600; font-size:11px;">TON</span>
+                    {% elif order.currency == 'BTC' %}
+                        <span style="color:#f7931a; font-weight:600; font-size:11px;">BTC</span>
                     {% else %}
                         <span style="color:var(--success); font-weight:600; font-size:11px;">USDT</span>
                     {% endif %}
@@ -415,7 +410,7 @@
                 <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
                         <button class="btn btn-action"
-                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}')">
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}', '{{ order.bank_detail.name|default:""|escapejs }}')">
                             Изм.
                         </button>
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить (во время сделки)">📷</button>
@@ -502,23 +497,16 @@
                         <div class="col-md-6">
                             <label class="form-label">Биржа</label>
                             <select class="form-select" name="exchange" id="modal_exchange">
-                                <option value="Bybit">Bybit</option>
-                                <option value="HTX">HTX</option>
-                                <option value="MEXC">MEXC</option>
-                                <option value="Telegram">Telegram</option>
-                                <option value="Bitget">Bitget</option>
-                                <option value="Gate">Gate</option>
-                                <option value="EMCD">EMCD</option>
-                                <option value="BingX">BingX</option>
-                                <option value="Rapira">Rapira</option>
-                                <option value="Intelion">Intelion</option>
+                                {% for exchange in visible_exchanges %}
+                                    <option value="{{ exchange.name }}">{{ exchange.name }}</option>
+                                {% endfor %}
                             </select>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Реквизиты</label>
                             <select class="form-select" name="details" id="modal_details">
                                 <option value="">Не указано</option>
-                                {% for bank in default_banks %}
+                                {% for bank in visible_banks %}
                                     <option value="{{ bank.id }}">{{ bank.name }}</option>
                                 {% endfor %}
                             </select>
@@ -621,11 +609,30 @@
 
     });
 
-    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency) {
+    // Юзер сам ограничивает себе список банков/бирж в /settings/ — если у
+    // редактируемого ордера банк/биржа, которых сейчас нет в выпадающем
+    // списке (скрыл сам или админ отозвал доступ), .value = X ничего не
+    // выберет молча, и при сохранении без правки полей уйдёт ПЕРВЫЙ пункт
+    // списка вместо реального — незаметная порча данных. Поэтому сначала
+    // проверяем, есть ли такой <option>, и если нет — временно добавляем.
+    function ensureOption(selectEl, value, label) {
+        if (!value) return;
+        var exists = Array.from(selectEl.options).some(function(o) { return o.value === value; });
+        if (!exists) {
+            var opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = (label || value) + ' (нет в списке — доступ скрыт/отозван)';
+            selectEl.appendChild(opt);
+        }
+    }
+
+    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency, bankName) {
         document.getElementById('editForm').action       = '/edit/' + id + '/';
         document.getElementById('display_id').innerText  = id;
+        ensureOption(document.getElementById('modal_details'), bankId, bankName);
         document.getElementById('modal_details').value   = bankId;
         document.getElementById('modal_op_type').value   = opType;
+        ensureOption(document.getElementById('modal_exchange'), exchange, exchange);
         document.getElementById('modal_exchange').value  = exchange;
         document.getElementById('modal_price').value     = price;
         document.getElementById('modal_amount').value    = amount;
