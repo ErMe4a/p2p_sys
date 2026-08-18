@@ -2833,6 +2833,69 @@ def export_uvedomlenie(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
+def _year_turnover_by_month(year, exchange_filter='', bank_filter_id=''):
+    """
+    Оборот (BUY/SELL сумма в рублях) по месяцам за год, по ВСЕМ юзерам сразу.
+    Не считает прибыль/LIFO — только SUM(cost), это дешёво (12 запросов,
+    один на месяц) в отличие от полного помесячного расчёта по каждому юзеру.
+    """
+    months_meta = [
+        {'num': '01', 'name': 'Январь'},   {'num': '02', 'name': 'Февраль'},
+        {'num': '03', 'name': 'Март'},     {'num': '04', 'name': 'Апрель'},
+        {'num': '05', 'name': 'Май'},      {'num': '06', 'name': 'Июнь'},
+        {'num': '07', 'name': 'Июль'},     {'num': '08', 'name': 'Август'},
+        {'num': '09', 'name': 'Сентябрь'}, {'num': '10', 'name': 'Октябрь'},
+        {'num': '11', 'name': 'Ноябрь'},   {'num': '12', 'name': 'Декабрь'},
+    ]
+
+    rows = []
+    total = {'all_buy': 0.0, 'all_sell': 0.0, 'usdt_buy': 0.0, 'usdt_sell': 0.0, 'ton_buy': 0.0, 'ton_sell': 0.0}
+
+    for m in months_meta:
+        mo = int(m['num'])
+        month_start = datetime(year, mo, 1, tzinfo=MSK)
+        month_end   = (datetime(year + 1, 1, 1, tzinfo=MSK)
+                       if mo == 12 else datetime(year, mo + 1, 1, tzinfo=MSK))
+
+        qs = Order.objects.filter(
+            created_at__gte=max(month_start, SYSTEM_START),
+            created_at__lt=month_end,
+        )
+        if exchange_filter:
+            qs = qs.filter(exchange_type__icontains=exchange_filter)
+        if bank_filter_id:
+            qs = qs.filter(bank_detail_id=bank_filter_id)
+
+        row = {'num': m['num'], 'name': m['name'],
+               'all_buy': 0.0, 'all_sell': 0.0, 'usdt_buy': 0.0, 'usdt_sell': 0.0, 'ton_buy': 0.0, 'ton_sell': 0.0}
+
+        for grp in qs.values('operation_type', 'currency').annotate(s=Sum('cost')):
+            val    = float(grp['s'] or 0)
+            suffix = 'buy' if grp['operation_type'] == 'BUY' else 'sell'
+            row[f'all_{suffix}'] += val
+            total[f'all_{suffix}'] += val
+            if grp['currency'] == 'USDT':
+                row[f'usdt_{suffix}'] += val
+                total[f'usdt_{suffix}'] += val
+            elif grp['currency'] == 'TON':
+                row[f'ton_{suffix}'] += val
+                total[f'ton_{suffix}'] += val
+
+        for key in ('all', 'usdt', 'ton'):
+            row[f'{key}_turnover'] = round(row[f'{key}_buy'] + row[f'{key}_sell'], 2)
+            row[f'{key}_buy']      = round(row[f'{key}_buy'], 2)
+            row[f'{key}_sell']     = round(row[f'{key}_sell'], 2)
+
+        rows.append(row)
+
+    for key in ('all', 'usdt', 'ton'):
+        total[f'{key}_turnover'] = round(total[f'{key}_buy'] + total[f'{key}_sell'], 2)
+        total[f'{key}_buy']      = round(total[f'{key}_buy'], 2)
+        total[f'{key}_sell']     = round(total[f'{key}_sell'], 2)
+
+    return {'rows': rows, 'total': total}
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
@@ -2856,6 +2919,25 @@ def admin_profit_view(request):
 
     exchange_filter = request.GET.get('exchange', '')
     bank_filter_id  = request.GET.get('bank', '')
+
+    # Вкладка "2026" (крайняя справа от месяцев) — сводный оборот по всей
+    # системе (все юзеры сразу) помесячно за год. Отдельная лёгкая ветка —
+    # не считает LIFO/прибыль по каждому юзеру (дорого, 142 юзера x 12
+    # месяцев), только SUM(cost) по BUY/SELL за месяц, это и есть "оборот".
+    if month_str == 'year':
+        try:
+            year = int(year_str)
+        except ValueError:
+            year = now.year
+        year_data = _year_turnover_by_month(year, exchange_filter, bank_filter_id)
+        return render(request, 'custom_admin/profit_year.html', {
+            'current_year':      year,
+            'selected_exchange': exchange_filter,
+            'selected_bank':     bank_filter_id,
+            'default_banks':     BankDetail.objects.filter(is_deleted=False),
+            'month_rows':        year_data['rows'],
+            'year_total':        year_data['total'],
+        })
 
     try:
         year  = int(year_str)
