@@ -28,6 +28,7 @@ urlpatterns = [
     path('p2p-admin/logout/', views.admin_logout, name='admin_logout'),
 
     path('p2p-admin/users/', views.admin_users_list, name='admin_users'),
+    path('p2p-admin/catalog/', views.admin_catalog, name='admin_catalog'),
     path('admin-panel/export/excel/', views.export_excel_report, name='export_excel'),
     path('p2p-admin/orders/', views.admin_orders_editor, name='admin_orders_editor'),
     path('p2p-admin/statistics-24h/', views.admin_statistics_24h, name='admin_stats_24h'),

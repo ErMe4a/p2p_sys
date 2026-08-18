@@ -1715,6 +1715,79 @@ def admin_users_list(request):
     })
 
 
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_catalog(request):
+    """
+    Каталог банков/бирж — общий список на всю систему (BankDetail/Exchange).
+    Раньше редактировался только через встроенную /admin/ — теперь то же
+    самое доступно прямо в кастомной админке.
+
+    ВАЖНО про переименование: у BankDetail это безопасно (Order.bank_detail —
+    FK, переименование меняет отображение везде разом). У Exchange — НЕТ:
+    Order.exchange_type — обычная строка, не FK на Exchange, и по её
+    значению (точное совпадение/подстрока) завязана уйма бизнес-логики —
+    комиссии (views.py/api_views.py: 'bybit' in ex_lower и т.п.), место
+    расчётов в чеке (evotor_atol.py), верификация через API биржи
+    (exchange_api.py: exchange_name == "Bybit"/"MEXC"). Переименование биржи
+    в каталоге НЕ обновит эти проверки и НЕ тронет уже созданные ордера —
+    новые ордера с этим новым именем тихо перестанут матчиться с нужной
+    логикой. Поэтому переименование бирж сознательно не реализовано —
+    только добавление новых и скрытие/восстановление существующих.
+    """
+    if request.method == 'POST':
+        action = request.POST.get('action')
+
+        if action == 'add_bank':
+            name = (request.POST.get('name') or '').strip()
+            if name:
+                BankDetail.objects.get_or_create(name=name)
+                messages.success(request, f'Банк "{name}" добавлен.')
+            else:
+                messages.error(request, 'Название банка не может быть пустым.')
+
+        elif action == 'rename_bank':
+            bank     = BankDetail.objects.filter(id=request.POST.get('id')).first()
+            new_name = (request.POST.get('name') or '').strip()
+            if bank and new_name:
+                bank.name = new_name
+                bank.save(update_fields=['name'])
+                messages.success(request, 'Банк переименован.')
+
+        elif action == 'toggle_bank':
+            bank = BankDetail.objects.filter(id=request.POST.get('id')).first()
+            if bank:
+                bank.is_deleted = not bank.is_deleted
+                bank.save(update_fields=['is_deleted'])
+                messages.success(
+                    request,
+                    f'Банк "{bank.name}" {"скрыт" if bank.is_deleted else "восстановлен"}.'
+                )
+
+        elif action == 'add_exchange':
+            name = (request.POST.get('name') or '').strip()
+            if name:
+                Exchange.objects.get_or_create(name=name)
+                messages.success(request, f'Биржа "{name}" добавлена.')
+            else:
+                messages.error(request, 'Название биржи не может быть пустым.')
+
+        elif action == 'toggle_exchange':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            if exchange:
+                exchange.is_deleted = not exchange.is_deleted
+                exchange.save(update_fields=['is_deleted'])
+                messages.success(
+                    request,
+                    f'Биржа "{exchange.name}" {"скрыта" if exchange.is_deleted else "восстановлена"}.'
+                )
+
+        return redirect('admin_catalog')
+
+    return render(request, 'custom_admin/catalog.html', {
+        'banks':     BankDetail.objects.all().order_by('is_deleted', 'name'),
+        'exchanges': Exchange.objects.all().order_by('is_deleted', 'name'),
+    })
 
 
 def _month_name(n):

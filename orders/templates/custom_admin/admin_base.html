@@ -93,6 +93,7 @@
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_turnover_control' %}active{% endif %}" href="{% url 'admin_turnover_control' %}">Контроль оборота</a>
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_stats' %}active{% endif %}" href="{% url 'admin_stats_24h' %}">Статистика 24ч</a>
                 <a class="nav-link {% if request.resolver_match.url_name == 'admin_fns' %}active{% endif %}" href="{% url 'admin_fns' %}">ФНС</a>
+                <a class="nav-link {% if request.resolver_match.url_name == 'admin_catalog' %}active{% endif %}" href="{% url 'admin_catalog' %}">Банки/Биржи</a>
             </nav>
         </div>
 

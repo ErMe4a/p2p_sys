@@ -1,0 +1,121 @@
+{% extends 'custom_admin/admin_base.html' %}
+
+{% block title %}Банки/Биржи | Админка{% endblock %}
+
+{% block extra_css %}
+<style>
+    .catalog-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .catalog-columns { grid-template-columns: 1fr; } }
+
+    .catalog-add-form { display: flex; gap: 8px; margin-bottom: 16px; }
+    .catalog-add-form input { flex: 1; }
+
+    .catalog-row {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-color);
+        margin-bottom: 8px; background: var(--bg-input);
+    }
+    .catalog-row.is-hidden { opacity: 0.5; }
+    .catalog-row .name { font-size: 0.9rem; font-weight: 500; flex: 1; }
+    .catalog-row .name input {
+        background: transparent; border: none; color: var(--text-main);
+        font-size: 0.9rem; font-weight: 500; width: 100%; padding: 2px 4px; border-radius: 4px;
+    }
+    .catalog-row .name input:focus { outline: 1px solid var(--accent-blue); background: var(--bg-card); }
+    .catalog-row .actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .catalog-hint { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card-custom">
+    <h5 class="mb-3">Банки и биржи — общий каталог на всю систему</h5>
+    <p class="catalog-hint">
+        Список ниже — общий для всех пользователей. Каждый трейдер сам выбирает в
+        своих настройках, что из этого показывать себе при ручном пробитии ордера.
+        Скрыть — не значит удалить: старые ордера с этим банком/биржей никуда не денутся,
+        просто он пропадёт из выбора у всех. Восстановить можно в любой момент.
+    </p>
+
+    <div class="catalog-columns">
+        <!-- ===================== БАНКИ ===================== -->
+        <div>
+            <h6 class="mb-3">🏦 Банки</h6>
+
+            <form method="POST" class="catalog-add-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_bank">
+                <input type="text" name="name" class="form-control" placeholder="Название нового банка" required>
+                <button type="submit" class="btn btn-sm btn-outline-blue">+ Добавить</button>
+            </form>
+
+            {% for bank in banks %}
+                <div class="catalog-row {% if bank.is_deleted %}is-hidden{% endif %}">
+                    <form method="POST" class="name" style="display:flex;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="rename_bank">
+                        <input type="hidden" name="id" value="{{ bank.id }}">
+                        <input type="text" name="name" value="{{ bank.name }}"
+                               onchange="this.form.requestSubmit()" title="Изменить название — сохранится при потере фокуса">
+                    </form>
+                    <div class="actions">
+                        {% if bank.is_deleted %}
+                            <span class="badge bg-secondary">скрыт</span>
+                        {% endif %}
+                        <form method="POST">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle_bank">
+                            <input type="hidden" name="id" value="{{ bank.id }}">
+                            <button type="submit" class="btn btn-sm {% if bank.is_deleted %}btn-outline-success{% else %}btn-outline-secondary{% endif %}">
+                                {% if bank.is_deleted %}Восстановить{% else %}Скрыть{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="catalog-hint">Банков пока нет.</div>
+            {% endfor %}
+        </div>
+
+        <!-- ===================== БИРЖИ ===================== -->
+        <div>
+            <h6 class="mb-3">🏢 Биржи</h6>
+            <p class="catalog-hint">
+                Переименование бирж намеренно недоступно — от точного названия зависит
+                расчёт комиссии, реквизиты чека и верификация через API биржи в остальном
+                коде. Для новой биржи, не завязанной на эту логику, можно смело добавлять —
+                для уже интегрированных (Bybit/MEXC/HTX и т.п.) переименование сломает эти
+                проверки для новых ордеров.
+            </p>
+
+            <form method="POST" class="catalog-add-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_exchange">
+                <input type="text" name="name" class="form-control" placeholder="Название новой биржи" required>
+                <button type="submit" class="btn btn-sm btn-outline-blue">+ Добавить</button>
+            </form>
+
+            {% for exchange in exchanges %}
+                <div class="catalog-row {% if exchange.is_deleted %}is-hidden{% endif %}">
+                    <div class="name">{{ exchange.name }}</div>
+                    <div class="actions">
+                        {% if exchange.is_deleted %}
+                            <span class="badge bg-secondary">скрыта</span>
+                        {% endif %}
+                        <form method="POST">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle_exchange">
+                            <input type="hidden" name="id" value="{{ exchange.id }}">
+                            <button type="submit" class="btn btn-sm {% if exchange.is_deleted %}btn-outline-success{% else %}btn-outline-secondary{% endif %}">
+                                {% if exchange.is_deleted %}Восстановить{% else %}Скрыть{% endif %}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            {% empty %}
+                <div class="catalog-hint">Бирж пока нет.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
