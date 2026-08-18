@@ -1443,8 +1443,12 @@ function createCheckContent() {
     const quantityInput = quantityInputWrapper.querySelector('#quantity-input');
     permanentInputs.appendChild(quantityInputWrapper);
 
-    const costInputWrapper = createInput('Стоимость (₽)', 'cost-input', 'Введите стоимость');
+    const costInputWrapper = createInput('Стоимость (₽)', 'cost-input', 'например: 109000 или 109000,50');
     const costInput = costInputWrapper.querySelector('#cost-input');
+    const costHint = document.createElement('div');
+    costHint.className = 'p2p-analytics-input-hint';
+    costHint.textContent = 'Разделитель тысяч (пробел/точка/запятая) — необязателен, распознаётся сам';
+    costInputWrapper.appendChild(costHint);
     permanentInputs.appendChild(costInputWrapper);
 
     checkContent.appendChild(permanentInputs);
@@ -1790,7 +1794,7 @@ function collectFormData() {
     const costInput = document.querySelector('#cost-input');
 
     const parsedPrice = parseNumberOrNull(rateInput?.value);
-    const parsedAmount = parseNumberOrNull(costInput?.value);
+    const parsedAmount = parseNumberOrNull(costInput?.value, true); // true — денежное поле (₽), см. parseNumberOrNull
     const parsedQuantity = parseNumberOrNull(quantityInput?.value);
 
     formData.price = (parsedPrice !== null && !isNaN(parsedPrice)) ? parsedPrice : 0;

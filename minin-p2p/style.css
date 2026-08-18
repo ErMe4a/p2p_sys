@@ -186,6 +186,13 @@
     box-sizing: border-box;
 }
 
+.p2p-analytics-input-hint {
+    margin-top: 2px;
+    font-size: 10px;
+    line-height: 1.3;
+    color: var(--bds-gray-t3-desc, rgba(0, 0, 0, 0.45));
+}
+
 /* Label styles (unified with form titles) */
 .p2p-analytics-label {
     display: block;

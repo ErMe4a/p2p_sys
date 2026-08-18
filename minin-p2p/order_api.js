@@ -285,15 +285,63 @@ async function checkEvotorCredentials() {
 // ============================================
 
 /**
- * Helper: parse numeric input or return null when empty/invalid
+ * Helper: parse numeric input or return null when empty/invalid.
+ * Понимает и точку, и запятую как десятичный разделитель, а также
+ * пробелы/точки/запятые как разделитель тысяч — независимо от того,
+ * как человек привык печатать суммы.
+ *
+ * ВАЖНО (нашли на реальном баге): если просто менять первую запятую на
+ * точку, "109,000" (109 тысяч, запятая как разделитель тысяч) превращается
+ * в "109.000" = 109 — сумма тихо теряет 3 нуля. Эта функция вместо этого:
+ *   1. Всегда убирает пробелы (обычные и неразрывные) — они никогда не
+ *      бывают десятичным разделителем, только шум/разделитель тысяч.
+ *   2. Если разделителей (,/.) несколько — последний считается десятичным,
+ *      остальные — тысячи ("109.000,50" и "109,000.50" оба -> 109000.5).
+ *   3. Если разделитель один и после него ровно 3 цифры — по умолчанию
+ *      тоже десятичный (не трогаем поведение для количества крипты, там
+ *      3 знака после запятой — норма, например "0,123" USDT).
+ *      Для денежных полей (₽) передайте moneyField=true — тогда такой
+ *      случай считается разделителем тысяч (в рублях 3 знака после
+ *      запятой/точки никто не печатает, значит это "109 тысяч", а не
+ *      "109 целых и 000 тысячных").
+ *
  * @param {*} value - Value to parse
+ * @param {boolean} [moneyField=false] - true для денежных (₽) полей
  * @returns {number|null}
  */
-function parseNumberOrNull(value) {
+function parseNumberOrNull(value, moneyField = false) {
     if (value === undefined || value === null) return null;
-    const raw = String(value).trim().replace(',', '.');
+
+    let raw = String(value).trim().replace(/[\s ]/g, '');
     if (raw === '') return null;
-    const num = parseFloat(raw);
+
+    const seps = [...raw.matchAll(/[,.]/g)];
+
+    if (seps.length === 0) {
+        const num = parseFloat(raw);
+        return Number.isFinite(num) ? num : null;
+    }
+
+    if (seps.length > 1) {
+        // Несколько разделителей — последний десятичный, остальные тысячи
+        const lastIdx = seps[seps.length - 1].index;
+        const intPart = raw.slice(0, lastIdx).replace(/[,.]/g, '');
+        const fracPart = raw.slice(lastIdx + 1);
+        const num = parseFloat(`${intPart}.${fracPart}`);
+        return Number.isFinite(num) ? num : null;
+    }
+
+    // Один разделитель
+    const sepIdx = seps[0].index;
+    const fracPart = raw.slice(sepIdx + 1);
+    if (moneyField && /^\d{3}$/.test(fracPart)) {
+        // "109,000" / "109.000" в денежном поле — почти наверняка разделитель
+        // тысяч (109000 ₽), а не 109 рублей и 000 тысячных долей.
+        const num = parseFloat(raw.replace(/[,.]/g, ''));
+        return Number.isFinite(num) ? num : null;
+    }
+
+    const num = parseFloat(raw.replace(/[,.]/g, '.'));
     return Number.isFinite(num) ? num : null;
 }
 
