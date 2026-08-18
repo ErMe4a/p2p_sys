@@ -318,6 +318,9 @@
     function formatMoney(amount) {
         return safeFloat(amount).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
+    function formatRate(amount) {
+        return safeFloat(amount).toLocaleString('ru-RU', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+    }
     function updateMskTime() {
         const now = new Date();
         document.getElementById('timezoneInfo').textContent = '🕐 МСК: ' +
@@ -368,14 +371,14 @@
             title.textContent = 'Остаток USDT';
             value.style.color = 'var(--ok)';
             value.textContent = usdt.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT';
-            sub.textContent   = usdtPrice ? ('курс ' + formatMoney(usdtPrice) + ' ₽') : '';
+            sub.textContent   = usdtPrice ? ('по ' + formatRate(usdtPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток USDT';
         } else if (currentCurrency === 'ton') {
             card.classList.add('balance-ton');
             title.textContent = 'Остаток TON';
             value.style.color = 'var(--ton)';
             value.textContent = ton.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TON';
-            sub.textContent   = tonPrice ? ('курс ' + formatMoney(tonPrice) + ' ₽') : '';
+            sub.textContent   = tonPrice ? ('по ' + formatRate(tonPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток TON';
         } else {
             card.classList.add('balance-all');
@@ -383,9 +386,9 @@
             value.style.color = '#6c8cff';
             value.textContent = '';
             sub.innerHTML = '<div style="color:var(--ok);line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT'
-                          + (usdtPrice ? ' · курс ' + formatMoney(usdtPrice) + ' ₽' : '') + '</div>'
+                          + (usdtPrice ? ' <span style="color:var(--muted);">по ' + formatRate(usdtPrice) + ' ₽</span>' : '') + '</div>'
                           + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON'
-                          + (tonPrice ? ' · курс ' + formatMoney(tonPrice) + ' ₽' : '') + '</div>';
+                          + (tonPrice ? ' <span style="color:var(--muted);">по ' + formatRate(tonPrice) + ' ₽</span>' : '') + '</div>';
             hint.textContent = 'Глобальный остаток крипты';
         }
     }

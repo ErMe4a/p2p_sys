@@ -79,6 +79,21 @@ def truncate(value, places=3):
         return 0.0
 
 
+def format_ru_number(value, decimals=4):
+    """
+    Число в привычном для трейдеров русском формате: запятая вместо точки,
+    пробел как разделитель тысяч. LANGUAGE_CODE проекта — en-us, поэтому
+    обычный {{ value }} в шаблоне печатает точку — используем это в местах,
+    где число рендерится сервером (не через JS formatMoney на клиенте).
+    78.1387 -> "78,1387"
+    """
+    try:
+        text = f"{float(value):,.{decimals}f}"
+        return text.replace(",", " ").replace(".", ",")
+    except (TypeError, ValueError):
+        return "0"
+
+
 @login_required
 def my_orders_list(request):
     # Грузим список банков (для фильтра — весь список, чтобы можно было
@@ -3120,12 +3135,14 @@ def admin_profit_view(request):
             'top_bank_comm_orders':  top_bank_comm_orders,
             # Детализация USDT
             'usdt':       usdt,
+            'usdt_avg_price_ru': format_ru_number(usdt.get('avg_price', 0)),
             'usdt_gross': gross_usdt,
             'usdt_ndfl':  ndfl_usdt,
             'usdt_share': share_usdt,
             'usdt_net':   net_usdt,
             # Детализация TON
             'ton':       ton,
+            'ton_avg_price_ru': format_ru_number(ton.get('avg_price', 0)),
             'ton_gross': gross_ton,
             'ton_ndfl':  ndfl_ton,
             'ton_share': share_ton,

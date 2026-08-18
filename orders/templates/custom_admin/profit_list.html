@@ -269,16 +269,15 @@
                         <div class="fw-bold balance-positive row-balance-usdt" style="font-size: 0.88rem;">
                             <span class="money">{{ stat.usdt.remainder_qty_display }}</span>&nbsp;USDT
                             {% if stat.usdt.avg_price %}
-                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">· курс {{ stat.usdt.avg_price }} ₽</span>
+                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.usdt_avg_price_ru }} ₽</span>
                             {% endif %}
                         </div>
                         <div class="fw-bold row-balance-ton" style="font-size: 0.88rem; color: #3d9af5;">
                             <span class="money">{{ stat.ton.remainder_qty_display }}</span>&nbsp;TON
                             {% if stat.ton.avg_price %}
-                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">· курс {{ stat.ton.avg_price }} ₽</span>
+                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.ton_avg_price_ru }} ₽</span>
                             {% endif %}
                         </div>
-                        <div style="font-size: 0.7rem; color: var(--text-muted); margin-top: 2px;">На конец месяца</div>
                     </td>
 
                     <!-- Движение -->
