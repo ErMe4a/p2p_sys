@@ -43,6 +43,7 @@ from .nds_generator import build_nds_declaration, QUARTERS
 from .uvedomlenie_generator import build_uvedomlenie, PERIODS as UVED_PERIODS
 from .nds_generator import build_nds_declaration, QUARTERS as NDS_QUARTERS
 from .models import DocumentSubmission
+from .models import MonthlySystemProfitSummary
 from django.views.decorators.http import require_POST
 # Причины, при которых пункт скрывается молча (не ошибка данных,
 # а просто "документ не требуется в этом периоде").
@@ -2808,6 +2809,115 @@ def _get_ytd_base_from_cache(user_id, year, month,
     return ytd_base
 
 
+def _calc_all_users_month_profit(users, year, month, all_orders_by_user,
+                                  expenses_by_user_month, manuals_by_user_month):
+    """
+    Системная версия одной итерации основного цикла admin_profit_view —
+    ТА ЖЕ математика (_calc_month_profit_from_orders + _calc_ndfl + доля),
+    просто суммируется по всем юзерам сразу вместо построения таблицы
+    user_stats. Существующая логика в admin_profit_view НЕ трогается —
+    если поправить формулу тут, admin_profit_view не изменится, и наоборот
+    (сознательное дублирование ради нулевого риска регресса на уже рабочей
+    странице; оба места опираются на одни и те же module-level функции).
+
+    Используется tasks.recompute_yearly_profit_summary_task для наполнения
+    MonthlySystemProfitSummary — см. openspec/changes/add-monthly-profit-
+    breakdown/design.md, решение №3.
+    """
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+
+    month_start = datetime(year, month, 1, tzinfo=MSK)
+    month_end   = (datetime(year + 1, 1, 1, tzinfo=MSK)
+                   if month == 12 else datetime(year, month + 1, 1, tzinfo=MSK))
+    share_key = f"{year}-{str(month).zfill(2)}"
+
+    totals = {
+        'gross_all': 0.0, 'gross_usdt': 0.0, 'gross_ton': 0.0,
+        'net_all':   0.0, 'net_usdt':   0.0, 'net_ton':   0.0,
+        'share_all': 0.0, 'share_usdt': 0.0, 'share_ton': 0.0,
+    }
+
+    for u in users:
+        uid = u.id
+        calc = _calc_month_profit_from_orders(uid, month_start, month_end, all_orders_by_user)
+        usdt = calc['usdt']
+        ton  = calc['ton']
+
+        tax_type      = str(getattr(u, 'tax_type', '') or '').strip().upper()
+        share_percent = 20.0
+        if u.profit_shares and isinstance(u.profit_shares, dict):
+            share_percent = float(u.profit_shares.get(share_key, 20.0))
+
+        month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
+
+        gross_raw_usdt = usdt['gross']
+        gross_raw_ton  = ton['gross']
+        gross_raw_all  = gross_raw_usdt + gross_raw_ton
+
+        has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
+        manual = manuals_by_user_month.get((uid, share_key))
+
+        if not has_activity and manual:
+            gross_raw_all  = manual.gross
+            gross_raw_usdt = manual.gross
+            gross_raw_ton  = 0.0
+
+        pos_usdt  = max(0.0, gross_raw_usdt)
+        pos_ton   = max(0.0, gross_raw_ton)
+        pos_total = pos_usdt + pos_ton
+
+        if pos_total > 0:
+            usdt_expense_share = (pos_usdt / pos_total) * month_expenses
+            ton_expense_share  = (pos_ton  / pos_total) * month_expenses
+        else:
+            usdt_expense_share = 0.0
+            ton_expense_share  = 0.0
+
+        gross_usdt = max(0.0, gross_raw_usdt - usdt_expense_share)
+        gross_ton  = max(0.0, gross_raw_ton  - ton_expense_share)
+        gross_all  = max(0.0, gross_raw_all  - month_expenses)
+
+        if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+            ytd_base = _get_ytd_base_from_cache(
+                uid, year, month, all_orders_by_user,
+                expenses_by_user_month, manuals_by_user_month,
+            )
+        else:
+            ytd_base = 0.0
+
+        sell_cost_all = calc['month_sell_cost'] if has_activity else (manual.sell_cost if manual else 0.0)
+
+        ytd_usdt   = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
+        ndfl_usdt  = _calc_ndfl(gross_usdt, tax_type, sell_cost=usdt['month_sell_cost'], ytd_base=ytd_usdt)
+        after_usdt = gross_usdt - ndfl_usdt
+        share_usdt_val = after_usdt * (share_percent / 100) if after_usdt > 0 else 0.0
+        net_usdt_val   = after_usdt - share_usdt_val
+
+        ytd_ton   = ytd_base * (pos_ton / pos_total) if pos_total > 0 else 0.0
+        ndfl_ton  = _calc_ndfl(gross_ton, tax_type, sell_cost=ton['month_sell_cost'], ytd_base=ytd_ton)
+        after_ton = gross_ton - ndfl_ton
+        share_ton_val = after_ton * (share_percent / 100) if after_ton > 0 else 0.0
+        net_ton_val   = after_ton - share_ton_val
+
+        ndfl_all  = _calc_ndfl(gross_all, tax_type, sell_cost=sell_cost_all, ytd_base=ytd_base)
+        after_all = gross_all - ndfl_all
+        share_all_val = after_all * (share_percent / 100) if after_all > 0 else 0.0
+        net_all_val   = after_all - share_all_val
+
+        totals['gross_all']  += gross_all
+        totals['gross_usdt'] += gross_usdt
+        totals['gross_ton']  += gross_ton
+        totals['net_all']    += net_all_val
+        totals['net_usdt']   += net_usdt_val
+        totals['net_ton']    += net_ton_val
+        totals['share_all']  += share_all_val
+        totals['share_usdt'] += share_usdt_val
+        totals['share_ton']  += share_ton_val
+
+    return totals
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def export_uvedomlenie(request):
@@ -2930,6 +3040,41 @@ def admin_profit_view(request):
         except ValueError:
             year = now.year
         year_data = _year_turnover_by_month(year, exchange_filter, bank_filter_id)
+
+        # Прибыль (грязная/чистая трейдеров + доход системы) — НЕ считается
+        # тут вживую (дорого, LIFO по каждому юзеру), а читается из кэша,
+        # который наполняет tasks.recompute_yearly_profit_summary_task раз
+        # в час. Если для месяца/валюты кэша ещё нет — has_profit=False,
+        # шаблон должен показать явный плейсхолдер, а не молчаливый 0.
+        profit_cache = {
+            (row.month, row.currency): row
+            for row in MonthlySystemProfitSummary.objects.filter(year=year)
+        }
+        profit_updated_at = None
+
+        for row in year_data['rows']:
+            mo = int(row['num'])
+            for currency in ('all', 'usdt', 'ton'):
+                cached = profit_cache.get((mo, currency))
+                if cached:
+                    row[f'{currency}_gross']      = float(cached.gross_traders)
+                    row[f'{currency}_net']        = float(cached.net_traders)
+                    row[f'{currency}_income']     = float(cached.system_income)
+                    row[f'{currency}_has_profit'] = True
+                    if profit_updated_at is None or cached.updated_at > profit_updated_at:
+                        profit_updated_at = cached.updated_at
+                else:
+                    row[f'{currency}_gross']      = 0.0
+                    row[f'{currency}_net']        = 0.0
+                    row[f'{currency}_income']     = 0.0
+                    row[f'{currency}_has_profit'] = False
+
+        for currency in ('all', 'usdt', 'ton'):
+            counted = [r for r in year_data['rows'] if r[f'{currency}_has_profit']]
+            year_data['total'][f'{currency}_gross']  = round(sum(r[f'{currency}_gross']  for r in counted), 2)
+            year_data['total'][f'{currency}_net']    = round(sum(r[f'{currency}_net']    for r in counted), 2)
+            year_data['total'][f'{currency}_income'] = round(sum(r[f'{currency}_income'] for r in counted), 2)
+
         return render(request, 'custom_admin/profit_year.html', {
             'current_year':      year,
             'selected_exchange': exchange_filter,
@@ -2937,6 +3082,7 @@ def admin_profit_view(request):
             'default_banks':     BankDetail.objects.filter(is_deleted=False),
             'month_rows':        year_data['rows'],
             'year_total':        year_data['total'],
+            'profit_updated_at': profit_updated_at,
         })
 
     try:

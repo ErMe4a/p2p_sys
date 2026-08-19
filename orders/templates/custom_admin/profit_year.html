@@ -31,8 +31,13 @@
     .c-sell .value     { color: #10b981; }
     .c-buy .value      { color: #ef4444; }
     .c-turnover .value { color: #3b82f6; }
+    .c-gross .value    { color: #f59e0b; }
+    .c-net .value      { color: #e879f9; }
+    .c-income .value   { color: #8b5cf6; }
 
     .row-total { background: rgba(108,140,255,.06); font-weight: 700; }
+    .profit-freshness { font-size: 0.78rem; color: var(--text-muted); }
+    .no-data-yet { color: var(--text-muted); }
 </style>
 {% endblock %}
 
@@ -40,8 +45,15 @@
 <div class="card-custom">
     <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <h5 class="m-0 me-auto">
-            ОБОРОТ ПО МЕСЯЦАМ — {{ current_year }}
+            ОБОРОТ И ПРИБЫЛЬ ПО МЕСЯЦАМ — {{ current_year }}
             <span class="currency-badge currency-badge-all" id="currencyBadge">ВСЕ</span>
+            <div class="profit-freshness mt-1">
+                {% if profit_updated_at %}
+                    💰 Прибыль обновлена: <span id="profitFreshness" data-updated-at="{{ profit_updated_at|date:'c' }}">{{ profit_updated_at|date:'d.m.Y H:i' }} МСК</span>
+                {% else %}
+                    💰 Прибыль ещё не посчитана — ждём первый прогон фоновой задачи
+                {% endif %}
+            </div>
         </h5>
 
         <div class="filters-row">
@@ -104,6 +116,18 @@
             <div class="label">🔵 Оборот за год</div>
             <div class="value" id="sum-turnover">{{ year_total.all_turnover }}</div>
         </div>
+        <div class="summary-card c-gross">
+            <div class="label">🟠 Грязная прибыль трейдеров</div>
+            <div class="value" id="sum-gross">{{ year_total.all_gross }}</div>
+        </div>
+        <div class="summary-card c-net">
+            <div class="label">🌸 Чистая прибыль трейдеров</div>
+            <div class="value" id="sum-net">{{ year_total.all_net }}</div>
+        </div>
+        <div class="summary-card c-income">
+            <div class="label">🟣 Доход системы</div>
+            <div class="value" id="sum-income">{{ year_total.all_income }}</div>
+        </div>
     </div>
 
     <div class="table-responsive">
@@ -113,28 +137,43 @@
                     <th>Месяц</th>
                     <th>Покупки (RUB)</th>
                     <th>Продажи (RUB)</th>
-                    <th class="text-end">Оборот (RUB)</th>
+                    <th>Оборот (RUB)</th>
+                    <th>Грязная прибыль</th>
+                    <th>Чистая прибыль</th>
+                    <th class="text-end">Доход системы</th>
                 </tr>
             </thead>
             <tbody id="monthsTableBody">
                 {% for m in month_rows %}
                 <tr data-all-buy="{{ m.all_buy }}" data-all-sell="{{ m.all_sell }}" data-all-turnover="{{ m.all_turnover }}"
                     data-usdt-buy="{{ m.usdt_buy }}" data-usdt-sell="{{ m.usdt_sell }}" data-usdt-turnover="{{ m.usdt_turnover }}"
-                    data-ton-buy="{{ m.ton_buy }}" data-ton-sell="{{ m.ton_sell }}" data-ton-turnover="{{ m.ton_turnover }}">
+                    data-ton-buy="{{ m.ton_buy }}" data-ton-sell="{{ m.ton_sell }}" data-ton-turnover="{{ m.ton_turnover }}"
+                    data-all-gross="{{ m.all_gross }}" data-all-net="{{ m.all_net }}" data-all-income="{{ m.all_income }}" data-all-has-profit="{{ m.all_has_profit|yesno:'1,0' }}"
+                    data-usdt-gross="{{ m.usdt_gross }}" data-usdt-net="{{ m.usdt_net }}" data-usdt-income="{{ m.usdt_income }}" data-usdt-has-profit="{{ m.usdt_has_profit|yesno:'1,0' }}"
+                    data-ton-gross="{{ m.ton_gross }}" data-ton-net="{{ m.ton_net }}" data-ton-income="{{ m.ton_income }}" data-ton-has-profit="{{ m.ton_has_profit|yesno:'1,0' }}">
                     <td class="fw-bold">{{ m.name }}</td>
                     <td class="text-danger row-buy">{{ m.all_buy }}</td>
                     <td class="text-success row-sell">{{ m.all_sell }}</td>
-                    <td class="text-end fw-bold row-turnover">{{ m.all_turnover }}</td>
+                    <td class="fw-bold row-turnover">{{ m.all_turnover }}</td>
+                    <td class="row-gross">{% if m.all_has_profit %}{{ m.all_gross }}{% else %}<span class="no-data-yet">—</span>{% endif %}</td>
+                    <td class="row-net">{% if m.all_has_profit %}{{ m.all_net }}{% else %}<span class="no-data-yet">—</span>{% endif %}</td>
+                    <td class="text-end row-income">{% if m.all_has_profit %}{{ m.all_income }}{% else %}<span class="no-data-yet">—</span>{% endif %}</td>
                 </tr>
                 {% endfor %}
                 <tr class="row-total"
                     data-all-buy="{{ year_total.all_buy }}" data-all-sell="{{ year_total.all_sell }}" data-all-turnover="{{ year_total.all_turnover }}"
                     data-usdt-buy="{{ year_total.usdt_buy }}" data-usdt-sell="{{ year_total.usdt_sell }}" data-usdt-turnover="{{ year_total.usdt_turnover }}"
-                    data-ton-buy="{{ year_total.ton_buy }}" data-ton-sell="{{ year_total.ton_sell }}" data-ton-turnover="{{ year_total.ton_turnover }}">
+                    data-ton-buy="{{ year_total.ton_buy }}" data-ton-sell="{{ year_total.ton_sell }}" data-ton-turnover="{{ year_total.ton_turnover }}"
+                    data-all-gross="{{ year_total.all_gross }}" data-all-net="{{ year_total.all_net }}" data-all-income="{{ year_total.all_income }}" data-all-has-profit="1"
+                    data-usdt-gross="{{ year_total.usdt_gross }}" data-usdt-net="{{ year_total.usdt_net }}" data-usdt-income="{{ year_total.usdt_income }}" data-usdt-has-profit="1"
+                    data-ton-gross="{{ year_total.ton_gross }}" data-ton-net="{{ year_total.ton_net }}" data-ton-income="{{ year_total.ton_income }}" data-ton-has-profit="1">
                     <td>Итого за {{ current_year }}</td>
                     <td class="text-danger row-buy">{{ year_total.all_buy }}</td>
                     <td class="text-success row-sell">{{ year_total.all_sell }}</td>
-                    <td class="text-end row-turnover">{{ year_total.all_turnover }}</td>
+                    <td class="row-turnover">{{ year_total.all_turnover }}</td>
+                    <td class="row-gross">{{ year_total.all_gross }}</td>
+                    <td class="row-net">{{ year_total.all_net }}</td>
+                    <td class="text-end row-income">{{ year_total.all_income }}</td>
                 </tr>
             </tbody>
         </table>
@@ -157,7 +196,7 @@
         else if (val === 'ton')  { badge.className = 'currency-badge currency-badge-ton';  badge.textContent = 'TON'; }
         else                     { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
 
-        var sumBuy = 0, sumSell = 0, sumTurnover = 0;
+        var sumBuy = 0, sumSell = 0, sumTurnover = 0, sumGross = 0, sumNet = 0, sumIncome = 0;
         document.querySelectorAll('#monthsTableBody tr').forEach(function(row) {
             var d = row.dataset;
             var buy      = parseFloat(val === 'ton' ? d.tonBuy      : val === 'usdt' ? d.usdtBuy      : d.allBuy)      || 0;
@@ -168,13 +207,26 @@
             row.querySelector('.row-sell').textContent     = fmt(sell);
             row.querySelector('.row-turnover').textContent = fmt(turnover);
 
+            var hasProfit = (val === 'ton' ? d.tonHasProfit : val === 'usdt' ? d.usdtHasProfit : d.allHasProfit) === '1';
+            var gross  = parseFloat(val === 'ton' ? d.tonGross  : val === 'usdt' ? d.usdtGross  : d.allGross)  || 0;
+            var net    = parseFloat(val === 'ton' ? d.tonNet    : val === 'usdt' ? d.usdtNet    : d.allNet)    || 0;
+            var income = parseFloat(val === 'ton' ? d.tonIncome : val === 'usdt' ? d.usdtIncome : d.allIncome) || 0;
+
+            row.querySelector('.row-gross').innerHTML  = hasProfit ? fmt(gross)  : '<span class="no-data-yet">—</span>';
+            row.querySelector('.row-net').innerHTML    = hasProfit ? fmt(net)    : '<span class="no-data-yet">—</span>';
+            row.querySelector('.row-income').innerHTML = hasProfit ? fmt(income) : '<span class="no-data-yet">—</span>';
+
             if (!row.classList.contains('row-total')) {
                 sumBuy += buy; sumSell += sell; sumTurnover += turnover;
+                if (hasProfit) { sumGross += gross; sumNet += net; sumIncome += income; }
             }
         });
         document.getElementById('sum-buy').textContent      = fmt(sumBuy);
         document.getElementById('sum-sell').textContent     = fmt(sumSell);
         document.getElementById('sum-turnover').textContent = fmt(sumTurnover);
+        document.getElementById('sum-gross').textContent    = fmt(sumGross);
+        document.getElementById('sum-net').textContent      = fmt(sumNet);
+        document.getElementById('sum-income').textContent   = fmt(sumIncome);
     }
 
     function applyFilters() {

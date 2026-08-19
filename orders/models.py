@@ -284,3 +284,35 @@ class DocumentSubmission(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.doc_type} {self.period_key}/{self.year} — {'✓' if self.submitted else '—'}"
+
+
+class MonthlySystemProfitSummary(models.Model):
+    """
+    Кэш помесячной прибыли по ВСЕЙ системе сразу (сумма по всем юзерам) —
+    для годовой сводки в админке (custom_admin/profit_year.html, ?month=year).
+
+    Считается тяжело (LIFO по каждому юзеру, ~10 сек на 142 юзерах за один
+    месяц) — поэтому не живьём при заходе на страницу, а фоновой Celery-
+    задачей (tasks.recompute_yearly_profit_summary_task, раз в час), эта
+    модель — просто персистентный кэш её результата. Оборот (buy/sell) в
+    кэш не входит — он дешёвый, страница считает его live.
+    """
+    CURRENCY_CHOICES = [('all', 'Все'), ('usdt', 'USDT'), ('ton', 'TON')]
+
+    year = models.IntegerField()
+    month = models.IntegerField()
+    currency = models.CharField(max_length=4, choices=CURRENCY_CHOICES)
+
+    gross_traders = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Грязная прибыль трейдеров")
+    net_traders = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Чистая прибыль трейдеров")
+    system_income = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Доход системы")
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('year', 'month', 'currency')
+        verbose_name = "Помесячная прибыль системы (кэш)"
+        verbose_name_plural = "Помесячная прибыль системы (кэш)"
+
+    def __str__(self):
+        return f"{self.year}-{self.month:02d} [{self.currency}]: gross={self.gross_traders} net={self.net_traders} income={self.system_income}"

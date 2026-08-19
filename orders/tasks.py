@@ -460,3 +460,101 @@ def refresh_fns_status_for_user_task(self, user_id):
         return
     except Exception as e:
         logger.error("refresh_fns_status_for_user_task: ошибка для user_id=%s: %s", user_id, e, exc_info=True)
+
+
+@shared_task(bind=True, max_retries=0, queue="receipt")
+def recompute_yearly_profit_summary_task(self, year=None):
+    """
+    Пересчитывает MonthlySystemProfitSummary (грязная/чистая прибыль
+    трейдеров и доход системы, по всем юзерам сразу) на каждый месяц
+    указанного года — кэш для годовой сводки "2026" в админской "Прибыли"
+    (custom_admin/profit_year.html, admin_profit_view ?month=year).
+
+    Тяжёлый расчёт (LIFO по каждому юзеру, ~10 сек на 142 юзерах за один
+    месяц в живом единичном запросе на обычной странице "Прибыль") — здесь
+    считается не при заходе на страницу, а периодически в фоне (раз в час,
+    настраивается в django_celery_beat — см. openspec/changes/add-monthly-
+    profit-breakdown/design.md, решение №2).
+
+    Оборот (buy/sell) сюда не входит — он дешёвый, страница считает его
+    отдельно и live через views._year_turnover_by_month().
+    """
+    from collections import defaultdict
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from django.utils import timezone as dj_timezone
+    from .models import MonthlySystemProfitSummary, UserExpense, MonthlyManualEntry
+    from .views import SYSTEM_START, _calc_all_users_month_profit
+
+    MSK = ZoneInfo('Europe/Moscow')
+    if year is None:
+        year = dj_timezone.now().year
+
+    year_end = datetime(year + 1, 1, 1, tzinfo=MSK)
+    users    = list(User.objects.all().order_by('id'))
+
+    # Предзагрузка на весь год одним проходом — та же схема, что уже
+    # использует admin_profit_view для одного месяца (views.py:2963+).
+    raw_orders = (
+        Order.objects
+        .filter(created_at__gte=SYSTEM_START, created_at__lt=year_end)
+        .order_by('user_id', 'created_at')
+        .values_list(
+            'id', 'user_id', 'created_at', 'currency', 'operation_type',
+            'amount', 'cost', 'price', 'commission', 'commission_type',
+            'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+        )
+    )
+
+    class _O:
+        __slots__ = (
+            'id', 'user_id', 'created_at', 'currency', 'operation_type',
+            'amount', 'cost', 'price', 'commission', 'commission_type',
+            'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+        )
+        def __init__(self, row):
+            (self.id, self.user_id, self.created_at, self.currency,
+             self.operation_type, self.amount, self.cost, self.price,
+             self.commission, self.commission_type, self.exchange_type,
+             self.bank_detail_id, self.exchange_commission_rate) = row
+
+    all_orders_by_user = defaultdict(list)
+    for row in raw_orders:
+        all_orders_by_user[row[1]].append(_O(row))
+
+    expenses_by_user_month = defaultdict(float)
+    for e in UserExpense.objects.filter(month__startswith=str(year)).values('user_id', 'month', 'amount'):
+        expenses_by_user_month[(e['user_id'], e['month'])] += float(e['amount'])
+
+    class _Manual:
+        __slots__ = ('gross', 'sell_cost')
+        def __init__(self, m):
+            self.gross     = float(m.get('gross', 0) or 0)
+            self.sell_cost = float(m.get('sell_cost', 0) or 0)
+
+    manuals_by_user_month = {}
+    for m in MonthlyManualEntry.objects.filter(month__startswith=str(year)).values('user_id', 'month', 'gross', 'sell_cost'):
+        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
+
+    now_msk = dj_timezone.now().astimezone(MSK)
+
+    for month in range(1, 13):
+        if datetime(year, month, 1, tzinfo=MSK) > now_msk:
+            continue  # будущий месяц — данных ещё не может быть, не считаем впустую
+
+        totals = _calc_all_users_month_profit(
+            users, year, month, all_orders_by_user,
+            expenses_by_user_month, manuals_by_user_month,
+        )
+
+        for currency in ('all', 'usdt', 'ton'):
+            MonthlySystemProfitSummary.objects.update_or_create(
+                year=year, month=month, currency=currency,
+                defaults={
+                    'gross_traders': round(totals[f'gross_{currency}'], 2),
+                    'net_traders':   round(totals[f'net_{currency}'], 2),
+                    'system_income': round(totals[f'share_{currency}'], 2),
+                },
+            )
+
+    logger.info("recompute_yearly_profit_summary_task: пересчитано за %d год.", year)
