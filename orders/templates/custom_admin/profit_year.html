@@ -117,11 +117,11 @@
             <div class="value" id="sum-turnover">{{ year_total.all_turnover }}</div>
         </div>
         <div class="summary-card c-gross">
-            <div class="label">🟠 Грязная прибыль трейдеров</div>
+            <div class="label">🟠 Грязная прибыль</div>
             <div class="value" id="sum-gross">{{ year_total.all_gross }}</div>
         </div>
         <div class="summary-card c-net">
-            <div class="label">🌸 Чистая прибыль трейдеров</div>
+            <div class="label">🌸 Чистая прибыль</div>
             <div class="value" id="sum-net">{{ year_total.all_net }}</div>
         </div>
         <div class="summary-card c-income">
@@ -235,5 +235,10 @@
         var year     = document.getElementById('filterYear').value;
         window.location.href = '?year=' + year + '&month=year&exchange=' + exchange + '&bank=' + bank;
     }
+
+    // Сервер рендерит числа "сырыми" (без пробелов-разделителей тысяч) —
+    // сразу прогоняем через тот же fmt(), что и переключатель валюты,
+    // чтобы при первой загрузке страницы всё уже было отформатировано.
+    setCurrency('all');
 </script>
 {% endblock %}
