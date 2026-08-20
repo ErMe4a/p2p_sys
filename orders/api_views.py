@@ -241,6 +241,15 @@ def order(request):
             op_type     = api_data["operation_type"]
             is_verified = True
 
+            # Валюта — приоритет у API биржи (tokenId у Bybit, coinName у
+            # MEXC), а не у того, что выбрал трейдер в расширении — та же
+            # логика, что уже применяется к price/cost/amount/типу сделки
+            # чуть выше. get_order_from_exchange() кладёт сюда только
+            # известные системе валюты (USDT/TON/BTC), иначе ключа просто
+            # нет — тогда остаётся то, что прислало расширение.
+            if api_data.get("currency"):
+                currency = api_data["currency"]
+
             # Дата создания — приоритет у API биржи, а не у расширения.
             # DOM-парсинг на странице хрупкий (ломается при обновлениях
             # вёрстки) и, что хуже, JS-парсинг "YYYY-MM-DD HH:MM:SS" через

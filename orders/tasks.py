@@ -175,6 +175,14 @@ def verify_and_receipt_later(self, order_id: int):
             o.is_verified    = True
             update_fields = ["price", "cost", "amount", "operation_type", "is_verified"]
 
+            # Валюта — авторитетно с биржи, та же логика, что и в
+            # api_views.order() для мгновенной верификации (см. exchange_api.
+            # _map_known_currency): только известные системе USDT/TON/BTC,
+            # иначе не трогаем то, что уже было сохранено раньше.
+            if api_data.get("currency"):
+                o.currency = api_data["currency"]
+                update_fields.append("currency")
+
             # Дата — авторитетно с биржи, если API её отдало (см. ту же
             # логику и обоснование в api_views.order): дата с расширения
             # могла быть не найдена на странице или сдвинута из-за

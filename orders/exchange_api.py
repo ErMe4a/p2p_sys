@@ -37,6 +37,33 @@ MEXC_INVALID_KEY_CODES = {10072, 10073, 700007}
 
 MEXC_IP_WHITELIST_CODE = 700006
 
+# Валюты, которые реально отслеживает система (Order.currency). Биржа в
+# ответе по ордеру отдаёт актуальный тикер актива (Bybit: tokenId/tokenName,
+# MEXC: coinName) — раньше эти поля вообще не читались, валюта целиком
+# бралась из того, что прислало расширение (то есть по факту — что выбрал
+# трейдер руками). Теперь API биржи авторитетен и для валюты тоже, как уже
+# давно авторитетен для price/amount/cost/типа сделки.
+KNOWN_CURRENCIES = {"USDT", "TON", "BTC"}
+
+
+def _map_known_currency(raw_token, exchange_label: str, order_id: str, username: str):
+    """
+    USDT/TON/BTC — подставляем как есть. Что-то ещё (например ETH на Bybit
+    P2P) — не трогаем валюту ордера вообще (оставляем то, что прислало
+    расширение), только логируем — осознанное решение, чтобы не подставить
+    в отчётность валюту, которую система не умеет считать.
+    """
+    token = str(raw_token or "").strip().upper()
+    if token in KNOWN_CURRENCIES:
+        return token
+    if token:
+        logger.warning(
+            "%s [%s]: order %s — токен биржи '%s' не входит в отслеживаемые "
+            "(%s), валюту ордера не трогаем.",
+            exchange_label, username, order_id, token, ", ".join(sorted(KNOWN_CURRENCIES)),
+        )
+    return None
+
 
 def get_order_from_exchange(
     user,
@@ -112,14 +139,22 @@ def _get_bybit_order(user, order_id: str) -> dict | None:
         # страницы (вёрстка Bybit меняется, парсинг DOM хрупкий).
         created_at = _parse_bybit_date(result.get("createDate") or result.get("createTime"))
 
-        logger.info(
-            "Bybit [%s]: order %s — price=%s cost=%s amount=%s type=%s created_at=%s",
-            user.username, order_id, price, cost, amount, op, created_at,
+        currency = _map_known_currency(
+            result.get("tokenId") or result.get("tokenName"),
+            "Bybit", order_id, user.username,
         )
-        return {
+
+        logger.info(
+            "Bybit [%s]: order %s — price=%s cost=%s amount=%s type=%s currency=%s created_at=%s",
+            user.username, order_id, price, cost, amount, op, currency, created_at,
+        )
+        order_data = {
             "price": price, "cost": cost, "amount": amount, "operation_type": op,
             "created_at": created_at,
         }
+        if currency:
+            order_data["currency"] = currency
+        return order_data
 
     except Exception as e:
         err_str = str(e)
@@ -254,14 +289,19 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
             )
             return None
 
+        currency = _map_known_currency(item.get("coinName"), "MEXC", order_id, user.username)
+
         logger.info(
-            "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s created_at=%s",
-            user.username, order_id, price, cost, amount, op, created_at,
+            "MEXC [%s]: order %s — price=%s cost=%s amount=%s type=%s currency=%s created_at=%s",
+            user.username, order_id, price, cost, amount, op, currency, created_at,
         )
-        return {
+        order_data = {
             "price": price, "cost": cost, "amount": amount, "operation_type": op,
             "created_at": created_at,
         }
+        if currency:
+            order_data["currency"] = currency
+        return order_data
 
     except Exception as e:
         logger.error("MEXC _get_mexc_order [%s] order %s: %s", user.username, order_id, e)
