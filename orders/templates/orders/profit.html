@@ -269,7 +269,12 @@
                 </div>
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Курс</label>
-                    <input type="number" id="corrPrice" class="input-profit" placeholder="0.00" title="Средний курс остатка на текущий момент">
+                    <!-- USDT/TON: курс не редактируется руками — только показываем текущий
+                         средний курс остатка для сверки (по просьбе Макса, см. комментарий
+                         в updateCorrPriceHint). BTC: система курс не считает, поле остаётся
+                         обычным вводом. -->
+                    <div id="corrPriceDisplay" class="input-profit" style="display:flex; align-items:center; color:var(--text); cursor:default;" title="Текущий средний курс остатка">—</div>
+                    <input type="number" id="corrPrice" class="input-profit" placeholder="0.00" style="display:none;">
                 </div>
                 <div>
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Криптовалюта</label>
@@ -519,33 +524,38 @@
     // КОРРЕКЦИЯ ОСТАТКА
     // =====================================================================
     function updateCorrPriceHint() {
-        var currency  = document.getElementById('corrCurrency').value;
-        var priceInput = document.getElementById('corrPrice');
-        var base = 'Средний курс остатка на текущий момент';
+        var currency     = document.getElementById('corrCurrency').value;
+        var priceInput   = document.getElementById('corrPrice');
+        var priceDisplay = document.getElementById('corrPriceDisplay');
 
         // BTC в системе не отслеживается (avg_price для него не считается) —
-        // автоподстановка тут невозможна, поле остаётся пустым для ручного ввода.
+        // автоподстановка невозможна, тут остаётся обычное поле ввода.
         if (currency === 'BTC') {
-            priceInput.value = '';
-            priceInput.title = base + ' (BTC в системе не отслеживается — введите курс сами)';
-            priceInput.placeholder = '0.00';
+            priceDisplay.style.display = 'none';
+            priceInput.style.display   = '';
+            priceInput.value           = '';
+            priceInput.title           = 'BTC в системе не отслеживается — введите курс сами';
+            priceInput.placeholder     = '0.00';
             return;
         }
 
-        if (!lastTurnover) { priceInput.title = base; priceInput.placeholder = '0.00'; return; }
+        // USDT/TON — по прямому запросу Макса поле курса убрано, руками его
+        // больше не вводят (трейдеры писали "свой" курс вместо реального,
+        // это искажало отчётность). Тут только сверка остатка, а не расчёт —
+        // для расчёта есть уведомление/декларация. Всегда берём текущий
+        // средний курс остатка и просто показываем как есть.
+        priceInput.style.display   = 'none';
+        priceDisplay.style.display = '';
+        priceInput.value           = '';
+        delete priceDisplay.dataset.price;
+
+        if (!lastTurnover) { priceDisplay.textContent = '—'; return; }
 
         var price = currency === 'TON' ? lastTurnover.ton_avg_price : lastTurnover.usdt_avg_price;
-        if (!price) {
-            priceInput.title = base;
-            priceInput.placeholder = '0.00';
-            return;
-        }
+        if (!price) { priceDisplay.textContent = '—'; return; }
 
-        // .value — обычное число с точкой (HTML number-инпут не понимает
-        // запятую/пробелы), formatMoney — только для title/placeholder-подсказки.
-        priceInput.value     = price;
-        priceInput.title     = base + ': ' + formatMoney(price) + ' ₽ (подставлено автоматически, можно поправить)';
-        priceInput.placeholder = formatMoney(price);
+        priceDisplay.textContent  = formatRate(price) + ' ₽';
+        priceDisplay.dataset.price = price;
     }
 
     async function loadBalanceCorrections() {
@@ -560,11 +570,23 @@
 
     async function addBalanceCorrection() {
         var amount   = safeFloat(document.getElementById('corrAmount').value);
-        var price    = safeFloat(document.getElementById('corrPrice').value);
         var currency = document.getElementById('corrCurrency').value;
         var purpose  = document.getElementById('corrPurpose').value.trim();
 
-        if (amount <= 0 || price <= 0 || !purpose) { alert('Заполните количество, курс и назначение.'); return; }
+        // BTC — курс из обычного поля (вводится вручную, система его не считает).
+        // USDT/TON — курс НЕ из поля ввода (поля больше нет), берём то же число,
+        // что показано в corrPriceDisplay (текущий средний курс остатка).
+        var price = currency === 'BTC'
+            ? safeFloat(document.getElementById('corrPrice').value)
+            : safeFloat(document.getElementById('corrPriceDisplay').dataset.price);
+
+        if (amount <= 0 || !purpose) { alert('Заполните количество и назначение.'); return; }
+        if (price <= 0) {
+            alert(currency === 'BTC'
+                ? 'Укажите курс.'
+                : 'Курс остатка не определён — за этот месяц ещё нет ни одной сделки, средний курс посчитать не из чего.');
+            return;
+        }
 
         var ok = confirm(
             'Для списания остатка необходимо указать средний курс остатка на текущий момент. ' +
