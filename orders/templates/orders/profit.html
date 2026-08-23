@@ -267,12 +267,12 @@
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Количество</label>
                     <input type="number" id="corrAmount" class="input-profit" placeholder="0.00">
                 </div>
-                <div>
+                <div id="corrPriceField">
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Курс</label>
-                    <!-- USDT/TON: курс не редактируется руками — только показываем текущий
-                         средний курс остатка для сверки (по просьбе Макса, см. комментарий
-                         в updateCorrPriceHint). BTC: система курс не считает, поле остаётся
-                         обычным вводом. -->
+                    <!-- BTC: система курс не считает, тут обычный ввод. USDT/TON: поле
+                         скрыто целиком (по просьбе Макса) — курс всё равно берётся
+                         автоматически (текущий средний курс остатка) при отправке,
+                         просто больше не показывается трейдеру, см. updateCorrPriceHint. -->
                     <div id="corrPriceDisplay" class="input-profit" style="display:flex; align-items:center; color:var(--text); cursor:default;" title="Текущий средний курс остатка">—</div>
                     <input type="number" id="corrPrice" class="input-profit" placeholder="0.00" style="display:none;">
                 </div>
@@ -525,12 +525,14 @@
     // =====================================================================
     function updateCorrPriceHint() {
         var currency     = document.getElementById('corrCurrency').value;
+        var priceField   = document.getElementById('corrPriceField');
         var priceInput   = document.getElementById('corrPrice');
         var priceDisplay = document.getElementById('corrPriceDisplay');
 
         // BTC в системе не отслеживается (avg_price для него не считается) —
-        // автоподстановка невозможна, тут остаётся обычное поле ввода.
+        // автоподстановка невозможна, тут остаётся обычное видимое поле ввода.
         if (currency === 'BTC') {
+            priceField.style.display   = '';
             priceDisplay.style.display = 'none';
             priceInput.style.display   = '';
             priceInput.value           = '';
@@ -539,20 +541,23 @@
             return;
         }
 
-        // USDT/TON — по прямому запросу Макса поле курса убрано, руками его
-        // больше не вводят (трейдеры писали "свой" курс вместо реального,
-        // это искажало отчётность). Тут только сверка остатка, а не расчёт —
-        // для расчёта есть уведомление/декларация. Всегда берём текущий
-        // средний курс остатка и просто показываем как есть.
-        priceInput.style.display   = 'none';
-        priceDisplay.style.display = '';
+        // USDT/TON — по прямому запросу Макса поле "Курс" убрано из формы
+        // ПОЛНОСТЬЮ (трейдер его больше не видит вообще) — раньше трейдеры
+        // писали в него "свой" курс вместо реального, это искажало
+        // отчётность; при простом показе текущего курса (без ввода) поле
+        // всё равно оставалось на виду и путало, когда показывало "—" (нет
+        // сделок за месяц — курс ещё не посчитан). Курс по-прежнему
+        // используется — просто автоматически, невидимо для трейдера,
+        // берётся текущий средний курс остатка при отправке (см. ниже
+        // priceDisplay.dataset.price, который читает addBalanceCorrection).
+        priceField.style.display   = 'none';
         priceInput.value           = '';
         delete priceDisplay.dataset.price;
 
-        if (!lastTurnover) { priceDisplay.textContent = '—'; return; }
+        if (!lastTurnover) { return; }
 
         var price = currency === 'TON' ? lastTurnover.ton_avg_price : lastTurnover.usdt_avg_price;
-        if (!price) { priceDisplay.textContent = '—'; return; }
+        if (!price) { return; }
 
         priceDisplay.textContent  = formatRate(price) + ' ₽';
         priceDisplay.dataset.price = price;
