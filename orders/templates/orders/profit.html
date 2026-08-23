@@ -140,27 +140,32 @@
         <div class="summary-cards" id="summaryCards">
             <div class="summary-card buy">
                 <div class="summary-title">Покупки (BUY)</div>
-                <div class="summary-value" id="buyTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="buyCount">0</span> операций</div>
+                <!-- "…" вместо "0.00 ₽" по умолчанию — до ответа сервера значение
+                     ещё не известно, а не равно нулю. Показ настоящего "0.00 ₽" тут
+                     в момент загрузки один раз читался трейдером как "прибыль
+                     обнулилась", хотя данные просто ещё не пришли (расчёт за месяц
+                     не мгновенный). -->
+                <div class="summary-value" id="buyTotal">…</div>
+                <div class="summary-count"><span id="buyCount">…</span> операций</div>
             </div>
             <div class="summary-card sell">
                 <div class="summary-title">Продажи (SELL)</div>
-                <div class="summary-value" id="sellTotal">0.00 ₽</div>
-                <div class="summary-count"><span id="sellCount">0</span> операций</div>
+                <div class="summary-value" id="sellTotal">…</div>
+                <div class="summary-count"><span id="sellCount">…</span> операций</div>
             </div>
             <div class="summary-card gross">
                 <div class="summary-title">Прибыль (до вычета)</div>
-                <div class="summary-value" id="grossProfitValue">0.00 ₽</div>
+                <div class="summary-value" id="grossProfitValue">…</div>
                 <div class="summary-count" id="grossProfitSubtitle">Оборот − Комиссии − Расходы</div>
             </div>
             <div class="summary-card net">
                 <div class="summary-title" style="color: #e879f9;">Прибыль (после вычета)</div>
-                <div class="summary-value" id="netProfitValue">0.00 ₽</div>
-                <div class="summary-count" id="netProfitDeductions">Налог: 0₽ | Доля: 0₽</div>
+                <div class="summary-value" id="netProfitValue">…</div>
+                <div class="summary-count" id="netProfitDeductions">Налог: …₽ | Доля: …₽</div>
             </div>
             <div class="summary-card balance-all" id="balanceCard">
                 <div class="summary-title" id="balanceCardTitle">Текущий остаток</div>
-                <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;"></div>
+                <div class="summary-value" id="cryptoBalance" style="color: #6c8cff;">…</div>
                 <div class="summary-count" id="balanceCardSub" style="font-weight:500;"></div>
                 <div style="font-size: 10px; color: var(--muted); margin-top: 4px;" id="balanceCardHint">Глобальный остаток крипты</div>
             </div>
