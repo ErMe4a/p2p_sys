@@ -675,6 +675,18 @@ async function createUnifiedFormSection() {
         border-radius: 4px;
     `;
 
+    // Версия расширения (как на остальных биржах — Bybit/MEXC/Gate/BingX)
+    const versionLabel = document.createElement('div');
+    versionLabel.className = 'p2p-analytics-version-label';
+    versionLabel.textContent = `v${chrome.runtime.getManifest().version}`;
+    versionLabel.style.cssText = `
+        font-size: 11px;
+        color: #9CA3AF;
+        text-align: right;
+        margin-bottom: 8px;
+    `;
+    formSection.appendChild(versionLabel);
+
     // Add submit button
     formSection.appendChild(createSubmitButton());
 

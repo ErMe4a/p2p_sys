@@ -79,13 +79,14 @@ async function clearAuthData() {
 function createAuthHeaders(authData) {
     const headers = {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
+        'Accept': 'application/json',
+        'X-Extension-Version': chrome.runtime.getManifest().version
     };
-    
+
     if (authData && authData.token) {
         headers['Authorization'] = `${authData.tokenType} ${authData.token}`;
     }
-    
+
     return headers;
 }
 
@@ -360,7 +361,8 @@ async function uploadScreenshot(file, name) {
         const response = await fetch(`${API_BASE_URL}/api/order/screenshot`, {
             method: 'POST',
             headers: {
-                'Authorization': `${authData.tokenType} ${authData.token}`
+                'Authorization': `${authData.tokenType} ${authData.token}`,
+                'X-Extension-Version': chrome.runtime.getManifest().version
                 // Content-Type не указываем для FormData
             },
             body: formData

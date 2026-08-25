@@ -91,7 +91,8 @@ async function login(loginData) {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'X-Extension-Version': chrome.runtime.getManifest().version
             },
             body: JSON.stringify(loginData)
         });

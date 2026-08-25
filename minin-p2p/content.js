@@ -11,21 +11,6 @@ const EXCHANGE_TYPE_BYBIT = 1;
 
 // UI color constants
 const GOLD_COLOR_RGB = 'rgb(247, 166, 0)'; // #F7A600
-// --- НОВЫЙ СПИСОК БАНКОВ (Синхронизирован с БД) ---
-const FIXED_BANKS = [
-    { id: 1, name: 'Сбербанк' },
-    { id: 2, name: 'Тинькофф' },
-    { id: 3, name: 'Райффайзен' },
-    { id: 4, name: 'ВТБ' },
-    { id: 5, name: 'Альфа-Банк' },
-    { id: 6, name: 'Газпромбанк' },
-    { id: 7, name: 'Росбанк' },
-    { id: 8, name: 'СБП' },
-    { id: 9, name: 'Озон Банк' },
-    { id: 10, name: 'Уралсиб' },
-    { id: 11, name: 'Хайс' },
-    { id: 12, name: 'Русский Стандарт' }
-];
 // Helper to detect if we're on merchant-admin page
 function isMerchantAdminPage() {
     // Проверяем pathname, а не весь href — защита от совпадений в параметрах/хэше
@@ -976,24 +961,38 @@ async function createUnifiedFormSection() {
     dropdownMenu.className = 'p2p-analytics-menu';
     dropdownMenu.style.display = 'none';
 
-    console.log('P2P Analytics: Using FIXED bank list');
-    
-    FIXED_BANKS.forEach(bankDetail => {
-        const menuItemElement = document.createElement('div');
-        menuItemElement.className = 'p2p-analytics-menu-item';
-        menuItemElement.textContent = bankDetail.name;
-        menuItemElement.setAttribute('data-bank-id', bankDetail.id);
-        
-        menuItemElement.onclick = (e) => {
-            e.stopPropagation();
-            buttonTextSpan.textContent = bankDetail.name;
-            buttonTextSpan.setAttribute('data-bank-id', bankDetail.id);
-            console.log(`${bankDetail.name} (ID: ${bankDetail.id}) selected`);
-            dropdownMenu.style.display = 'none';
-            dropdownButton.classList.remove('p2p-analytics-button-active');
-        };
-        dropdownMenu.appendChild(menuItemElement);
-    });
+    console.log('P2P Analytics: Fetching bank details...');
+    const bankDetailsResult = await fetchBankDetails();
+
+    if (bankDetailsResult.success && bankDetailsResult.data.length > 0) {
+        console.log('P2P Analytics: Bank details loaded:', bankDetailsResult.data.length);
+
+        bankDetailsResult.data.forEach(bankDetail => {
+            const menuItemElement = document.createElement('div');
+            menuItemElement.className = 'p2p-analytics-menu-item';
+            menuItemElement.textContent = bankDetail.name;
+            menuItemElement.setAttribute('data-bank-id', bankDetail.id);
+
+            menuItemElement.onclick = (e) => {
+                e.stopPropagation();
+                buttonTextSpan.textContent = bankDetail.name;
+                buttonTextSpan.setAttribute('data-bank-id', bankDetail.id);
+                console.log(`${bankDetail.name} (ID: ${bankDetail.id}) selected`);
+                dropdownMenu.style.display = 'none';
+                dropdownButton.classList.remove('p2p-analytics-button-active');
+            };
+            dropdownMenu.appendChild(menuItemElement);
+        });
+    } else {
+        console.error('P2P Analytics: Failed to load bank details:', bankDetailsResult.error);
+
+        const errorItem = document.createElement('div');
+        errorItem.className = 'p2p-analytics-menu-item';
+        errorItem.textContent = 'Не удалось загрузить список банков';
+        errorItem.style.color = '#ff6b6b';
+        errorItem.style.cursor = 'default';
+        dropdownMenu.appendChild(errorItem);
+    }
 
     buttonMenuWrapper.appendChild(dropdownButton);
     buttonMenuWrapper.appendChild(dropdownMenu);
@@ -1012,8 +1011,8 @@ async function createUnifiedFormSection() {
                 
                 if (order.details) {
                     const details = order.details;
-                    const matchingBankDetail = FIXED_BANKS.find(bd => bd.id === details.id);
-                    
+                    const matchingBankDetail = bankDetailsResult.data.find(bd => bd.id === details.id);
+
                     if (matchingBankDetail) {
                         buttonTextSpan.textContent = matchingBankDetail.name;
                         buttonTextSpan.setAttribute('data-bank-id', details.id);
@@ -1851,9 +1850,9 @@ async function createFloatingWidget() {
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
             </svg>
-            <span>P2P Analytics</span>
+            <span>v${chrome.runtime.getManifest().version}</span>
         `;
-        
+
         // Create content container
         const content = document.createElement('div');
         content.className = 'p2p-analytics-widget-content';

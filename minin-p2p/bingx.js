@@ -9,22 +9,6 @@ const EXCHANGE_TYPE_BINGX = 5;
 
 // COMMISSION_TYPE_PERCENT и COMMISSION_TYPE_MONEY доступны глобально из order_api.js
 
-// --- СПИСОК БАНКОВ ---
-const FIXED_BANKS = [
-    { id: 1, name: 'Сбербанк' },
-    { id: 2, name: 'Тинькофф' },
-    { id: 3, name: 'Райффайзен' },
-    { id: 4, name: 'ВТБ' },
-    { id: 5, name: 'Альфа-Банк' },
-    { id: 6, name: 'Газпромбанк' },
-    { id: 7, name: 'Росбанк' },
-    { id: 8, name: 'СБП' },
-    { id: 9, name: 'Озон Банк' },
-    { id: 10, name: 'Уралсиб' },
-    { id: 11, name: 'Хайс' },
-    { id: 12, name: 'Русский Стандарт' }
-];
-
 // --- HELPERS ---
 function normalizeText(str) {
     try {
@@ -474,20 +458,36 @@ async function createUnifiedFormSection() {
     dropdownMenu.className = 'p2p-analytics-menu';
     dropdownMenu.style.display = 'none';
 
-    FIXED_BANKS.forEach(bank => {
-        const item = document.createElement('div');
-        item.className = 'p2p-analytics-menu-item';
-        item.textContent = bank.name;
-        item.setAttribute('data-bank-id', bank.id);
-        item.onclick = (e) => {
-            e.stopPropagation();
-            buttonTextSpan.textContent = bank.name;
-            buttonTextSpan.setAttribute('data-bank-id', bank.id);
-            dropdownMenu.style.display = 'none';
-            dropdownButton.classList.remove('p2p-analytics-button-active');
-        };
-        dropdownMenu.appendChild(item);
-    });
+    console.log('P2P Analytics BingX: Fetching bank details...');
+    const bankDetailsResult = await fetchBankDetails();
+
+    if (bankDetailsResult.success && bankDetailsResult.data.length > 0) {
+        console.log('P2P Analytics BingX: Bank details loaded:', bankDetailsResult.data.length);
+
+        bankDetailsResult.data.forEach(bank => {
+            const item = document.createElement('div');
+            item.className = 'p2p-analytics-menu-item';
+            item.textContent = bank.name;
+            item.setAttribute('data-bank-id', bank.id);
+            item.onclick = (e) => {
+                e.stopPropagation();
+                buttonTextSpan.textContent = bank.name;
+                buttonTextSpan.setAttribute('data-bank-id', bank.id);
+                dropdownMenu.style.display = 'none';
+                dropdownButton.classList.remove('p2p-analytics-button-active');
+            };
+            dropdownMenu.appendChild(item);
+        });
+    } else {
+        console.error('P2P Analytics BingX: Failed to load bank details:', bankDetailsResult.error);
+
+        const errorItem = document.createElement('div');
+        errorItem.className = 'p2p-analytics-menu-item';
+        errorItem.textContent = 'Не удалось загрузить список банков';
+        errorItem.style.color = '#ff6b6b';
+        errorItem.style.cursor = 'default';
+        dropdownMenu.appendChild(errorItem);
+    }
 
     buttonMenuWrapper.appendChild(dropdownButton);
     buttonMenuWrapper.appendChild(dropdownMenu);
@@ -503,7 +503,7 @@ async function createUnifiedFormSection() {
             if (orderResult.success && orderResult.exists && orderResult.data) {
                 const order = orderResult.data;
                 if (order.details) {
-                    const match = FIXED_BANKS.find(b => b.id === order.details.id);
+                    const match = bankDetailsResult.data.find(b => b.id === order.details.id);
                     buttonTextSpan.textContent = match ? match.name : (order.details.name || 'Неизвестный банк');
                     buttonTextSpan.setAttribute('data-bank-id', order.details.id);
                 }
@@ -860,7 +860,7 @@ async function createFloatingWidget() {
             <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
             </svg>
-            <span>P2P Analytics (BingX)</span>
+            <span>v${chrome.runtime.getManifest().version}</span>
         `;
 
         const content = document.createElement('div');
