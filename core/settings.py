@@ -1,6 +1,7 @@
 from pathlib import Path
 import os
 import environ
+from corsheaders.defaults import default_headers as _cors_default_headers
 
 # Initialise environment reader and read `.env` if present.
 env = environ.Env()
@@ -150,6 +151,10 @@ CORS_ALLOW_ALL_ORIGINS = env.bool('CORS_ALLOW_ALL_ORIGINS', default=True)
 CORS_ALLOWED_ORIGINS = env.list('CORS_ALLOWED_ORIGINS', default=[])
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_PRIVATE_NETWORK = True
+# Расширение шлёт свою версию в X-Extension-Version (см. orders/middleware.py,
+# RequireExtensionVersionMiddleware) — без явного добавления в разрешённые
+# заголовки браузер режет запрос ещё на этапе CORS preflight.
+CORS_ALLOW_HEADERS = list(_cors_default_headers) + ['x-extension-version']
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
