@@ -226,6 +226,33 @@ def order(request):
             "Order %s [%s]: ручное редактирование — price=%s cost=%s amount=%s type=%s",
             external_id, exchange_name, price, cost, amount, op_type,
         )
+
+        # Валюту при ручном редактировании раньше выбирал трейдер в
+        # выпадающем списке на Bybit-плашке (убран по прямому запросу —
+        # "чтобы софт сам понимал, какая валюта"). Вместо дропдауна —
+        # спрашиваем API биржи ТОЛЬКО про валюту (price/cost/amount/type
+        # остаются ручными, это и есть весь смысл manualEdit). Как и при
+        # обычной верификации, get_order_from_exchange поддерживает только
+        # Bybit/MEXC — для остальных бирж (Telegram и т.п.) currency тут
+        # останется None и не тронет текущее значение на ордере.
+        try:
+            api_data_for_currency = get_order_from_exchange(
+                user=request.user,
+                order_id=external_id,
+                exchange_name=exchange_name,
+                order_date=created_at,
+            )
+            if api_data_for_currency and api_data_for_currency.get("currency"):
+                currency = api_data_for_currency["currency"]
+                logger.info(
+                    "Order %s [%s]: валюта при ручном редактировании определена через API: %s",
+                    external_id, exchange_name, currency,
+                )
+        except Exception:
+            logger.warning(
+                "Order %s [%s]: не удалось определить валюту через API при ручном редактировании — оставляем как было",
+                external_id, exchange_name, exc_info=True,
+            )
     else:
         api_data = get_order_from_exchange(
             user=request.user,
