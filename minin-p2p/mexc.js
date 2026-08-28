@@ -75,7 +75,83 @@ function isColorGreen(colorStr) {
     return false;
 }
 
+// ИСПРАВЛЕНО (редизайн MEXC, август 2026): старые классы InfoRow_*/
+// data-testid="info-row-*" пропали со страницы целиком. Новая вёрстка —
+// строки инфопанели слева (Amount/Price/Quantity/Order Number/Time
+// Created/KYC Name/Payment Method) это просто
+// div.flex.items-center.justify-between.gap-3.py-2 с двумя детьми:
+// [0] — span с английским лейблом, [1] — span со значением. Ищем по
+// тексту лейбла, а не по классам — устойчивее к очередному редизайну.
+function getMexcInfoRowValueEl(labelText) {
+    const rows = document.querySelectorAll('div.flex.items-center.justify-between.gap-3.py-2');
+    for (const row of rows) {
+        if (row.children.length < 2) continue;
+        const label = (row.children[0].textContent || '').trim().toLowerCase();
+        if (label === labelText.toLowerCase()) {
+            return row.children[1];
+        }
+    }
+    return null;
+}
+
+// Next.js кладёт в <script> служебный JSON гидратации, где вперемешку
+// лежат строки ВСЕХ вариантов страницы (в т.ч. "successfully sold" даже
+// если текущая страница показывает "Order timeout") — обычный TreeWalker
+// по SHOW_TEXT цепляет и текст внутри <script>, поэтому явно его исключаем.
+function mexcVisibleTextNodes() {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+            const tag = node.parentElement ? node.parentElement.tagName : '';
+            return (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT')
+                ? NodeFilter.FILTER_REJECT
+                : NodeFilter.FILTER_ACCEPT;
+        },
+    });
+    const out = [];
+    let n;
+    while (n = walker.nextNode()) out.push(n.textContent);
+    return out;
+}
+
 function detectOrderType() {
+    // СТРАТЕГИЯ -1 (новая вёрстка): ищем фразу "You have successfully
+    // sold/bought/purchased X" — рендерится только для завершённых
+    // ордеров, но это самый частый случай (чек бьют по факту завершения).
+    try {
+        for (const t of mexcVisibleTextNodes()) {
+            if (/successfully sold/i.test(t)) {
+                console.log('P2P Analytics MEXC: Detected SELL via "successfully sold" text');
+                return 'sell';
+            }
+            if (/successfully (bought|purchased)/i.test(t)) {
+                console.log('P2P Analytics MEXC: Detected BUY via "successfully bought/purchased" text');
+                return 'buy';
+            }
+        }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy -1 (successfully sold/bought text) failed', e);
+    }
+
+    // СТРАТЕГИЯ -0.5 (новая вёрстка, незавершённые ордера — timeout/
+    // cancelled): системное сообщение в чате про возврат актива называет
+    // сторону, которой актив вернулся — если "seller", значит мы
+    // покупатель (BUY), если "buyer" — мы продавец (SELL).
+    try {
+        for (const t of mexcVisibleTextNodes()) {
+            if (/returned to the seller/i.test(t)) {
+                console.log('P2P Analytics MEXC: Detected BUY via "returned to the seller" text');
+                return 'buy';
+            }
+            if (/returned to the buyer/i.test(t)) {
+                console.log('P2P Analytics MEXC: Detected SELL via "returned to the buyer" text');
+                return 'sell';
+            }
+        }
+    } catch (e) {
+        console.error('P2P Analytics MEXC: Strategy -0.5 (returned to buyer/seller text) failed', e);
+    }
+
+
     console.log('P2P Analytics MEXC: Detecting order type...');
 
     // ИСПРАВЛЕНО: НОВАЯ, самая надёжная стратегия — идёт первой.
@@ -1203,9 +1279,14 @@ function extractNumberMEXC(text) {
         // Несколько точек без запятых — тоже разделители тысяч
         numberStr = numberStr.replace(/\./g, '');
     } else if (commaCount === 1) {
-        // Одна запятая — ВСЕГДА десятичный разделитель.
-        // Больше никакого гадания по количеству цифр после неё.
-        numberStr = numberStr.replace(',', '.');
+        // ИСПРАВЛЕНО (редизайн MEXC, август 2026): раньше запятая здесь
+        // всегда трактовалась как десятичный разделитель (старый дизайн
+        // MEXC правда так делал — "45,977" = 45.977). Проверено на живых
+        // страницах нового дизайна: теперь запятая — разделитель тысяч
+        // ("95,000" = 95000 руб., "1,010.6382" — тут вообще запятая с
+        // точкой вместе, эта ветка сюда не попадает). Раз оба обнаруженных
+        // случая нового дизайна — тысячи, трактуем запятую как тысячи.
+        numberStr = numberStr.replace(',', '');
     }
     // periodCount === 1 и commaCount === 0 — уже валидный JS-формат, не трогаем
  
@@ -1228,21 +1309,21 @@ function parseOrderInfo() {
     // [data-testid="info-row-timeCreated"] → "2026-01-28 14:52:29"
     try {
         const timeRow = document.querySelector('[data-testid="info-row-timeCreated"]');
-        if (timeRow) {
-            const valueEl = timeRow.querySelector('.InfoRow_value__9xKf4');
-            if (valueEl) {
-                const text = (valueEl.textContent || '').trim();
-                console.log('P2P Analytics MEXC [parseOrderInfo] raw date text:', text);
+        const valueEl = timeRow
+            ? timeRow.querySelector('.InfoRow_value__9xKf4')
+            : getMexcInfoRowValueEl('Time Created'); // редизайн авг 2026
+        if (valueEl) {
+            const text = (valueEl.textContent || '').trim();
+            console.log('P2P Analytics MEXC [parseOrderInfo] raw date text:', text);
 
-                const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
-                if (dateMatch) {
-                    const isoString = `${dateMatch[1]}T${dateMatch[2]}`;
-                    const parsedDate = new Date(isoString);
-                    if (!isNaN(parsedDate.getTime())) {
-                        orderInfo.createdAt = parsedDate.toISOString();
-                        console.log('P2P Analytics MEXC: Parsed order date from page:', orderInfo.createdAt);
-                        dateFound = true;
-                    }
+            const dateMatch = text.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/);
+            if (dateMatch) {
+                const isoString = `${dateMatch[1]}T${dateMatch[2]}`;
+                const parsedDate = new Date(isoString);
+                if (!isNaN(parsedDate.getTime())) {
+                    orderInfo.createdAt = parsedDate.toISOString();
+                    console.log('P2P Analytics MEXC: Parsed order date from page:', orderInfo.createdAt);
+                    dateFound = true;
                 }
             }
         }
@@ -1291,17 +1372,17 @@ function parsePriceFromPage() {
         console.log('P2P Analytics MEXC: Parsing price from page...');
 
         const row = document.querySelector('[data-testid="info-row-price"]');
-        if (row) {
-            const valueEl = row.querySelector('.InfoRow_value__9xKf4');
-            if (valueEl) {
-                const text = (valueEl.textContent || '').trim();
-                console.log('P2P Analytics MEXC [parsePriceFromPage] raw text:', text);
+        const valueEl = row
+            ? row.querySelector('.InfoRow_value__9xKf4')
+            : getMexcInfoRowValueEl('Price'); // редизайн авг 2026
+        if (valueEl) {
+            const text = (valueEl.textContent || '').trim();
+            console.log('P2P Analytics MEXC [parsePriceFromPage] raw text:', text);
 
-                const price = extractNumberMEXC(text);
-                if (price !== null && price > 0) {
-                    console.log('P2P Analytics MEXC: Found price:', price);
-                    return price.toString();
-                }
+            const price = extractNumberMEXC(text);
+            if (price !== null && price > 0) {
+                console.log('P2P Analytics MEXC: Found price:', price);
+                return price.toString();
             }
         }
 
@@ -1319,21 +1400,23 @@ function parseQuantityFromPage() {
         console.log('P2P Analytics MEXC: Parsing quantity from page...');
 
         const row = document.querySelector('[data-testid="info-row-quantity"]');
-        if (row) {
-            const valueEl = row.querySelector('.CouponQuantity_quantityValue__5hj2c');
-            if (valueEl) {
-                const text = (valueEl.textContent || '').trim();
-                console.log('P2P Analytics MEXC [parseQuantityFromPage] raw text:', text);
+        const valueEl = row
+            ? row.querySelector('.CouponQuantity_quantityValue__5hj2c')
+            : getMexcInfoRowValueEl('Quantity'); // редизайн авг 2026
+        if (valueEl) {
+            const text = (valueEl.textContent || '').trim();
+            console.log('P2P Analytics MEXC [parseQuantityFromPage] raw text:', text);
 
-                // Для количества USDT запятая всегда десятичная
-                const cleaned = text.replace(/[^\d,\.]/g, '');
-                const normalized = cleaned.replace(',', '.');
-                const quantity = parseFloat(normalized);
+            // ИСПРАВЛЕНО: наивная замена "первая запятая -> точка" ломалась
+            // на новом дизайне, где количество идёт с разделителем тысяч
+            // ("1,010.6382" превращалось в "1.010.6382" -> parseFloat
+            // обрывался на 1.01). extractNumberMEXC уже умеет корректно
+            // отличать тысячи от десятичных при обоих разделителях сразу.
+            const quantity = extractNumberMEXC(text);
 
-                if (quantity !== null && quantity > 0 && isFinite(quantity)) {
-                    console.log('P2P Analytics MEXC: Found quantity:', quantity);
-                    return quantity.toString();
-                }
+            if (quantity !== null && quantity > 0 && isFinite(quantity)) {
+                console.log('P2P Analytics MEXC: Found quantity:', quantity);
+                return quantity.toString();
             }
         }
 
@@ -1351,17 +1434,17 @@ function parseAmountFromPage() {
         console.log('P2P Analytics MEXC: Parsing amount from page...');
 
         const row = document.querySelector('[data-testid="info-row-amount"]');
-        if (row) {
-            const valueEl = row.querySelector('.CouponAmount_amount__eC1N0');
-            if (valueEl) {
-                const text = (valueEl.textContent || '').trim();
-                console.log('P2P Analytics MEXC [parseAmountFromPage] raw text:', text);
+        const valueEl = row
+            ? row.querySelector('.CouponAmount_amount__eC1N0')
+            : getMexcInfoRowValueEl('Amount'); // редизайн авг 2026
+        if (valueEl) {
+            const text = (valueEl.textContent || '').trim();
+            console.log('P2P Analytics MEXC [parseAmountFromPage] raw text:', text);
 
-                const amount = extractNumberMEXC(text);
-                if (amount !== null && amount > 0) {
-                    console.log('P2P Analytics MEXC: Found amount:', amount);
-                    return amount.toString();
-                }
+            const amount = extractNumberMEXC(text);
+            if (amount !== null && amount > 0) {
+                console.log('P2P Analytics MEXC: Found amount:', amount);
+                return amount.toString();
             }
         }
 
@@ -1414,6 +1497,32 @@ function waitForElement(selector, maxAttempts = 20, delayMs = 300) {
         let attempts = 0;
         const check = () => {
             const el = document.querySelector(selector);
+            if (el) {
+                resolve(el);
+                return;
+            }
+            attempts++;
+            if (attempts >= maxAttempts) {
+                resolve(null);
+                return;
+            }
+            setTimeout(check, delayMs);
+        };
+        check();
+    });
+}
+
+// ИСПРАВЛЕНО (редизайн MEXC, август 2026): вызовы ждали
+// '[data-testid="info-row-price"]', которого в новой вёрстке больше нет —
+// waitForElement честно перебирал все 20 попыток (~6 сек) и всё равно
+// отдавал управление дальше, просто с задержкой. Ждём напрямую через
+// getMexcInfoRowValueEl — то же условие готовности, что реально
+// использует парсинг, без лишних секунд ожидания несуществующего узла.
+function waitForMexcPriceRow(maxAttempts = 20, delayMs = 300) {
+    return new Promise((resolve) => {
+        let attempts = 0;
+        const check = () => {
+            const el = document.querySelector('[data-testid="info-row-price"]') || getMexcInfoRowValueEl('Price');
             if (el) {
                 resolve(el);
                 return;
@@ -1704,7 +1813,7 @@ function createCheckContent() {
                     if (order.amount && costInput) costInput.value = order.amount;
 
                     if (!order.price || !order.quantity || !order.amount) {
-                        waitForElement('[data-testid="info-row-price"]').then(() => {
+                        waitForMexcPriceRow().then(() => {
                             if (!rateInput.value) rateInput.value = parsePriceFromPage();
                             if (!quantityInput.value) quantityInput.value = parseQuantityFromPage();
                             if (costInput && !costInput.value) costInput.value = parseAmountFromPage();
@@ -1725,7 +1834,7 @@ function createCheckContent() {
                     if (orderResult.hint.amount && costInput) costInput.value = orderResult.hint.amount;
                     lockFinancialFields();
                 } else {
-                    waitForElement('[data-testid="info-row-price"]').then(() => {
+                    waitForMexcPriceRow().then(() => {
                         rateInput.value = parsePriceFromPage();
                         quantityInput.value = parseQuantityFromPage();
                         if (costInput) costInput.value = parseAmountFromPage();
@@ -2174,12 +2283,41 @@ if (chrome && chrome.storage && chrome.storage.onChanged) {
 // Замена имени контрагента
 // ============================================
 
+// ИСПРАВЛЕНО (редизайн MEXC, август 2026): шапка чата больше не имеет
+// стабильных классов/data-testid — везде generic Tailwind-утилиты,
+// которые встречаются по всей странице десятками. Ищем кнопку структурно:
+// [0] — аватар с rounded-full, [1] — инфо-блок ровно с 2 span-детьми, у
+// первого внутри есть .truncate (ник). Проверено на живой странице —
+// совпадает ровно с одной кнопкой из ~20 на странице заказа.
+function findCounterpartyHeaderButton() {
+    return Array.from(document.querySelectorAll('button')).find(b => {
+        if (b.children.length !== 2) return false;
+        const avatar = b.children[0];
+        const info   = b.children[1];
+        if (!avatar.className || !/rounded-full/.test(avatar.className)) return false;
+        if (info.children.length !== 2) return false;
+        if (!info.children[0].querySelector('.truncate')) return false;
+        return true;
+    }) || null;
+}
+
 // Меняет только ник в шапке чата
 function replaceNickName() {
     if (!currentCounterpartyName) return;
-    const el = document.querySelector('.ChatHeader_nickNameContent__f6nZa');
-    if (el && el.textContent !== currentCounterpartyName) {
-        el.textContent = currentCounterpartyName;
+
+    // Старая вёрстка (на случай отката редизайна)
+    const oldEl = document.querySelector('.ChatHeader_nickNameContent__f6nZa');
+    if (oldEl && oldEl.textContent !== currentCounterpartyName) {
+        oldEl.textContent = currentCounterpartyName;
+    }
+
+    // Новая вёрстка
+    const btn = findCounterpartyHeaderButton();
+    if (btn) {
+        const truncateEl = btn.children[1].children[0].querySelector('.truncate');
+        if (truncateEl && truncateEl.textContent !== currentCounterpartyName) {
+            truncateEl.textContent = currentCounterpartyName;
+        }
     }
 }
 
@@ -2197,6 +2335,17 @@ function replaceRealName() {
         const val = nicknameRow.querySelector('.InfoRow_value__9xKf4');
         if (val && val.textContent !== currentRealName) {
             val.textContent = currentRealName;
+        }
+    }
+
+    // Новая вёрстка — второй span инфо-блока это строка "имя + статус"
+    // (имя, разделитель, "Online"/"Active Nm ago"); меняем только ПЕРВЫЙ
+    // вложенный span, чтобы не задеть статус.
+    const btn = findCounterpartyHeaderButton();
+    if (btn) {
+        const nameSpan = btn.children[1].children[1].children[0];
+        if (nameSpan && nameSpan.textContent !== currentRealName) {
+            nameSpan.textContent = currentRealName;
         }
     }
 }
@@ -2239,7 +2388,7 @@ function startCounterpartyNameObserver() {
 
     if (!currentCounterpartyName) return;
 
-    const chatHeader = document.querySelector('.ChatHeader_name-box__eq9Rd');
+    const chatHeader = document.querySelector('.ChatHeader_name-box__eq9Rd') || findCounterpartyHeaderButton();
     if (!chatHeader) {
         setTimeout(startCounterpartyNameObserver, 500);
         return;

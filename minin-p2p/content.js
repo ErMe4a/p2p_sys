@@ -685,11 +685,12 @@ function collectFormData() {
     const rateInput = document.querySelector('#rate-input');
     const quantityInput = document.querySelector('#quantity-input');
     const costInput = document.querySelector('#cost-input');
-    const currencySelect = document.querySelector('#currency-select');
-    formData.currency = currencySelect ? currencySelect.value : 'USDT';
-
-    // BTC — до 8 знаков после запятой (сатоши), иначе (USDT/TON) — 3, как раньше
-    const qtyDecimals = formData.currency === 'BTC' ? 8 : 3;
+    // ИСПРАВЛЕНО: дропдаун валюты убран из панели (по прямому запросу) —
+    // валюту теперь при сохранении определяет бэкенд через API биржи, даже
+    // в ручном режиме (см. api_views.order). Здесь больше нечего читать.
+    // Эвотор всё равно жёстко режет quantity до 3 знаков для любой валюты
+    // (см. evotor_atol.py) — точность препросмотра тоже всегда 3.
+    const qtyDecimals = 3;
 
     let finalPrice    = cleanAndParseFloat(rateInput ? rateInput.value : '', 2);
     let finalQuantity = cleanAndParseFloat(quantityInput ? quantityInput.value : '', qtyDecimals);
@@ -716,8 +717,8 @@ function collectFormData() {
         console.log('P2P Analytics: Collecting receipt data...');
         let validQtyForReceipt = finalQuantity;
         if (validQtyForReceipt !== null) {
-            const receiptQtyFactor = formData.currency === 'BTC' ? 100000000 : 1000;
-            validQtyForReceipt = Math.floor(validQtyForReceipt * receiptQtyFactor) / receiptQtyFactor;
+            // Эвотор всё равно режет quantity до 3 знаков для любой валюты
+            validQtyForReceipt = Math.floor(validQtyForReceipt * 1000) / 1000;
         }
         const receiptData = {
             contact: contactInput ? contactInput.value.trim() : '',
@@ -831,8 +832,9 @@ async function handleFormSubmission() {
             price: formData.price,
             quantity: formData.quantity,
             amount: formData.amount,
-            manualEdit: formData.manualEdit,
-            currency: formData.currency
+            manualEdit: formData.manualEdit
+            // currency больше не шлём — бэкенд определяет через API биржи
+            // (см. api_views.order), дропдаун валюты убран из панели.
         };
         
         console.log('P2P Analytics: Order data prepared:', orderData);
@@ -1464,10 +1466,6 @@ function createCheckContent() {
     const costInput = costInputWrapper.querySelector('#cost-input');
     conditionalInputs.appendChild(costInputWrapper);
 
-    const currencySelectWrapper = createSelect('Валюта', 'currency-select', ['USDT', 'TON', 'BTC'], 'USDT');
-    const currencySelect = currencySelectWrapper.querySelector('#currency-select');
-    conditionalInputs.appendChild(currencySelectWrapper);
-
     checkContent.appendChild(checkboxWrapper);
     checkContent.appendChild(editCheckboxWrapper);
     checkContent.appendChild(warningMessage);
@@ -1810,11 +1808,10 @@ async function createFloatingWidget() {
         const widget = document.createElement('div');
         widget.className = 'p2p-analytics-widget';
         
-        // Position widget on LEFT for merchant-admin pages, RIGHT otherwise
-        if (isMerchantAdminPage()) {
-            widget.classList.add('p2p-analytics-widget--left');
-        }
-        
+        // ИСПРАВЛЕНО: раньше плашка на merchant-admin странице ставилась
+        // слева (перекрывала админское левое меню To-dos/Orders/My Ads) —
+        // по прямому запросу теперь везде справа, как на обычных страницах.
+
         if (widgetCollapsed) {
             widget.classList.add('collapsed');
         }
