@@ -49,11 +49,19 @@ class User(AbstractUser):
     )
 
     # Банки/биржи — один общий каталог для всей системы (BankDetail/Exchange,
-    # редактируется в /admin/). visible_* — что из этого общего каталога юзер
-    # сам решил показывать себе в списке при ручном пробитии ордера,
-    # редактируется юзером в /settings/. Никакого отдельного admin-разрешения
-    # "уровня 1" больше нет — раньше было (allowed_banks/allowed_exchanges),
-    # убрано по прямому запросу: один общий список на всех, без грантов.
+    # редактируется в кастомной админке /p2p-admin/catalog/). Двухуровневый
+    # доступ: BankDetail.is_public/Exchange.is_public решает, виден ли банк/
+    # биржа вообще всем; если is_public=False — виден только тем, кто явно
+    # добавлен в allowed_banks/allowed_exchanges (правит только админ,
+    # каталог). visible_* — что юзер САМ решил показывать себе в списке при
+    # ручном пробитии ордера, редактируется юзером в /settings/, но только
+    # из того, что ему вообще доступно (публичное + явно разрешённое приватное).
+    allowed_banks = models.ManyToManyField(
+        'BankDetail', blank=True, related_name='allowed_users', verbose_name="Доступны банки (приватные)"
+    )
+    allowed_exchanges = models.ManyToManyField(
+        'Exchange', blank=True, related_name='allowed_users', verbose_name="Доступны биржи (приватные)"
+    )
     visible_banks = models.ManyToManyField(
         'BankDetail', blank=True, related_name='visible_users', verbose_name="Показывать банки"
     )
@@ -69,6 +77,7 @@ class User(AbstractUser):
 class BankDetail(models.Model):
     name = models.CharField(max_length=255, verbose_name="Название банка")
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
+    is_public = models.BooleanField(default=True, verbose_name="Публичный (виден всем)")
 
     def __str__(self):
         return self.name
@@ -82,6 +91,7 @@ class Exchange(models.Model):
     списках на my_orders.html, см. User.allowed_exchanges/visible_exchanges.
     """
     name = models.CharField(max_length=255, verbose_name="Название биржи")
+    is_public = models.BooleanField(default=True, verbose_name="Публичная (видна всем)")
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
 
     def __str__(self):

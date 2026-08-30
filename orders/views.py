@@ -95,6 +95,24 @@ def format_ru_number(value, decimals=4):
         return "0"
 
 
+def _accessible_banks_qs(user):
+    """Банки, доступные юзеру: публичные + приватные, куда явно добавлен."""
+    return (
+        BankDetail.objects.filter(is_deleted=False)
+        .filter(Q(is_public=True) | Q(allowed_users=user))
+        .distinct().order_by('id')
+    )
+
+
+def _accessible_exchanges_qs(user):
+    """Биржи, доступные юзеру: публичные + приватные, куда явно добавлен."""
+    return (
+        Exchange.objects.filter(is_deleted=False)
+        .filter(Q(is_public=True) | Q(allowed_users=user))
+        .distinct().order_by('id')
+    )
+
+
 @login_required
 def my_orders_list(request):
     # Грузим список банков (для фильтра — весь список, чтобы можно было
@@ -452,11 +470,12 @@ def profile_settings(request):
         user.telegram_commission = float(request.POST.get('telegram_commission') or 0.9)
 
         # 3.5 Какие банки/биржи показывать при ручном пробитии — личный выбор
-        # юзера из общего каталога (BankDetail/Exchange, один на всю систему).
+        # юзера, но только из того, что ему вообще доступно (публичное +
+        # приватное, куда его явно добавил админ в каталоге).
         selected_bank_ids     = request.POST.getlist('visible_banks')
         selected_exchange_ids = request.POST.getlist('visible_exchanges')
-        user.visible_banks.set(BankDetail.objects.filter(id__in=selected_bank_ids, is_deleted=False))
-        user.visible_exchanges.set(Exchange.objects.filter(id__in=selected_exchange_ids, is_deleted=False))
+        user.visible_banks.set(_accessible_banks_qs(user).filter(id__in=selected_bank_ids))
+        user.visible_exchanges.set(_accessible_exchanges_qs(user).filter(id__in=selected_exchange_ids))
 
         # 4. Логика смены пароля
         new_password = request.POST.get('new_password')
@@ -471,8 +490,8 @@ def profile_settings(request):
 
         return redirect('settings')
 
-    all_banks      = BankDetail.objects.filter(is_deleted=False).order_by('id')
-    all_exchanges  = Exchange.objects.filter(is_deleted=False).order_by('id')
+    all_banks      = _accessible_banks_qs(user)
+    all_exchanges  = _accessible_exchanges_qs(user)
     visible_bank_ids     = set(user.visible_banks.values_list('id', flat=True))
     visible_exchange_ids = set(user.visible_exchanges.values_list('id', flat=True))
 
@@ -1546,7 +1565,9 @@ def admin_users_list(request):
             if sberbank:
                 new_user.visible_banks.set([sberbank])
 
-            default_exchanges = list(Exchange.objects.filter(is_deleted=False).exclude(name='Intelion'))
+            default_exchanges = list(
+                Exchange.objects.filter(is_deleted=False, is_public=True).exclude(name='Intelion')
+            )
             new_user.visible_exchanges.set(default_exchanges)
 
             messages.success(request, f"Пользователь {username} создан.")
@@ -1783,11 +1804,70 @@ def admin_catalog(request):
                     f'Биржа "{exchange.name}" {"скрыта" if exchange.is_deleted else "восстановлена"}.'
                 )
 
+        elif action == 'toggle_bank_public':
+            bank = BankDetail.objects.filter(id=request.POST.get('id')).first()
+            if bank:
+                bank.is_public = not bank.is_public
+                bank.save(update_fields=['is_public'])
+                if not bank.is_public:
+                    # Стал приватным — убираем его из личного показа у всех,
+                    # кроме явно разрешённых (на этот момент разрешённых нет),
+                    # иначе юзер продолжит видеть его в /settings/ по старой памяти.
+                    for u in bank.visible_users.exclude(id__in=bank.allowed_users.all()):
+                        u.visible_banks.remove(bank)
+                messages.success(
+                    request,
+                    f'Банк "{bank.name}" теперь {"публичный" if bank.is_public else "приватный"}.'
+                )
+
+        elif action == 'toggle_exchange_public':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            if exchange:
+                exchange.is_public = not exchange.is_public
+                exchange.save(update_fields=['is_public'])
+                if not exchange.is_public:
+                    for u in exchange.visible_users.exclude(id__in=exchange.allowed_users.all()):
+                        u.visible_exchanges.remove(exchange)
+                messages.success(
+                    request,
+                    f'Биржа "{exchange.name}" теперь {"публичная" if exchange.is_public else "приватная"}.'
+                )
+
+        elif action == 'add_bank_access':
+            bank = BankDetail.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if bank and target_user:
+                bank.allowed_users.add(target_user)
+                messages.success(request, f'{target_user.username} добавлен(а) в доступ к банку "{bank.name}".')
+
+        elif action == 'remove_bank_access':
+            bank = BankDetail.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if bank and target_user:
+                bank.allowed_users.remove(target_user)
+                target_user.visible_banks.remove(bank)
+                messages.success(request, f'{target_user.username} убран(а) из доступа к банку "{bank.name}".')
+
+        elif action == 'add_exchange_access':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if exchange and target_user:
+                exchange.allowed_users.add(target_user)
+                messages.success(request, f'{target_user.username} добавлен(а) в доступ к бирже "{exchange.name}".')
+
+        elif action == 'remove_exchange_access':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if exchange and target_user:
+                exchange.allowed_users.remove(target_user)
+                target_user.visible_exchanges.remove(exchange)
+                messages.success(request, f'{target_user.username} убран(а) из доступа к бирже "{exchange.name}".')
+
         return redirect('admin_catalog')
 
     return render(request, 'custom_admin/catalog.html', {
-        'banks':     BankDetail.objects.all().order_by('is_deleted', 'name'),
-        'exchanges': Exchange.objects.all().order_by('is_deleted', 'name'),
+        'banks':     BankDetail.objects.all().order_by('is_deleted', 'name').prefetch_related('allowed_users'),
+        'exchanges': Exchange.objects.all().order_by('is_deleted', 'name').prefetch_related('allowed_users'),
     })
 
 

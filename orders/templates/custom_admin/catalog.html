@@ -24,6 +24,31 @@
     .catalog-row .name input:focus { outline: 1px solid var(--accent-blue); background: var(--bg-card); }
     .catalog-row .actions { display: flex; gap: 6px; flex-shrink: 0; }
     .catalog-hint { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 14px; }
+
+    .access-panel {
+        margin: -4px 0 8px 0; padding: 10px 12px; border-radius: 8px;
+        border: 1px dashed var(--border-color); background: var(--bg-card);
+    }
+    .access-users { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+    .access-chip {
+        display: inline-flex; align-items: center; gap: 4px; font-size: 0.78rem;
+        background: var(--bg-input); border: 1px solid var(--border-color);
+        border-radius: 12px; padding: 3px 4px 3px 10px;
+    }
+    .access-chip-remove {
+        border: none; background: transparent; color: var(--text-muted); cursor: pointer;
+        font-size: 0.9rem; line-height: 1; padding: 0 4px;
+    }
+    .access-chip-remove:hover { color: var(--danger, #e55); }
+    .access-user-search-wrap { position: relative; }
+    .access-user-search-dropdown {
+        position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
+        background: var(--bg-card); border: 1px solid var(--border-color);
+        border-radius: 6px; margin-top: 2px; max-height: 220px; overflow-y: auto;
+    }
+    .access-user-search-item { padding: 6px 10px; font-size: 0.82rem; cursor: pointer; display: flex; justify-content: space-between; }
+    .access-user-search-item:hover { background: rgba(61,90,254,0.15); }
+    .access-user-search-item .uid { color: var(--text-muted); font-size: 0.72rem; }
 </style>
 {% endblock %}
 
@@ -58,6 +83,15 @@
                         {% endif %}
                         <form method="POST">
                             {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle_bank_public">
+                            <input type="hidden" name="id" value="{{ bank.id }}">
+                            <button type="submit" class="btn btn-sm {% if bank.is_public %}btn-outline-warning{% else %}btn-outline-info{% endif %}"
+                                    title="{% if bank.is_public %}Сейчас виден всем — сделать приватным{% else %}Сейчас приватный — сделать видимым всем{% endif %}">
+                                {% if bank.is_public %}Сделать приватным{% else %}Сделать публичным{% endif %}
+                            </button>
+                        </form>
+                        <form method="POST">
+                            {% csrf_token %}
                             <input type="hidden" name="action" value="toggle_bank">
                             <input type="hidden" name="id" value="{{ bank.id }}">
                             <button type="submit" class="btn btn-sm {% if bank.is_deleted %}btn-outline-success{% else %}btn-outline-secondary{% endif %}">
@@ -66,6 +100,37 @@
                         </form>
                     </div>
                 </div>
+                {% if not bank.is_public %}
+                    <div class="access-panel">
+                        <div class="access-users">
+                            {% for u in bank.allowed_users.all %}
+                                <span class="access-chip">
+                                    {{ u.username }}
+                                    <form method="POST" style="display:inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="remove_bank_access">
+                                        <input type="hidden" name="id" value="{{ bank.id }}">
+                                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                                        <button type="submit" class="access-chip-remove" title="Убрать доступ">×</button>
+                                    </form>
+                                </span>
+                            {% empty %}
+                                <span class="catalog-hint" style="margin:0;">Приватный — пока никто не добавлен, банк никому не виден.</span>
+                            {% endfor %}
+                        </div>
+                        <form method="POST" class="access-add-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="add_bank_access">
+                            <input type="hidden" name="id" value="{{ bank.id }}">
+                            <input type="hidden" name="user_id" class="access-user-id">
+                            <div class="access-user-search-wrap">
+                                <input type="text" class="access-user-search form-control form-control-sm" autocomplete="off"
+                                       placeholder="Добавить пользователя...">
+                                <div class="access-user-search-dropdown" style="display:none;"></div>
+                            </div>
+                        </form>
+                    </div>
+                {% endif %}
             {% empty %}
                 <div class="catalog-hint">Банков пока нет.</div>
             {% endfor %}
@@ -91,6 +156,15 @@
                         {% endif %}
                         <form method="POST">
                             {% csrf_token %}
+                            <input type="hidden" name="action" value="toggle_exchange_public">
+                            <input type="hidden" name="id" value="{{ exchange.id }}">
+                            <button type="submit" class="btn btn-sm {% if exchange.is_public %}btn-outline-warning{% else %}btn-outline-info{% endif %}"
+                                    title="{% if exchange.is_public %}Сейчас видна всем — сделать приватной{% else %}Сейчас приватная — сделать видимой всем{% endif %}">
+                                {% if exchange.is_public %}Сделать приватной{% else %}Сделать публичной{% endif %}
+                            </button>
+                        </form>
+                        <form method="POST">
+                            {% csrf_token %}
                             <input type="hidden" name="action" value="toggle_exchange">
                             <input type="hidden" name="id" value="{{ exchange.id }}">
                             <button type="submit" class="btn btn-sm {% if exchange.is_deleted %}btn-outline-success{% else %}btn-outline-secondary{% endif %}">
@@ -99,10 +173,90 @@
                         </form>
                     </div>
                 </div>
+                {% if not exchange.is_public %}
+                    <div class="access-panel">
+                        <div class="access-users">
+                            {% for u in exchange.allowed_users.all %}
+                                <span class="access-chip">
+                                    {{ u.username }}
+                                    <form method="POST" style="display:inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="remove_exchange_access">
+                                        <input type="hidden" name="id" value="{{ exchange.id }}">
+                                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                                        <button type="submit" class="access-chip-remove" title="Убрать доступ">×</button>
+                                    </form>
+                                </span>
+                            {% empty %}
+                                <span class="catalog-hint" style="margin:0;">Приватная — пока никто не добавлен, биржа никому не видна.</span>
+                            {% endfor %}
+                        </div>
+                        <form method="POST" class="access-add-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="add_exchange_access">
+                            <input type="hidden" name="id" value="{{ exchange.id }}">
+                            <input type="hidden" name="user_id" class="access-user-id">
+                            <div class="access-user-search-wrap">
+                                <input type="text" class="access-user-search form-control form-control-sm" autocomplete="off"
+                                       placeholder="Добавить пользователя...">
+                                <div class="access-user-search-dropdown" style="display:none;"></div>
+                            </div>
+                        </form>
+                    </div>
+                {% endif %}
             {% empty %}
                 <div class="catalog-hint">Бирж пока нет.</div>
             {% endfor %}
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    // Живой поиск пользователей для добавления доступа к приватному банку/бирже.
+    // Один и тот же обработчик навешан на все .access-user-search на странице
+    // (по одному виджету на каждый приватный банк/биржу).
+    document.querySelectorAll('.access-add-form').forEach(function(form) {
+        var input    = form.querySelector('.access-user-search');
+        var dropdown = form.querySelector('.access-user-search-dropdown');
+        var hiddenId = form.querySelector('.access-user-id');
+        var debounceTimer = null;
+
+        input.addEventListener('input', function() {
+            var q = this.value.trim();
+            clearTimeout(debounceTimer);
+            hiddenId.value = '';
+            if (q.length < 1) { dropdown.style.display = 'none'; return; }
+            debounceTimer = setTimeout(function() {
+                fetch('{% url "api_search_users" %}?q=' + encodeURIComponent(q))
+                    .then(function(r) { return r.json(); })
+                    .then(function(users) {
+                        dropdown.innerHTML = '';
+                        if (!users.length) { dropdown.style.display = 'none'; return; }
+                        users.forEach(function(u) {
+                            var item = document.createElement('div');
+                            item.className = 'access-user-search-item';
+                            item.innerHTML = '<span>' + u.username + '</span><span class="uid">#' + u.id + '</span>';
+                            item.addEventListener('mousedown', function(e) {
+                                e.preventDefault();
+                                hiddenId.value = u.id;
+                                input.value = u.username;
+                                dropdown.style.display = 'none';
+                                form.requestSubmit();
+                            });
+                            dropdown.appendChild(item);
+                        });
+                        dropdown.style.display = 'block';
+                    })
+                    .catch(function() { dropdown.style.display = 'none'; });
+            }, 200);
+        });
+
+        input.addEventListener('blur',  function() { setTimeout(function() { dropdown.style.display = 'none'; }, 150); });
+        input.addEventListener('focus', function() { if (dropdown.children.length > 0) dropdown.style.display = 'block'; });
+    });
+})();
+</script>
 {% endblock %}
