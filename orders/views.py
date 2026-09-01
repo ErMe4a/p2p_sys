@@ -854,15 +854,40 @@ def user_profit_view(request):
         if not months_with_orders:
             return JsonResponse({'months': []})
 
+        # Раньше на каждый месяц отдельно пересчитывалась вся цепочка
+        # переноса остатка с начала (_calc_month_profit_from_orders +
+        # _get_ytd_base_from_cache внутри неё ещё раз пересчитывали то же
+        # самое для каждого предыдущего месяца) — у активных трейдеров
+        # (десятки месяцев истории) страница грузилась секундами.
+        # Теперь считаем один раз проходом вперёд по всем месяцам сразу
+        # (см. _calc_all_months_profit_from_orders) — то же самое из тех
+        # же живых ордеров, без сохранённого кэша, просто без повторной
+        # работы.
+        all_months_calc = _calc_all_months_profit_from_orders(uid, all_orders_by_user, months_with_orders)
+
+        ytd_base_by_month = {}
+        ytd_running = 0.0
+        ytd_year_tracker = None
+        for (yr_k, mo_k) in sorted(months_with_orders):
+            if ytd_year_tracker != yr_k:
+                ytd_running = 0.0
+                ytd_year_tracker = yr_k
+            ytd_base_by_month[(yr_k, mo_k)] = ytd_running
+            calc_mo = all_months_calc[(yr_k, mo_k)]
+            gross_mo = calc_mo['gross']
+            if calc_mo['month_buy_qty'] == 0 and calc_mo['month_sell_qty'] == 0:
+                manual_mo = manuals_by_user_month.get((uid, f"{yr_k}-{str(mo_k).zfill(2)}"))
+                if manual_mo:
+                    gross_mo = float(manual_mo.gross)
+            expenses_mo = expenses_by_user_month.get((uid, f"{yr_k}-{str(mo_k).zfill(2)}"), 0.0)
+            ytd_running += max(0.0, gross_mo - expenses_mo)
+
         months_data = []
 
         for (yr, mo) in sorted(months_with_orders):
             share_key = f"{yr}-{str(mo).zfill(2)}"
-            ms_start  = datetime(yr, mo, 1, tzinfo=MSK)
-            ms_end    = (datetime(yr + 1, 1, 1, tzinfo=MSK)
-                         if mo == 12 else datetime(yr, mo + 1, 1, tzinfo=MSK))
 
-            calc = _calc_month_profit_from_orders(uid, ms_start, ms_end, all_orders_by_user)
+            calc = all_months_calc[(yr, mo)]
             usdt = calc['usdt']
             ton  = calc['ton']
 
@@ -892,12 +917,7 @@ def user_profit_view(request):
                 ton_exp_share  = 0.0
 
             if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
-                ytd_base = _get_ytd_base_from_cache(
-                    uid, yr, mo,
-                    all_orders_by_user,
-                    expenses_by_user_month,
-                    manuals_by_user_month,
-                )
+                ytd_base = ytd_base_by_month.get((yr, mo), 0.0)
             else:
                 ytd_base = 0.0
 
@@ -2651,6 +2671,171 @@ def _calc_lifo_price_excel(month_buy_orders, remainder_qty, prev_carry=None):
         total_cost += need * buys[-1][1]
 
     return round(total_cost / abs_qty, 4) if abs_qty > 0 else 0.0
+
+
+def _calc_all_months_currency_from_orders(user_id, all_orders_by_user, currency, extra_month_keys=None):
+    """
+    Оптимизированный аналог _calc_currency_from_orders для страницы
+    /profit/ (action=get_months): та же математика переноса остатка
+    (LIFO по месяцам), но одним проходом ВПЕРЁД по всем месяцам сразу,
+    вместо пересчёта всей цепочки с нуля для каждого целевого месяца
+    отдельно. У активных трейдеров (десятки месяцев истории) это убирает
+    квадратичный/кубический рост времени загрузки страницы.
+
+    Никакого сохранённого кэша — считает заново из all_orders_by_user
+    при каждом вызове, так что правка любого прошлого ордера сразу
+    учитывается на следующей же загрузке страницы, как и раньше.
+
+    extra_month_keys — (year, month), для которых нужен результат, даже
+    если в этом месяце нет ни одного ордера этой валюты (например месяц
+    с ручной записью без реальных сделок) — получают "пустой" результат
+    с перенесённым остатком, как раньше делал фолбэк result is None
+    в _calc_currency_from_orders.
+
+    ВАЖНО: используется только там, где exchange_filter/bank_filter_id
+    не нужны (get_months их не читает) — в отличие от оригинала фильтры
+    тут не применяются вообще.
+    """
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+
+    orders = all_orders_by_user.get(user_id, [])
+    orders_currency = sorted(
+        [o for o in orders if o.currency == currency],
+        key=lambda o: o.created_at
+    )
+
+    by_month = {}
+    for o in orders_currency:
+        dt_msk = o.created_at.astimezone(MSK)
+        key = (dt_msk.year, dt_msk.month)
+        by_month.setdefault(key, []).append(o)
+
+    all_keys = set(by_month.keys()) | set(extra_month_keys or [])
+    if not all_keys:
+        return {}
+
+    results = {}
+    prev_carry = None  # (qty, price)
+
+    for key in sorted(all_keys):
+        month_list = by_month.get(key, [])
+
+        buy_qty = sum(float(o.amount or 0) for o in month_list if o.operation_type == 'BUY')
+        buy_cost = sum(float(o.cost or 0) for o in month_list if o.operation_type == 'BUY')
+        buy_comm = sum(
+            (float(o.cost or 0) * float(o.commission or 0) / 100
+             if o.commission_type == 'PERCENT' else float(o.commission or 0))
+            for o in month_list if o.operation_type == 'BUY'
+        )
+        sell_qty = sum(float(o.amount or 0) for o in month_list if o.operation_type == 'SELL')
+        sell_cost = sum(float(o.cost or 0) for o in month_list if o.operation_type == 'SELL')
+        sell_comm = sum(
+            (float(o.cost or 0) * float(o.commission or 0) / 100
+             if o.commission_type == 'PERCENT' else float(o.commission or 0))
+            for o in month_list if o.operation_type == 'SELL'
+        )
+        exch_qty = sum(
+            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+            for o in month_list if o.operation_type == 'SELL'
+        )
+        last_sell_price = 0.0
+        for o in month_list:
+            if o.operation_type == 'SELL' and float(o.price or 0) > 0:
+                last_sell_price = float(o.price or 0)
+
+        carry_qty = float(prev_carry[0]) if prev_carry else 0.0
+        remainder_qty = buy_qty + carry_qty - sell_qty - exch_qty
+
+        buy_orders_month = [o for o in month_list if o.operation_type == 'BUY']
+        lifo_price = _calc_lifo_price_excel(buy_orders_month, remainder_qty, prev_carry=prev_carry)
+
+        remainder_cost = remainder_qty * lifo_price
+        total_buy_for_month = buy_cost + (carry_qty * (prev_carry[1] if prev_carry else 0.0))
+        eq_buy_cost_month = total_buy_for_month - remainder_cost
+
+        exch_comm_rub_month = exch_qty * last_sell_price
+
+        if sell_qty == 0:
+            gross_month = 0.0
+        else:
+            gross_month = sell_cost - eq_buy_cost_month - buy_comm - sell_comm - exch_comm_rub_month
+
+        results[key] = {
+            'currency':              currency,
+            'prev_balance_qty':      carry_qty,
+            'prev_balance_cost':     carry_qty * (prev_carry[1] if prev_carry else 0.0),
+            'prev_avg_price':        round(prev_carry[1], 4) if prev_carry else 0.0,
+            'month_buy_qty':         buy_qty,
+            'month_buy_cost':        buy_cost,
+            'month_buy_comm':        buy_comm,
+            'month_sell_qty':        sell_qty,
+            'month_sell_cost':       sell_cost,
+            'month_sell_comm':       sell_comm,
+            'month_exch_comm':       exch_qty,
+            'month_exch_comm_rub':   exch_comm_rub_month,
+            'total_buy_qty':         buy_qty + carry_qty,
+            'total_buy_cost':        total_buy_for_month,
+            'remainder_qty_display': remainder_qty,
+            'remainder_cost':        remainder_cost,
+            'avg_price':             round(lifo_price, 4),
+            'eq_buy_cost':           eq_buy_cost_month,
+            'gross':                 gross_month,
+        }
+
+        # Прокидываем перенос на следующий месяц (та же логика, что в оригинале)
+        if remainder_qty != 0 and lifo_price > 0:
+            prev_carry = (remainder_qty, lifo_price)
+        elif prev_carry is not None:
+            pass  # оставляем прошлый carry если не смогли посчитать
+
+    return results
+
+
+_EMPTY_CURRENCY_RESULT = {
+    'currency': '', 'prev_balance_qty': 0.0, 'prev_balance_cost': 0.0,
+    'prev_avg_price': 0.0, 'month_buy_qty': 0.0, 'month_buy_cost': 0.0,
+    'month_buy_comm': 0.0, 'month_sell_qty': 0.0, 'month_sell_cost': 0.0,
+    'month_sell_comm': 0.0, 'month_exch_comm': 0.0, 'month_exch_comm_rub': 0.0,
+    'total_buy_qty': 0.0, 'total_buy_cost': 0.0, 'remainder_qty_display': 0.0,
+    'remainder_cost': 0.0, 'avg_price': 0.0, 'eq_buy_cost': 0.0, 'gross': 0.0,
+}
+
+
+def _calc_all_months_profit_from_orders(user_id, all_orders_by_user, month_keys):
+    """
+    Оптимизированный аналог _calc_month_profit_from_orders для get_months —
+    считает USDT и TON одним проходом каждую (через
+    _calc_all_months_currency_from_orders) и отдаёт готовые комбинированные
+    результаты сразу по всем month_keys, а не по одному месяцу за вызов.
+    """
+    usdt_all = _calc_all_months_currency_from_orders(user_id, all_orders_by_user, 'USDT', extra_month_keys=month_keys)
+    ton_all  = _calc_all_months_currency_from_orders(user_id, all_orders_by_user, 'TON', extra_month_keys=month_keys)
+
+    result = {}
+    for key in month_keys:
+        usdt = usdt_all.get(key, _EMPTY_CURRENCY_RESULT)
+        ton  = ton_all.get(key, _EMPTY_CURRENCY_RESULT)
+        result[key] = {
+            'prev_balance_qty':      usdt['prev_balance_qty'],
+            'prev_balance_cost':     usdt['prev_balance_cost'],
+            'month_buy_qty':         usdt['month_buy_qty']   + ton['month_buy_qty'],
+            'month_buy_cost':        usdt['month_buy_cost']  + ton['month_buy_cost'],
+            'month_buy_comm':        usdt['month_buy_comm']  + ton['month_buy_comm'],
+            'month_sell_qty':        usdt['month_sell_qty']  + ton['month_sell_qty'],
+            'month_sell_cost':       usdt['month_sell_cost'] + ton['month_sell_cost'],
+            'month_sell_comm':       usdt['month_sell_comm'] + ton['month_sell_comm'],
+            'month_exch_usdt':       usdt['month_exch_comm'] + ton['month_exch_comm'],
+            'total_buy_qty':         usdt['total_buy_qty'],
+            'total_buy_cost':        usdt['total_buy_cost'],
+            'remainder_qty_display': usdt['remainder_qty_display'],
+            'remainder_cost':        usdt['remainder_cost'],
+            'eq_buy_cost':           usdt['eq_buy_cost'],
+            'gross':                 usdt['gross'] + ton['gross'],
+            'usdt':                  usdt,
+            'ton':                   ton,
+        }
+    return result
 
 
 def _calc_currency_from_orders(user_id, month_start, month_end,
