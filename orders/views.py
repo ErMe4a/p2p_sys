@@ -3463,16 +3463,32 @@ def admin_profit_view(request):
     #  ОСНОВНОЙ ЦИКЛ
     # ================================================================
 
+    # ОПТИМИЗАЦИЯ: без фильтра по бирже/банку (это 99% заходов на страницу)
+    # считаем каждого юзера одним проходом вперёд по месяцам (та же логика,
+    # что и в get_months на /profit/ трейдера) вместо пересчёта всей цепочки
+    # переноса остатка заново для каждого юзера И ЕЩЁ РАЗ для YTD-базы
+    # НДФЛ на каждый месяц внутри — раньше это была O(юзеров × месяцев²)
+    # работа, 21+ секунд на всю страницу при полутора сотнях юзеров.
+    # Фильтр — редкий путь, там семантика другая (фильтр только на целевой
+    # месяц, не на предыдущие для переноса остатка) — оставлен на старой,
+    # медленной, но заведомо верной логике.
+    has_filter = bool(exchange_filter or bank_filter_id)
+    ytd_month_keys = {(year, m) for m in range(1, month + 1)}
+
     user_stats = []
 
     for u in users:
         uid = u.id
 
-        calc = _calc_month_profit_from_orders(
-            uid, month_start, month_end, all_orders_by_user,
-            exchange_filter=exchange_filter,
-            bank_filter_id=bank_filter_id,
-        )
+        if has_filter:
+            calc = _calc_month_profit_from_orders(
+                uid, month_start, month_end, all_orders_by_user,
+                exchange_filter=exchange_filter,
+                bank_filter_id=bank_filter_id,
+            )
+        else:
+            all_months_calc_u = _calc_all_months_profit_from_orders(uid, all_orders_by_user, ytd_month_keys)
+            calc = all_months_calc_u[(year, month)]
 
         usdt = calc['usdt']
         ton  = calc['ton']
@@ -3534,12 +3550,24 @@ def admin_profit_view(request):
         gross_all  = max(0.0, gross_raw_all  - month_expenses)
 
         if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
-            ytd_base = _get_ytd_base_from_cache(
-                uid, year, month,
-                all_orders_by_user,
-                expenses_by_user_month,
-                manuals_by_user_month,
-            )
+            if has_filter:
+                ytd_base = _get_ytd_base_from_cache(
+                    uid, year, month,
+                    all_orders_by_user,
+                    expenses_by_user_month,
+                    manuals_by_user_month,
+                )
+            else:
+                ytd_base = 0.0
+                for m in range(1, month):
+                    calc_mo = all_months_calc_u[(year, m)]
+                    gross_mo = calc_mo['gross']
+                    if calc_mo['month_buy_qty'] == 0 and calc_mo['month_sell_qty'] == 0:
+                        manual_mo = manuals_by_user_month.get((uid, f"{year}-{str(m).zfill(2)}"))
+                        if manual_mo:
+                            gross_mo = float(manual_mo.gross)
+                    expenses_mo = expenses_by_user_month.get((uid, f"{year}-{str(m).zfill(2)}"), 0.0)
+                    ytd_base += max(0.0, gross_mo - expenses_mo)
         else:
             ytd_base = 0.0
 
