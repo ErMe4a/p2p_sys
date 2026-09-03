@@ -1925,10 +1925,25 @@ def export_excel_report(request):
 
     SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
-    orders = Order.objects.filter(
+    # Трейдеры с реально импортированным январём (см. history.md §43.2/§45) —
+    # по прямому решению показываем им январь построчно, вместо схлопнутой
+    # строки "Остаток (до 1 фев)" (которая всё равно с этими ордерами не
+    # согласована — отдельное число, вбитое независимо). Для всех остальных
+    # трейдеров поведение не меняется вообще.
+    has_january_orders = Order.objects.filter(
         user_id=user_id,
-        created_at__gte=SYSTEM_START
-    ).order_by('created_at')
+        created_at__lt=SYSTEM_START,
+    ).exclude(exchange_type="Остаток (до 1 фев)").exists()
+
+    if has_january_orders:
+        orders = Order.objects.filter(
+            user_id=user_id,
+        ).exclude(exchange_type="Остаток (до 1 фев)").order_by('created_at')
+    else:
+        orders = Order.objects.filter(
+            user_id=user_id,
+            created_at__gte=SYSTEM_START
+        ).order_by('created_at')
 
     if start_date: orders = orders.filter(created_at__date__gte=start_date)
     if end_date:   orders = orders.filter(created_at__date__lte=end_date)
@@ -1943,8 +1958,10 @@ def export_excel_report(request):
 
     orders_list = list(orders)
 
-    # Исторический ордер — всегда первый (кроме TON)
-    if currency != 'TON':
+    # Исторический ордер — всегда первый (кроме TON), и только если январь
+    # НЕ показывается построчно (иначе задвоение: и реальные январские
+    # ордера, и несвязанный с ними "Остаток" одновременно).
+    if currency != 'TON' and not has_january_orders:
         init_order = Order.objects.filter(
             user_id=user_id,
             exchange_type="Остаток (до 1 фев)"
