@@ -1,4 +1,5 @@
 # --- Стандартная библиотека ---
+import concurrent.futures
 import io
 import json
 import os
@@ -4463,31 +4464,50 @@ def export_screenshots_view(request):
     if bank_id and bank_id.isdigit():
         orders = orders.filter(bank_detail_id=int(bank_id))
 
-    if not orders.exists():
+    orders_list = list(orders)
+    if not orders_list:
         return HttpResponse("Нет скриншотов по выбранным критериям", content_type="text/plain; charset=utf-8")
 
-    # 4. Создание архива
-    zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for order in orders:
-            try:
-                # Проверяем, существует ли файл
-                if order.screenshot and order.screenshot.storage.exists(order.screenshot.name):
-                    
-                    # === ИЗМЕНЕНИЕ: БЕРЕМ ОРИГИНАЛЬНОЕ ИМЯ ФАЙЛА ===
-                    # os.path.basename берет "d12345.png" из пути "uploads/2026/d12345.png"
-                    original_name = os.path.basename(order.screenshot.name)
-                    ext = os.path.splitext(original_name)[1] or '.png'
-                    label = order.external_id if order.external_id else f"manual_{order.id}"
-                    filename = f"{label}{ext}"
+    # 4. Скачивание файлов из S3 — ПАРАЛЛЕЛЬНО (тот же приём, что и в
+    # bybit_service.get_orders_parallel — ThreadPoolExecutor, 10 потоков).
+    # Раньше файлы читались строго по одному, друг за другом — при большой
+    # выборке это N последовательных сетевых запросов к Yandex S3, каждый
+    # держит воркер gunicorn занятым, а админ не видит вообще ничего, пока
+    # не соберётся весь архив целиком.
+    def _fetch_screenshot(order):
+        if not (order.screenshot and order.screenshot.storage.exists(order.screenshot.name)):
+            return None
+        original_name = os.path.basename(order.screenshot.name)
+        ext = os.path.splitext(original_name)[1] or '.png'
+        label = order.external_id if order.external_id else f"manual_{order.id}"
+        filename = f"{label}{ext}"
+        with order.screenshot.open('rb') as f:
+            data = f.read()
+        return (filename, data)
 
-                    # Читаем и пишем в архив
-                    with order.screenshot.open('rb') as f:
-                        zip_file.writestr(filename, f.read())
-                        
+    fetched = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_order = {executor.submit(_fetch_screenshot, o): o for o in orders_list}
+        for future in concurrent.futures.as_completed(future_to_order):
+            order = future_to_order[future]
+            try:
+                result = future.result()
+                if result:
+                    fetched[order.id] = result
             except Exception as e:
                 print(f"Ошибка с файлом ордера {order.id}: {e}")
                 continue
+
+    # 5. Сборка архива — уже из скачанных байт, чисто в памяти, быстро.
+    # Порядок сохраняем как в исходной выборке (fetched заполнялся
+    # параллельно, вразнобой).
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for o in orders_list:
+            entry = fetched.get(o.id)
+            if entry:
+                filename, data = entry
+                zip_file.writestr(filename, data)
 
     zip_buffer.seek(0)
     response = HttpResponse(zip_buffer, content_type='application/zip')
