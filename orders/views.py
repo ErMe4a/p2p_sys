@@ -3289,6 +3289,214 @@ def _year_turnover_by_month(year, exchange_filter='', bank_filter_id=''):
     return {'rows': rows, 'total': total}
 
 
+def _build_user_month_stat(u, calc, ytd_base, year, month, month_start, month_end,
+                            all_orders_by_user, expenses_by_user_month, expenses_list_by_user,
+                            manuals_by_user_month, init_order_by_user,
+                            exchange_filter='', bank_filter_id=''):
+    """
+    Финальная сборка одной строки admin-«Прибыли» (custom_admin/profit_list.html)
+    из уже посчитанных calc (месячные суммы по USDT/TON) и ytd_base (накопленная
+    база года для НДФЛ). Вынесено в отдельную функцию из admin_profit_view,
+    чтобы её же использовала фоновая задача кэша (recompute_admin_profit_
+    cache_task, см. history.md §46) — единая логика для живого расчёта
+    (редкий путь с фильтром по бирже/банку) и для кэша (обычный путь без
+    фильтра), чтобы они не разъехались, как уже случалось раньше с похожими
+    параллельными расчётами (history.md §44.1).
+    """
+    from zoneinfo import ZoneInfo
+    MSK = ZoneInfo('Europe/Moscow')
+
+    uid = u.id
+    share_key = f"{year}-{str(month).zfill(2)}"
+
+    usdt = calc['usdt']
+    ton  = calc['ton']
+
+    tax_type      = str(getattr(u, 'tax_type', '') or '').strip().upper()
+    share_percent = 20.0
+    if u.profit_shares and isinstance(u.profit_shares, dict):
+        share_percent = float(u.profit_shares.get(share_key, 20.0))
+
+    month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
+    expenses_list  = expenses_list_by_user.get((uid, share_key), [])
+
+    gross_raw_usdt = usdt['gross']
+    gross_raw_ton  = ton['gross']
+    gross_raw_all  = gross_raw_usdt + gross_raw_ton
+
+    has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
+
+    # Берём manual запись если есть
+    manual = manuals_by_user_month.get((uid, share_key))
+
+    if not has_activity:
+        if manual:
+            gross_raw_all        = manual.gross
+            gross_raw_usdt       = manual.gross
+            gross_raw_ton        = 0.0
+            manual_buy_cost      = manual.buy_cost
+            manual_sell_cost     = manual.sell_cost
+            manual_buy_comm      = manual.buy_comm
+            manual_sell_comm     = manual.sell_comm
+            manual_exch_comm_rub = manual.exch_comm_rub
+            manual_buy_qty       = manual.buy_qty
+            manual_sell_qty      = manual.sell_qty
+        else:
+            manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+            manual_sell_comm = manual_exch_comm_rub = 0.0
+            manual_buy_qty = manual_sell_qty = 0.0
+
+        manual_crypto_balance = manual.remainder_qty if manual else init_order_by_user.get(uid, 0.0)
+    else:
+        manual_crypto_balance = None
+        manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
+        manual_sell_comm = manual_exch_comm_rub = 0.0
+        manual_buy_qty = manual_sell_qty = 0.0
+
+    pos_usdt  = max(0.0, gross_raw_usdt)
+    pos_ton   = max(0.0, gross_raw_ton)
+    pos_total = pos_usdt + pos_ton
+
+    if pos_total > 0:
+        usdt_expense_share = (pos_usdt / pos_total) * month_expenses
+        ton_expense_share  = (pos_ton  / pos_total) * month_expenses
+    else:
+        usdt_expense_share = 0.0
+        ton_expense_share  = 0.0
+
+    gross_usdt = max(0.0, gross_raw_usdt - usdt_expense_share)
+    gross_ton  = max(0.0, gross_raw_ton  - ton_expense_share)
+    gross_all  = max(0.0, gross_raw_all  - month_expenses)
+
+    sell_cost_all = calc['month_sell_cost'] if has_activity else manual_sell_cost
+
+    # ── USDT ──────────────────────────────────────────────────────
+    ytd_usdt  = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
+    ndfl_usdt = _calc_ndfl(gross_usdt, tax_type,
+                           sell_cost=usdt['month_sell_cost'],
+                           ytd_base=ytd_usdt)
+    after_usdt = gross_usdt - ndfl_usdt
+    share_usdt = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
+    net_usdt   = after_usdt - share_usdt
+
+    # ── TON ───────────────────────────────────────────────────────
+    ytd_ton  = ytd_base * (pos_ton / pos_total) if pos_total > 0 else 0.0
+    ndfl_ton = _calc_ndfl(gross_ton, tax_type,
+                          sell_cost=ton['month_sell_cost'],
+                          ytd_base=ytd_ton)
+    after_ton = gross_ton - ndfl_ton
+    share_ton = after_ton * (share_percent / 100) if after_ton > 0 else 0
+    net_ton   = after_ton - share_ton
+
+    # ── ИТОГО ─────────────────────────────────────────────────────
+    ndfl_all  = _calc_ndfl(gross_all, tax_type,
+                           sell_cost=sell_cost_all,
+                           ytd_base=ytd_base)
+    after_all = gross_all - ndfl_all
+    share_all = after_all * (share_percent / 100) if after_all > 0 else 0
+    net_all   = after_all - share_all
+
+    bank_comm_rub      = calc['month_buy_comm'] + calc['month_sell_comm']
+    usdt_bank_comm     = usdt['month_buy_comm'] + usdt['month_sell_comm']
+    ton_bank_comm      = ton['month_buy_comm']  + ton['month_sell_comm']
+    usdt_exch_comm_rub = usdt['month_exch_comm_rub']
+    ton_exch_comm_rub  = ton['month_exch_comm_rub']
+    all_exch_comm_rub  = usdt_exch_comm_rub + ton_exch_comm_rub
+
+    has_activity_final = (
+        has_activity
+        or (uid, share_key) in manuals_by_user_month
+    )
+
+    # Топ-3 ордера по размеру комиссии банка за месяц (для тултипа)
+    top_bank_comm_orders = []
+    if has_activity:
+        month_user_orders = [
+            o for o in all_orders_by_user.get(uid, [])
+            if month_start <= o.created_at < month_end
+            and (not exchange_filter or exchange_filter.lower() in (o.exchange_type or '').lower())
+            and (not bank_filter_id or str(o.bank_detail_id) == str(bank_filter_id))
+        ]
+        comm_rows = []
+        for o in month_user_orders:
+            cost     = float(o.cost or 0)
+            comm_val = float(o.commission or 0)
+            comm_rub = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
+            if comm_rub > 0:
+                comm_rows.append({
+                    'date':      o.created_at.astimezone(MSK).strftime('%d.%m %H:%M'),
+                    'cost':      cost,
+                    'comm':      comm_rub,
+                    'op':        o.operation_type,
+                    'comm_val':  comm_val,
+                    'comm_type': o.commission_type,
+                })
+        comm_rows.sort(key=lambda r: r['comm'], reverse=True)
+        top_bank_comm_orders = comm_rows[:3]
+
+    # Финальные значения — из расчёта если есть ордера, иначе из manual
+    final_buy_cost      = calc['month_buy_cost']  if has_activity else manual_buy_cost
+    final_sell_cost     = calc['month_sell_cost'] if has_activity else manual_sell_cost
+    final_buy_comm      = calc['month_buy_comm']  if has_activity else manual_buy_comm
+    final_sell_comm     = calc['month_sell_comm'] if has_activity else manual_sell_comm
+    final_exch_comm_rub = all_exch_comm_rub       if has_activity else manual_exch_comm_rub
+    final_bank_comm     = bank_comm_rub            if has_activity else (manual_buy_comm + manual_sell_comm)
+    final_buy_qty       = calc['month_buy_qty']   if has_activity else manual_buy_qty
+    final_sell_qty      = calc['month_sell_qty']  if has_activity else manual_sell_qty
+
+    return {
+        'user':                  u,
+        'crypto_balance':        (manual_crypto_balance
+                                  if manual_crypto_balance is not None
+                                  else calc['remainder_qty_display']),
+        'prev_balance_qty':      calc['prev_balance_qty'],
+        'prev_balance_cost':     calc['prev_balance_cost'],
+        'month_buy_qty':         final_buy_qty,
+        'month_buy_cost':        final_buy_cost,
+        'month_sell_qty':        final_sell_qty,
+        'month_sell_cost':       final_sell_cost,
+        'turnover':              final_buy_cost + final_sell_cost,
+        'usdt_balance_display':  (manual_crypto_balance
+                                  if manual_crypto_balance is not None
+                                  else usdt['remainder_qty_display']),
+        'bank_comm_rub':         final_bank_comm,
+        'exchange_comm_rub':     final_exch_comm_rub,
+        'total_comm_rub':        final_bank_comm,
+        'eq_buy_cost':           calc['eq_buy_cost'],
+        'gross':                 gross_all,
+        'gross_profit_positive': gross_all >= 0,
+        'ndfl':                  ndfl_all,
+        'tax_type':              tax_type,
+        'share_percent':         share_percent,
+        'share_amount':          share_all,
+        'month_expenses':        month_expenses,
+        'expenses_list':         expenses_list,
+        'net_profit':            net_all,
+        'net_profit_positive':   net_all >= 0,
+        'has_activity':          has_activity_final,
+        'usdt_bank_comm':        usdt_bank_comm,
+        'ton_bank_comm':         ton_bank_comm,
+        'usdt_exch_comm_rub':    usdt_exch_comm_rub,
+        'ton_exch_comm_rub':     ton_exch_comm_rub,
+        'all_exch_comm_rub':     final_exch_comm_rub,
+        'top_bank_comm_orders':  top_bank_comm_orders,
+        # Детализация USDT
+        'usdt':       usdt,
+        'usdt_avg_price_ru': format_ru_number(usdt.get('avg_price', 0)),
+        'usdt_gross': gross_usdt,
+        'usdt_ndfl':  ndfl_usdt,
+        'usdt_share': share_usdt,
+        'usdt_net':   net_usdt,
+        # Детализация TON
+        'ton':       ton,
+        'ton_avg_price_ru': format_ru_number(ton.get('avg_price', 0)),
+        'ton_gross': gross_ton,
+        'ton_ndfl':  ndfl_ton,
+        'ton_share': share_ton,
+        'ton_net':   net_ton,
+    }
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_profit_view(request):
@@ -3508,66 +3716,12 @@ def admin_profit_view(request):
             all_months_calc_u = _calc_all_months_profit_from_orders(uid, all_orders_by_user, ytd_month_keys)
             calc = all_months_calc_u[(year, month)]
 
-        usdt = calc['usdt']
-        ton  = calc['ton']
-
-        tax_type      = str(getattr(u, 'tax_type', '') or '').strip().upper()
-        share_percent = 20.0
-        if u.profit_shares and isinstance(u.profit_shares, dict):
-            share_percent = float(u.profit_shares.get(share_key, 20.0))
-
-        month_expenses = expenses_by_user_month.get((uid, share_key), 0.0)
-        expenses_list  = expenses_list_by_user.get((uid, share_key), [])
-
-        gross_raw_usdt = usdt['gross']
-        gross_raw_ton  = ton['gross']
-        gross_raw_all  = gross_raw_usdt + gross_raw_ton
-
-        has_activity = (calc['month_buy_qty'] > 0 or calc['month_sell_qty'] > 0)
-
-        # Берём manual запись если есть
-        manual = manuals_by_user_month.get((uid, share_key))
-
-        if not has_activity:
-            if manual:
-                gross_raw_all        = manual.gross
-                gross_raw_usdt       = manual.gross
-                gross_raw_ton        = 0.0
-                manual_buy_cost      = manual.buy_cost
-                manual_sell_cost     = manual.sell_cost
-                manual_buy_comm      = manual.buy_comm
-                manual_sell_comm     = manual.sell_comm
-                manual_exch_comm_rub = manual.exch_comm_rub
-                manual_buy_qty       = manual.buy_qty
-                manual_sell_qty      = manual.sell_qty
-            else:
-                manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
-                manual_sell_comm = manual_exch_comm_rub = 0.0
-                manual_buy_qty = manual_sell_qty = 0.0
-
-            manual_crypto_balance = manual.remainder_qty if manual else init_order_by_user.get(uid, 0.0)
-        else:
-            manual_crypto_balance = None
-            manual_buy_cost = manual_sell_cost = manual_buy_comm = 0.0
-            manual_sell_comm = manual_exch_comm_rub = 0.0
-            manual_buy_qty = manual_sell_qty = 0.0
-
-        pos_usdt  = max(0.0, gross_raw_usdt)
-        pos_ton   = max(0.0, gross_raw_ton)
-        pos_total = pos_usdt + pos_ton
-
-        if pos_total > 0:
-            usdt_expense_share = (pos_usdt / pos_total) * month_expenses
-            ton_expense_share  = (pos_ton  / pos_total) * month_expenses
-        else:
-            usdt_expense_share = 0.0
-            ton_expense_share  = 0.0
-
-        gross_usdt = max(0.0, gross_raw_usdt - usdt_expense_share)
-        gross_ton  = max(0.0, gross_raw_ton  - ton_expense_share)
-        gross_all  = max(0.0, gross_raw_all  - month_expenses)
-
-        if tax_type not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
+        # YTD-база для НДФЛ считается тут (а не в _build_user_month_stat),
+        # т.к. у has_filter-варианта свой источник (живой пересчёт с
+        # фильтром), а у обычного — префиксная сумма по all_months_calc_u,
+        # которая есть только в этой ветке.
+        tax_type_for_ytd = str(getattr(u, 'tax_type', '') or '').strip().upper()
+        if tax_type_for_ytd not in ('USN_INCOME', 'USN_INCOME_OUTCOME'):
             if has_filter:
                 ytd_base = _get_ytd_base_from_cache(
                     uid, year, month,
@@ -3589,133 +3743,13 @@ def admin_profit_view(request):
         else:
             ytd_base = 0.0
 
-        sell_cost_all = calc['month_sell_cost'] if has_activity else manual_sell_cost
-
-        # ── USDT ──────────────────────────────────────────────────────
-        ytd_usdt  = ytd_base * (pos_usdt / pos_total) if pos_total > 0 else ytd_base
-        ndfl_usdt = _calc_ndfl(gross_usdt, tax_type,
-                               sell_cost=usdt['month_sell_cost'],
-                               ytd_base=ytd_usdt)
-        after_usdt = gross_usdt - ndfl_usdt
-        share_usdt = after_usdt * (share_percent / 100) if after_usdt > 0 else 0
-        net_usdt   = after_usdt - share_usdt
-
-        # ── TON ───────────────────────────────────────────────────────
-        ytd_ton  = ytd_base * (pos_ton / pos_total) if pos_total > 0 else 0.0
-        ndfl_ton = _calc_ndfl(gross_ton, tax_type,
-                              sell_cost=ton['month_sell_cost'],
-                              ytd_base=ytd_ton)
-        after_ton = gross_ton - ndfl_ton
-        share_ton = after_ton * (share_percent / 100) if after_ton > 0 else 0
-        net_ton   = after_ton - share_ton
-
-        # ── ИТОГО ─────────────────────────────────────────────────────
-        ndfl_all  = _calc_ndfl(gross_all, tax_type,
-                               sell_cost=sell_cost_all,
-                               ytd_base=ytd_base)
-        after_all = gross_all - ndfl_all
-        share_all = after_all * (share_percent / 100) if after_all > 0 else 0
-        net_all   = after_all - share_all
-
-        bank_comm_rub      = calc['month_buy_comm'] + calc['month_sell_comm']
-        usdt_bank_comm     = usdt['month_buy_comm'] + usdt['month_sell_comm']
-        ton_bank_comm      = ton['month_buy_comm']  + ton['month_sell_comm']
-        usdt_exch_comm_rub = usdt['month_exch_comm_rub']
-        ton_exch_comm_rub  = ton['month_exch_comm_rub']
-        all_exch_comm_rub  = usdt_exch_comm_rub + ton_exch_comm_rub
-
-        has_activity_final = (
-            has_activity
-            or (uid, share_key) in manuals_by_user_month
+        stat = _build_user_month_stat(
+            u, calc, ytd_base, year, month, month_start, month_end,
+            all_orders_by_user, expenses_by_user_month, expenses_list_by_user,
+            manuals_by_user_month, init_order_by_user,
+            exchange_filter=exchange_filter, bank_filter_id=bank_filter_id,
         )
-
-        # Топ-3 ордера по размеру комиссии банка за месяц (для тултипа)
-        top_bank_comm_orders = []
-        if has_activity:
-            month_user_orders = [
-                o for o in all_orders_by_user.get(uid, [])
-                if month_start <= o.created_at < month_end
-                and (not exchange_filter or exchange_filter.lower() in (o.exchange_type or '').lower())
-                and (not bank_filter_id or str(o.bank_detail_id) == str(bank_filter_id))
-            ]
-            comm_rows = []
-            for o in month_user_orders:
-                cost     = float(o.cost or 0)
-                comm_val = float(o.commission or 0)
-                comm_rub = cost * comm_val / 100 if o.commission_type == 'PERCENT' else comm_val
-                if comm_rub > 0:
-                    comm_rows.append({
-                        'date':      o.created_at.astimezone(MSK).strftime('%d.%m %H:%M'),
-                        'cost':      cost,
-                        'comm':      comm_rub,
-                        'op':        o.operation_type,
-                        'comm_val':  comm_val,
-                        'comm_type': o.commission_type,
-                    })
-            comm_rows.sort(key=lambda r: r['comm'], reverse=True)
-            top_bank_comm_orders = comm_rows[:3]
-
-        # Финальные значения — из расчёта если есть ордера, иначе из manual
-        final_buy_cost      = calc['month_buy_cost']  if has_activity else manual_buy_cost
-        final_sell_cost     = calc['month_sell_cost'] if has_activity else manual_sell_cost
-        final_buy_comm      = calc['month_buy_comm']  if has_activity else manual_buy_comm
-        final_sell_comm     = calc['month_sell_comm'] if has_activity else manual_sell_comm
-        final_exch_comm_rub = all_exch_comm_rub       if has_activity else manual_exch_comm_rub
-        final_bank_comm     = bank_comm_rub            if has_activity else (manual_buy_comm + manual_sell_comm)
-        final_buy_qty       = calc['month_buy_qty']   if has_activity else manual_buy_qty
-        final_sell_qty      = calc['month_sell_qty']  if has_activity else manual_sell_qty
-
-        user_stats.append({
-            'user':                  u,
-            'crypto_balance':        (manual_crypto_balance
-                                      if manual_crypto_balance is not None
-                                      else calc['remainder_qty_display']),
-            'prev_balance_qty':      calc['prev_balance_qty'],
-            'prev_balance_cost':     calc['prev_balance_cost'],
-            'month_buy_qty':         final_buy_qty,
-            'month_buy_cost':        final_buy_cost,
-            'month_sell_qty':        final_sell_qty,
-            'month_sell_cost':       final_sell_cost,
-            'turnover':              final_buy_cost + final_sell_cost,
-            'usdt_balance_display':  (manual_crypto_balance
-                                      if manual_crypto_balance is not None
-                                      else usdt['remainder_qty_display']),
-            'bank_comm_rub':         final_bank_comm,
-            'exchange_comm_rub':     final_exch_comm_rub,
-            'total_comm_rub':        final_bank_comm,
-            'eq_buy_cost':           calc['eq_buy_cost'],
-            'gross':                 gross_all,
-            'gross_profit_positive': gross_all >= 0,
-            'ndfl':                  ndfl_all,
-            'tax_type':              tax_type,
-            'share_percent':         share_percent,
-            'share_amount':          share_all,
-            'month_expenses':        month_expenses,
-            'expenses_list':         expenses_list,
-            'net_profit':            net_all,
-            'net_profit_positive':   net_all >= 0,
-            'has_activity':          has_activity_final,
-            'usdt_bank_comm':        usdt_bank_comm,
-            'ton_bank_comm':         ton_bank_comm,
-            'usdt_exch_comm_rub':    usdt_exch_comm_rub,
-            'ton_exch_comm_rub':     ton_exch_comm_rub,
-            'all_exch_comm_rub':     final_exch_comm_rub,
-            'top_bank_comm_orders':  top_bank_comm_orders,
-            # Детализация USDT
-            'usdt':       usdt,
-            'usdt_avg_price_ru': format_ru_number(usdt.get('avg_price', 0)),
-            'usdt_gross': gross_usdt,
-            'usdt_ndfl':  ndfl_usdt,
-            'usdt_share': share_usdt,
-            'usdt_net':   net_usdt,
-            # Детализация TON
-            'ton':       ton,
-            'ton_avg_price_ru': format_ru_number(ton.get('avg_price', 0)),
-            'ton_gross': gross_ton,
-            'ton_ndfl':  ndfl_ton,
-            'ton_share': share_ton,
-            'ton_net':   net_ton,
-        })
+        user_stats.append(stat)
 
     # summary
     summary = {
