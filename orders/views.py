@@ -45,6 +45,7 @@ from .uvedomlenie_generator import build_uvedomlenie, PERIODS as UVED_PERIODS
 from .nds_generator import build_nds_declaration, QUARTERS as NDS_QUARTERS
 from .models import DocumentSubmission
 from .models import MonthlySystemProfitSummary
+from .models import MonthlyUserProfitCache
 from django.views.decorators.http import require_POST
 # Причины, при которых пункт скрывается молча (не ошибка данных,
 # а просто "документ не требуется в этом периоде").
@@ -3701,10 +3702,29 @@ def admin_profit_view(request):
     has_filter = bool(exchange_filter or bank_filter_id)
     ytd_month_keys = {(year, m) for m in range(1, month + 1)}
 
+    # ОПТИМИЗАЦИЯ №2: без фильтра — читаем готовую строку из кэша
+    # (MonthlyUserProfitCache, наполняется фоново раз в 15 минут задачей
+    # tasks.recompute_admin_profit_cache_task) вместо полного пересчёта на
+    # каждый заход — см. history.md §46. Если кэша на этот месяц/юзера ещё
+    # нет (например, юзер только что создан, фон ещё не успел досчитать) —
+    # считаем именно этого юзера вживую, не блокируя всю страницу.
+    cache_rows = {}
+    if not has_filter:
+        cache_rows = {
+            row.user_id: row.data
+            for row in MonthlyUserProfitCache.objects.filter(year=year, month=month)
+        }
+
     user_stats = []
 
     for u in users:
         uid = u.id
+
+        if not has_filter and uid in cache_rows:
+            stat = dict(cache_rows[uid])
+            stat['user'] = u
+            user_stats.append(stat)
+            continue
 
         if has_filter:
             calc = _calc_month_profit_from_orders(

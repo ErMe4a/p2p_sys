@@ -566,3 +566,161 @@ def recompute_yearly_profit_summary_task(self, year=None):
             )
 
     logger.info("recompute_yearly_profit_summary_task: пересчитано за %d год.", year)
+
+
+@shared_task(bind=True, max_retries=0, queue="receipt")
+def recompute_admin_profit_cache_task(self, year=None):
+    """
+    Пересчитывает MonthlyUserProfitCache (готовая строка admin-«Прибыли» —
+    custom_admin/profit_list.html — на каждого юзера отдельно) на все
+    прошедшие месяцы года. Основная (не годовая) вкладка «Прибыли» раньше
+    считала это вживую на каждый заход — полное чтение всей базы ордеров
+    системы плюс LIFO по каждому из 142 юзеров, ~13 сек на страницу
+    (см. history.md §44/§46). Теперь страница просто читает готовую строку
+    отсюда, а расчёт идёт здесь, в фоне (каждые 15 минут, django_celery_beat).
+
+    Использует ТУ ЖЕ функцию сборки строки (_build_user_month_stat), что
+    и живой путь в admin_profit_view (для фильтра по бирже/банку) — чтобы
+    кэш и живой расчёт не разъехались, как уже случалось раньше с похожими
+    параллельными расчётами (history.md §44.1).
+    """
+    from collections import defaultdict
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from django.utils import timezone as dj_timezone
+    from .models import MonthlyUserProfitCache, UserExpense, MonthlyManualEntry
+    from .views import SYSTEM_START, _calc_all_months_profit_from_orders, _build_user_month_stat
+
+    MSK = ZoneInfo('Europe/Moscow')
+    if year is None:
+        year = dj_timezone.now().year
+
+    now_msk  = dj_timezone.now().astimezone(MSK)
+    year_end = datetime(year + 1, 1, 1, tzinfo=MSK)
+    users    = list(User.objects.all().order_by('id'))
+
+    # Та же предзагрузка, что и в admin_profit_view (views.py) — один проход
+    # по всей базе на всю задачу, а не по одному запросу на юзера/месяц.
+    raw_orders = (
+        Order.objects
+        .filter(created_at__gte=SYSTEM_START, created_at__lt=year_end)
+        .order_by('user_id', 'created_at')
+        .values_list(
+            'id', 'user_id', 'created_at', 'currency', 'operation_type',
+            'amount', 'cost', 'price', 'commission', 'commission_type',
+            'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+        )
+    )
+
+    class _O:
+        __slots__ = (
+            'id', 'user_id', 'created_at', 'currency', 'operation_type',
+            'amount', 'cost', 'price', 'commission', 'commission_type',
+            'exchange_type', 'bank_detail_id', 'exchange_commission_rate',
+        )
+        def __init__(self, row):
+            (self.id, self.user_id, self.created_at, self.currency,
+             self.operation_type, self.amount, self.cost, self.price,
+             self.commission, self.commission_type, self.exchange_type,
+             self.bank_detail_id, self.exchange_commission_rate) = row
+
+    all_orders_by_user = defaultdict(list)
+    for row in raw_orders:
+        all_orders_by_user[row[1]].append(_O(row))
+
+    expenses_by_user_month = defaultdict(float)
+    expenses_list_by_user  = defaultdict(list)
+    for e in UserExpense.objects.filter(month__startswith=str(year)).values('user_id', 'month', 'name', 'amount'):
+        key = (e['user_id'], e['month'])
+        expenses_by_user_month[key] += float(e['amount'])
+        expenses_list_by_user[key].append({'name': e['name'], 'amount': float(e['amount'])})
+
+    # Лёгкий класс с float-полями вместо Decimal — та же обёртка, что и в
+    # admin_profit_view (views.py) — manual.gross/buy_cost/... используются
+    # в арифметике вперемешку с float, Decimal там просто упадёт.
+    class _Manual:
+        __slots__ = ('gross', 'buy_qty', 'buy_cost', 'buy_comm',
+                     'sell_qty', 'sell_cost', 'sell_comm',
+                     'exch_comm_rub', 'remainder_qty',
+                     'remainder_price', 'remainder_cost', 'source')
+        def __init__(self, m):
+            self.gross           = float(m.get('gross', 0) or 0)
+            self.buy_qty         = float(m.get('buy_qty', 0) or 0)
+            self.buy_cost        = float(m.get('buy_cost', 0) or 0)
+            self.buy_comm        = float(m.get('buy_comm', 0) or 0)
+            self.sell_qty        = float(m.get('sell_qty', 0) or 0)
+            self.sell_cost       = float(m.get('sell_cost', 0) or 0)
+            self.sell_comm       = float(m.get('sell_comm', 0) or 0)
+            self.exch_comm_rub   = float(m.get('exch_comm_rub', 0) or 0)
+            self.remainder_qty   = float(m.get('remainder_qty', 0) or 0)
+            self.remainder_price = float(m.get('remainder_price', 0) or 0)
+            self.remainder_cost  = float(m.get('remainder_cost', 0) or 0)
+            self.source          = m.get('source', 'manual')
+
+    manuals_by_user_month = {}
+    for m in MonthlyManualEntry.objects.filter(month__startswith=str(year)).values(
+        'user_id', 'month', 'gross', 'buy_qty', 'buy_cost', 'buy_comm',
+        'sell_qty', 'sell_cost', 'sell_comm', 'exch_comm_rub',
+        'remainder_qty', 'remainder_price', 'remainder_cost', 'source',
+    ):
+        manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
+
+    init_order_by_user = {
+        o['user_id']: float(o['amount'])
+        for o in Order.objects.filter(exchange_type="Остаток (до 1 фев)").values('user_id', 'amount')
+    }
+
+    # Только прошедшие/текущий месяцы года — будущих данных ещё нет.
+    months_to_compute = [
+        m for m in range(1, 13)
+        if datetime(year, m, 1, tzinfo=MSK) <= now_msk
+    ]
+    month_keys = {(year, m) for m in months_to_compute}
+
+    written = 0
+    for u in users:
+        uid = u.id
+        all_months_calc_u = _calc_all_months_profit_from_orders(uid, all_orders_by_user, month_keys)
+
+        # Префиксная YTD-сумма — тем же способом, что и в admin_profit_view
+        # без фильтра (см. views.py, комментарий "ОПТИМИЗАЦИЯ").
+        ytd_running = 0.0
+        ytd_by_month = {}
+        for m in months_to_compute:
+            ytd_by_month[m] = ytd_running
+            calc_mo  = all_months_calc_u[(year, m)]
+            gross_mo = calc_mo['gross']
+            if calc_mo['month_buy_qty'] == 0 and calc_mo['month_sell_qty'] == 0:
+                manual_mo = manuals_by_user_month.get((uid, f"{year}-{str(m).zfill(2)}"))
+                if manual_mo:
+                    gross_mo = float(manual_mo.gross)
+            expenses_mo = expenses_by_user_month.get((uid, f"{year}-{str(m).zfill(2)}"), 0.0)
+            ytd_running += max(0.0, gross_mo - expenses_mo)
+
+        tax_type = str(getattr(u, 'tax_type', '') or '').strip().upper()
+
+        for m in months_to_compute:
+            calc = all_months_calc_u[(year, m)]
+            ytd_base = 0.0 if tax_type in ('USN_INCOME', 'USN_INCOME_OUTCOME') else ytd_by_month[m]
+
+            month_start = datetime(year, m, 1, tzinfo=MSK)
+            month_end   = (datetime(year + 1, 1, 1, tzinfo=MSK)
+                           if m == 12 else datetime(year, m + 1, 1, tzinfo=MSK))
+
+            stat = _build_user_month_stat(
+                u, calc, ytd_base, year, m, month_start, month_end,
+                all_orders_by_user, expenses_by_user_month, expenses_list_by_user,
+                manuals_by_user_month, init_order_by_user,
+            )
+            stat.pop('user', None)  # не JSON-сериализуемо, юзер и так известен по FK
+
+            MonthlyUserProfitCache.objects.update_or_create(
+                user_id=uid, year=year, month=m,
+                defaults={'data': stat},
+            )
+            written += 1
+
+    logger.info(
+        "recompute_admin_profit_cache_task: пересчитано %d строк (юзер×месяц) за %d год.",
+        written, year,
+    )

@@ -326,3 +326,39 @@ class MonthlySystemProfitSummary(models.Model):
 
     def __str__(self):
         return f"{self.year}-{self.month:02d} [{self.currency}]: gross={self.gross_traders} net={self.net_traders} income={self.system_income}"
+
+
+class MonthlyUserProfitCache(models.Model):
+    """
+    Кэш посчитанной прибыли по КАЖДОМУ юзеру за месяц — для основной
+    (не годовой) вкладки админ-«Прибыли» (custom_admin/profit_list.html,
+    admin_profit_view без фильтра по бирже/банку — это обычный заход на
+    страницу). Раньше считалось вживую на каждый заход (полное чтение всей
+    базы ордеров системы + LIFO по каждому из 142 юзеров, ~13 сек) — теперь
+    читается готовая строка отсюда, а сам расчёт переехал в фоновую задачу
+    tasks.recompute_admin_profit_cache_task (каждые 15 минут, django_celery_
+    beat). См. history.md §46.
+
+    `data` — весь словарь, который раньше строился в user_stats.append()
+    (через _build_user_month_stat), сериализованный в JSON: числа приведены
+    к float, `user` не хранится (юзер восстанавливается через FK при чтении).
+
+    Фильтр по бирже/банку в admin_profit_view — редкий путь, кэш не
+    используется, там как и раньше живой расчёт.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='profit_cache_rows')
+    year = models.IntegerField()
+    month = models.IntegerField()
+
+    data = models.JSONField(default=dict)
+
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'year', 'month')
+        indexes = [models.Index(fields=['year', 'month'])]
+        verbose_name = "Прибыль юзера за месяц (кэш)"
+        verbose_name_plural = "Прибыль юзера за месяц (кэш)"
+
+    def __str__(self):
+        return f"{self.user.username} {self.year}-{self.month:02d}"
