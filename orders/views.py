@@ -3595,13 +3595,44 @@ def admin_profit_view(request):
     users = list(User.objects.all().order_by('id'))
 
     # ================================================================
-    #  БЛОК ПРЕДЗАГРУЗКИ — 5 запросов на всю страницу
+    #  КЭШ — до тяжёлой предзагрузки, чтобы знать, кого вообще ещё
+    #  нужно считать вживую (см. history.md §46).
+    # ================================================================
+    # ОПТИМИЗАЦИЯ №2: без фильтра по бирже/банку (99% заходов на страницу)
+    # читаем готовую строку из кэша (MonthlyUserProfitCache, наполняется
+    # фоново раз в 15 минут — tasks.recompute_admin_profit_cache_task)
+    # вместо полного пересчёта на каждый заход. Если кэша на юзера/месяц
+    # ещё нет (юзер только что создан, фон не успел досчитать) — считаем
+    # именно этого юзера вживую, не блокируя всю страницу.
+    #
+    # Фильтр по бирже/банку — редкий путь, там семантика другая (фильтр
+    # только на целевой месяц, не на предыдущие для переноса остатка) —
+    # кэш не используется вообще, все юзера считаются вживую, как раньше.
+    has_filter = bool(exchange_filter or bank_filter_id)
+
+    cache_rows = {}
+    if not has_filter:
+        cache_rows = {
+            row.user_id: row.data
+            for row in MonthlyUserProfitCache.objects.filter(year=year, month=month)
+        }
+    # Юзеры без готовой строки в кэше (для has_filter=True это ВСЕ юзеры —
+    # cache_rows тогда пустой, что и даёт полную предзагрузку, как раньше).
+    missing_user_ids = [u.id for u in users if u.id not in cache_rows]
+
+    # ================================================================
+    #  БЛОК ПРЕДЗАГРУЗКИ — только для missing_user_ids, а не для всех
+    #  подряд. Если кэш покрывает всех (обычное дело) — missing_user_ids
+    #  пуст, и Order.objects.filter(user_id__in=[]) — это ORM-заглушка
+    #  без единого обращения к базе (Django сам коротко замыкает пустой
+    #  __in). Раньше тут читалась вся база ордеров системы (~318 тыс.
+    #  строк) на КАЖДЫЙ заход, независимо от того, нужны они были или нет.
     # ================================================================
 
-    # 1. Все ордера
+    # 1. Ордера — только недостающих юзеров
     raw_orders = (
         Order.objects
-        .filter(created_at__gte=SYSTEM_START, created_at__lt=month_end)
+        .filter(user_id__in=missing_user_ids, created_at__gte=SYSTEM_START, created_at__lt=month_end)
         .order_by('user_id', 'created_at')
         .values_list(
             'id', 'user_id', 'created_at', 'currency', 'operation_type',
@@ -3627,10 +3658,10 @@ def admin_profit_view(request):
         o = _O(row)
         all_orders_by_user[o.user_id].append(o)
 
-    # 2. Все UserExpense за текущий год
+    # 2. UserExpense за текущий год — только недостающих юзеров
     raw_expenses = (
         UserExpense.objects
-        .filter(month__startswith=str(year))
+        .filter(user_id__in=missing_user_ids, month__startswith=str(year))
         .values('user_id', 'month', 'name', 'amount')
     )
 
@@ -3641,10 +3672,10 @@ def admin_profit_view(request):
         expenses_by_user_month[key] += float(e['amount'])
         expenses_list_by_user[key].append({'name': e['name'], 'amount': e['amount']})
 
-    # 3. Все MonthlyManualEntry за текущий год — все поля
+    # 3. MonthlyManualEntry за текущий год — только недостающих юзеров
     raw_manuals = (
         MonthlyManualEntry.objects
-        .filter(month__startswith=str(year))
+        .filter(user_id__in=missing_user_ids, month__startswith=str(year))
         .values('user_id', 'month', 'gross',
                 'buy_qty', 'buy_cost', 'buy_comm',
                 'sell_qty', 'sell_cost', 'sell_comm',
@@ -3675,45 +3706,22 @@ def admin_profit_view(request):
     for m in raw_manuals:
         manuals_by_user_month[(m['user_id'], m['month'])] = _Manual(m)
 
-    # 4. init_order
+    # 4. init_order — только недостающих юзеров
     init_orders = (
         Order.objects
-        .filter(exchange_type="Остаток (до 1 фев)")
+        .filter(user_id__in=missing_user_ids, exchange_type="Остаток (до 1 фев)")
         .values('user_id', 'amount')
     )
     init_order_by_user = {o['user_id']: float(o['amount']) for o in init_orders}
 
-    # 5. BankDetail
+    # 5. BankDetail — не связано с юзерами, всегда нужен (для фильтра на странице)
     default_banks = BankDetail.objects.all()
 
     # ================================================================
     #  ОСНОВНОЙ ЦИКЛ
     # ================================================================
 
-    # ОПТИМИЗАЦИЯ: без фильтра по бирже/банку (это 99% заходов на страницу)
-    # считаем каждого юзера одним проходом вперёд по месяцам (та же логика,
-    # что и в get_months на /profit/ трейдера) вместо пересчёта всей цепочки
-    # переноса остатка заново для каждого юзера И ЕЩЁ РАЗ для YTD-базы
-    # НДФЛ на каждый месяц внутри — раньше это была O(юзеров × месяцев²)
-    # работа, 21+ секунд на всю страницу при полутора сотнях юзеров.
-    # Фильтр — редкий путь, там семантика другая (фильтр только на целевой
-    # месяц, не на предыдущие для переноса остатка) — оставлен на старой,
-    # медленной, но заведомо верной логике.
-    has_filter = bool(exchange_filter or bank_filter_id)
     ytd_month_keys = {(year, m) for m in range(1, month + 1)}
-
-    # ОПТИМИЗАЦИЯ №2: без фильтра — читаем готовую строку из кэша
-    # (MonthlyUserProfitCache, наполняется фоново раз в 15 минут задачей
-    # tasks.recompute_admin_profit_cache_task) вместо полного пересчёта на
-    # каждый заход — см. history.md §46. Если кэша на этот месяц/юзера ещё
-    # нет (например, юзер только что создан, фон ещё не успел досчитать) —
-    # считаем именно этого юзера вживую, не блокируя всю страницу.
-    cache_rows = {}
-    if not has_filter:
-        cache_rows = {
-            row.user_id: row.data
-            for row in MonthlyUserProfitCache.objects.filter(year=year, month=month)
-        }
 
     user_stats = []
 
