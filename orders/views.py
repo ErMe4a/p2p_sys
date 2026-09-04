@@ -4486,7 +4486,7 @@ def export_screenshots_view(request):
         return (filename, data)
 
     fetched = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_order = {executor.submit(_fetch_screenshot, o): o for o in orders_list}
         for future in concurrent.futures.as_completed(future_to_order):
             order = future_to_order[future]
