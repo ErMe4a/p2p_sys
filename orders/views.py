@@ -1929,18 +1929,21 @@ def export_excel_report(request):
 
     # Трейдеры с реально импортированным январём (см. history.md §43.2/§45) —
     # по прямому решению показываем им январь построчно, вместо схлопнутой
-    # строки "Остаток (до 1 фев)" (которая всё равно с этими ордерами не
-    # согласована — отдельное число, вбитое независимо). Для всех остальных
-    # трейдеров поведение не меняется вообще.
+    # строки "Остаток (до 1 фев)". НО (по решению Макса) сама эта строка —
+    # вручную внесённая им "настоящая" цифра остатка на 1 февраля — никуда
+    # не девается: она НЕ исключается из запроса ниже, поэтому естественно
+    # встаёт на своё место по дате (ровно 01.02.2026 00:00 — раньше любого
+    # реального ордера февраля) и становится стартовой точкой февраля, как
+    # и было для трейдеров без январского импорта. А вот остаток/прибыль,
+    # посчитанные по самим январским ордерам — не считаются и никуда не
+    # переносятся (см. ниже, month_is_before_system_start).
     has_january_orders = Order.objects.filter(
         user_id=user_id,
         created_at__lt=SYSTEM_START,
     ).exclude(exchange_type="Остаток (до 1 фев)").exists()
 
     if has_january_orders:
-        orders = Order.objects.filter(
-            user_id=user_id,
-        ).exclude(exchange_type="Остаток (до 1 фев)").order_by('created_at')
+        orders = Order.objects.filter(user_id=user_id).order_by('created_at')
     else:
         orders = Order.objects.filter(
             user_id=user_id,
@@ -1960,9 +1963,11 @@ def export_excel_report(request):
 
     orders_list = list(orders)
 
-    # Исторический ордер — всегда первый (кроме TON), и только если январь
-    # НЕ показывается построчно (иначе задвоение: и реальные январские
-    # ордера, и несвязанный с ними "Остаток" одновременно).
+    # Исторический ордер — принудительно первым в списке (кроме TON), но
+    # только если январь НЕ показывается построчно. Если показывается —
+    # он уже сам в orders_list (запрос выше его не исключает) и сам
+    # встаёт на нужное место по дате — довставлять его тут не нужно
+    # (и нельзя, задвоится).
     if currency != 'TON' and not has_january_orders:
         init_order = Order.objects.filter(
             user_id=user_id,
@@ -2244,27 +2249,33 @@ def export_excel_report(request):
 
     if multi_month:
         is_first_month = True
-        prev_month_key = None
         system_start_key = (SYSTEM_START.year, SYSTEM_START.month)
 
         for (yr, mo), month_orders in _groupby(orders_list, key=get_month_key):
             month_list = list(month_orders)
 
+            # Январь (и вообще всё раньше SYSTEM_START) у трейдеров с
+            # импортом — по прямому решению Макса: сделки показываются
+            # построчно "для вида", но НИКАКОГО остатка/прибыли по ним не
+            # считаем и не переносим дальше. Только сама "настоящая" цифра
+            # остатка на 1 февраля — вручную внесённая Максом отдельная
+            # запись ("Остаток (до 1 фев)") — идёт в дело; она в запросе
+            # выше не исключена из orders_list и сама сортируется на первое
+            # место февраля по своей дате (ровно 01.02.2026 00:00), поэтому
+            # ничего специально прокидывать в prev_carry не нужно — она
+            # естественно станет первой "покупкой" февраля, как и раньше
+            # было для трейдеров без январского импорта.
+            month_is_before_system_start = (yr, mo) < system_start_key
+
+            if month_is_before_system_start:
+                for o in month_list:
+                    idx += 1
+                    write_order_row(o, idx, is_historical=False)
+                continue
+
             data_start = ws.max_row + 1
 
-            # Строка "Остаток с [месяца]" в начале месяца берёт значение
-            # ПРЯМОЙ ФОРМУЛОЙ Excel из итога предыдущего месяца — отдельно
-            # от prev_carry (тот влияет только на Python-расчёт себестоимости
-            # ниже). На границе январь→февраль эту строку тоже не пишем —
-            # иначе на бумаге появится "Остаток с Января: N", хотя реально
-            # он никак не учтён в дальнейшем расчёте (см. комментарий у
-            # month_is_before_system_start ниже, по решению Макса).
-            crosses_system_start_boundary = (
-                prev_month_key is not None
-                and prev_month_key < system_start_key
-                and (yr, mo) >= system_start_key
-            )
-            if not is_first_month and prev_ost_row is not None and not crosses_system_start_boundary:
+            if not is_first_month and prev_ost_row is not None:
                 carry_label = f"Остаток с {_month_name(mo - 1 if mo > 1 else 12)} {yr if mo > 1 else yr - 1}"
                 write_carry_row(carry_label, prev_ost_row)
 
@@ -2289,22 +2300,12 @@ def export_excel_report(request):
                 prev_carry=prev_carry
             )
 
-            # Январь (и вообще всё раньше SYSTEM_START) — по прямому решению
-            # Макса, сделки там показываются построчно "для вида", но остаток
-            # из них НЕ должен перетекать в февраль: обрываем перенос сразу
-            # после того, как обработали последний месяц раньше SYSTEM_START,
-            # чтобы первый "боевой" месяц (февраль) стартовал с чистого листа.
-            month_is_before_system_start = (yr, mo) < system_start_key
-
             # Сохраняем перенос для следующего месяца
-            if month_is_before_system_start:
-                prev_carry = None
-            elif new_remainder is not None and new_price is not None and new_price > 0:
+            if new_remainder is not None and new_price is not None and new_price > 0:
                 prev_carry = (new_remainder, new_price)
             elif prev_carry is not None:
                 prev_carry = prev_carry  # оставляем прошлый если не смогли посчитать
 
-            prev_month_key = (yr, mo)
             is_first_month = False
 
     else:
