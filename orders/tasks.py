@@ -359,6 +359,57 @@ def _try_send_receipt(order: Order):
         logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
 
 
+# ── Ретраи чека для ручной формы ("Мои ордеры") ────────────────────────────
+MANUAL_RECEIPT_RETRY_SCHEDULE = [60, 300, 900, 1800, 3600]  # 1м,5м,15м,30м,1ч
+MANUAL_RECEIPT_MAX_RETRIES = len(MANUAL_RECEIPT_RETRY_SCHEDULE) + 24  # +24ч почасово
+
+
+@shared_task(bind=True, max_retries=MANUAL_RECEIPT_MAX_RETRIES, queue="receipt")
+def retry_manual_receipt(self, order_id: int):
+    """
+    Повтор отправки чека для ордеров, созданных через ручную форму
+    "Мои ордеры" (is_manual=True), если самая первая попытка (внутри
+    my_orders_list, синхронно) не удалась (сбой/таймаут Эвотора).
+
+    В отличие от verify_and_receipt_later не ждёт подтверждения биржевым
+    API — is_manual=True уже достаточное основание (см. барьер в
+    _try_send_receipt), поэтому просто повторяет отправку с бэкоффом.
+    """
+    try:
+        o = Order.objects.get(id=order_id)
+    except Order.DoesNotExist:
+        logger.warning("retry_manual_receipt: Order %d не найден.", order_id)
+        return
+
+    if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
+        return  # уже пробит (например, ретрай догнал ручную допробивку)
+
+    _try_send_receipt(o)
+
+    o.refresh_from_db(fields=["receipt"])
+    if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
+        logger.info("retry_manual_receipt: Order %d — чек пробит с повтора.", order_id)
+        return
+
+    attempt = self.request.retries + 1
+    if attempt <= MANUAL_RECEIPT_MAX_RETRIES:
+        if attempt <= len(MANUAL_RECEIPT_RETRY_SCHEDULE):
+            countdown = MANUAL_RECEIPT_RETRY_SCHEDULE[attempt - 1]
+        else:
+            countdown = VERIFY_HOURLY_DELAY
+        logger.warning(
+            "retry_manual_receipt: Order %d — чек не отправлен, повтор через %d сек (попытка %d/%d).",
+            order_id, countdown, attempt, MANUAL_RECEIPT_MAX_RETRIES,
+        )
+        raise self.retry(countdown=countdown)
+    else:
+        logger.error(
+            "retry_manual_receipt: Order %d [%s] — чек не пробит после %d попыток, "
+            "требуется ручное вмешательство.",
+            order_id, o.external_id, MANUAL_RECEIPT_MAX_RETRIES,
+        )
+
+
 @shared_task(bind=True, max_retries=0, queue="receipt")
 def recheck_mexc_keys_task(self):
     """

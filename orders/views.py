@@ -215,6 +215,10 @@ def my_orders_list(request):
             screenshot_after=request.FILES.get('screenshot_after'),
             created_at=order_date,
             currency=request.POST.get('currency', 'USDT').strip().upper(),
+            # Осознанный ручной ввод — без этого ордер выпадает из барьера
+            # is_verified/is_manual в _try_send_receipt и никогда не
+            # подхватывается автоматическими ретраями при сбое чека.
+            is_manual=True,
         )
 
         # 5. Удаляем из необработанных
@@ -246,7 +250,13 @@ def my_orders_list(request):
                 "amount": truncate(order.amount, amount_places),
                 "purpose": f"Цифровая валюта {currency}",
             }
-            create_or_update_and_send_receipt(order, receipt_data)
+            result = create_or_update_and_send_receipt(order, receipt_data)
+            if result.status not in ("SENT", "SKIPPED"):
+                # Первая попытка (синхронно, прямо в запросе) не удалась —
+                # ставим автоповтор с бэкоффом вместо того, чтобы тихо
+                # терять чек (см. history.md §22/23 — silent-failure паттерн).
+                from .tasks import retry_manual_receipt
+                retry_manual_receipt.apply_async(args=[order.id], countdown=60, queue="receipt")
 
         return redirect('my_orders')
 

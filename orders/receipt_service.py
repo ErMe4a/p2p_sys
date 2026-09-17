@@ -78,6 +78,19 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
     if not all(required_fields):
         return ReceiptResponse(status="ERROR", error_text="Не заполнены настройки Эвотор (Логин, Пароль, ID кассы или ИНН)")
 
+    # Сохраняем сам факт запроса чека (contact/сумма) ДО попытки отправки —
+    # если Эвотор упадёт ниже, contact всё равно останется в БД, и
+    # retry_manual_receipt сможет найти и повторить попытку. Раньше при
+    # ошибке order.receipt вообще не трогался — чек терялся без следа.
+    pending_receipt = {
+        "contact": receipt_data.get("contact"),
+        "price":   receipt_data.get("price"),
+        "amount":  receipt_data.get("amount"),
+        "sum":     receipt_data.get("sum"),
+    }
+    order.receipt = {**pending_receipt, "status": "PENDING"}
+    order.save(update_fields=["receipt"])
+
     try:
         # 3. Авторизация
         token = evotor_get_token(user.evotor_login, user.evotor_password)
@@ -123,8 +136,12 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
 
     except EvotorAtolError as e:
         logger.error(f"EVOTOR ERROR: {str(e)}")
+        order.receipt = {**pending_receipt, "status": "ERROR", "error_text": str(e)}
+        order.save(update_fields=["receipt"])
         return ReceiptResponse(status="ERROR", error_text=str(e))
-        
+
     except Exception as e:
         logger.error(f"SYSTEM ERROR: {str(e)}")
+        order.receipt = {**pending_receipt, "status": "ERROR", "error_text": f"System Error: {str(e)}"}
+        order.save(update_fields=["receipt"])
         return ReceiptResponse(status="ERROR", error_text=f"System Error: {str(e)}")
