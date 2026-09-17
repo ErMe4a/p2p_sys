@@ -89,6 +89,7 @@ let originalOwnName = '';
 let lastOrderIdForNameReset = null;
 let originalCounterpartyNickname = '';
 let originalCounterpartyRealName = '';
+let currentCounterpartyNicknameTemp = ''; // постоянно поддерживаемая подмена никнейма (шапка + подписи в чате)
 let ownNameRetryInterval = null;
 async function loadDisplayNameFromStorage() {
     try {
@@ -162,7 +163,7 @@ function replaceSellerNameInDom(name, root = document) {
             if (nameContainer) {
                 const current = (nameContainer.textContent || '').trim();
                 if (current !== name) {
-                    nameContainer.textContent = name;
+                    setTextPreservingLabelPrefix(nameContainer, name);
                 }
                 replaced = true;
             }
@@ -1901,12 +1902,24 @@ function cleanupResources() {
     currentSellDisplayNameTemp = '';
     // Reset ephemeral SELL real name (Verified) on navigation
     currentSellRealNameTemp = '';
+    currentCounterpartyNicknameTemp = '';
     originalCounterpartyNickname = '';
     originalCounterpartyRealName = '';
     // Reset captured BUY original name on navigation
     originalBuyName = '';
     // Reset captured own name in SELL payment details on navigation
     originalOwnName = '';
+}
+
+// ИСПРАВЛЕНО: элементы вроде .chat-info__real-name содержат лейбл и имя
+// ОДНИМ текстовым узлом ("Verified: ИМЯ ФАМИЛИЯ" / "Подтверждён: ИМЯ") —
+// прямая перезапись el.textContent стирала лейбл вместе с именем. Эта
+// функция сохраняет короткий префикс вида "Слово:" перед именем, если он
+// есть, и заменяет только само имя после него.
+function setTextPreservingLabelPrefix(el, newName) {
+    const current = el.textContent || '';
+    const m = current.match(/^([^:]{1,40}:\s*)/);
+    el.textContent = m ? (m[1] + newName) : newName;
 }
 
 // --- Updated Observer ---
@@ -1933,12 +1946,26 @@ function initializeMutationObserver() {
                 document.querySelectorAll('.im-container-caption__info-verified').forEach(el => {
                     const nameContainer = el.querySelector('.moly-space-item.moly-space-item-last');
                     if (nameContainer && nameContainer.textContent.trim() !== currentSellRealNameTemp) {
-                        nameContainer.textContent = currentSellRealNameTemp;
+                        setTextPreservingLabelPrefix(nameContainer, currentSellRealNameTemp);
                     }
                 });
                 document.querySelectorAll('.chat-info__real-name').forEach(el => {
                     if (el.textContent.trim() !== currentSellRealNameTemp) {
-                        el.textContent = currentSellRealNameTemp;
+                        setTextPreservingLabelPrefix(el, currentSellRealNameTemp);
+                    }
+                });
+            }
+
+            if (currentCounterpartyNicknameTemp && originalCounterpartyNickname) {
+                document.querySelectorAll('.chat-info-details__nickname').forEach(el => {
+                    if (el.textContent.trim() !== currentCounterpartyNicknameTemp) {
+                        el.textContent = currentCounterpartyNicknameTemp;
+                    }
+                });
+                document.querySelectorAll('.chat-message__message-name').forEach(el => {
+                    const current = el.textContent || '';
+                    if (current.startsWith(originalCounterpartyNickname) && !current.startsWith(currentCounterpartyNicknameTemp)) {
+                        el.textContent = currentCounterpartyNicknameTemp + current.slice(originalCounterpartyNickname.length);
                     }
                 });
             }
@@ -2173,6 +2200,21 @@ try {
                     }
                 });
 
+                // НОВОЕ: подпись отправителя над каждым сообщением в чате
+                // ("ник (Seller)"/"ник (Buyer)") — отдельный от шапки элемент,
+                // раньше вообще не подменялся. Сохраняем в переменную, чтобы
+                // наблюдатель ниже подхватывал и новые сообщения тоже.
+                currentCounterpartyNicknameTemp = name;
+                if (originalCounterpartyNickname) {
+                    document.querySelectorAll('.chat-message__message-name').forEach(el => {
+                        const current = el.textContent || '';
+                        if (current.startsWith(originalCounterpartyNickname) && !current.startsWith(name)) {
+                            el.textContent = name + current.slice(originalCounterpartyNickname.length);
+                            replaced = true;
+                        }
+                    });
+                }
+
                 sendResponse({ success: true, replaced });
             } catch (e) {
                 sendResponse({ success: false, error: e?.message || 'Ошибка' });
@@ -2201,7 +2243,7 @@ try {
                         }
                         if (nameContainer.textContent.trim() !== name) {
                             console.log('P2P Analytics: меняем Verified имя:', nameContainer.textContent.trim(), '→', name);
-                            nameContainer.textContent = name;
+                            setTextPreservingLabelPrefix(nameContainer, name);
                             replaced = true;
                         }
                     }
@@ -2213,7 +2255,7 @@ try {
                         originalCounterpartyRealName = el.textContent.trim();
                     }
                     if (el.textContent.trim() !== name) {
-                        el.textContent = name;
+                        setTextPreservingLabelPrefix(el, name);
                         replaced = true;
                     }
                 });
@@ -2257,6 +2299,12 @@ try {
                     document.querySelectorAll('.chat-info-details__nickname').forEach(el => {
                         el.textContent = originalCounterpartyNickname;
                     });
+                    document.querySelectorAll('.chat-message__message-name').forEach(el => {
+                        const current = el.textContent || '';
+                        if (currentCounterpartyNicknameTemp && current.startsWith(currentCounterpartyNicknameTemp)) {
+                            el.textContent = originalCounterpartyNickname + current.slice(currentCounterpartyNicknameTemp.length);
+                        }
+                    });
                 }
 
                 // Восстанавливаем имя (Verified / real-name)
@@ -2275,6 +2323,7 @@ try {
                 // Очищаем временные переменные, чтобы MutationObserver больше не переписывал DOM
                 currentSellDisplayNameTemp = '';
                 currentSellRealNameTemp = '';
+                currentCounterpartyNicknameTemp = '';
                 originalCounterpartyNickname = '';
                 originalCounterpartyRealName = '';
 

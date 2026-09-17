@@ -22,6 +22,9 @@ let storedBuyName = '';       // Из storage — применяется ТОЛ�
 let originalBuyName = '';
 let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
 let currentSellMyName = ''; // своё имя на SELL (из storage → .l-trade-payment)
+let fioReapplyInterval = null;   // постоянный ретрай для replaceFioInSellPaymentDetails
+let sellNameReapplyInterval = null; // постоянный ретрай для replaceNameInUserList
+let originalNickname = '';       // оригинальный никнейм контрагента (.chat-relative .name-hover)
 // ============================================
 // Timezone and Date Helpers (MSK)
 // ============================================
@@ -360,6 +363,29 @@ function createSubmitButton() {
 
         try {
             submitBtn.textContent = 'Создание скриншота...';
+
+            // ИСПРАВЛЕНО: HTX сам переопрашивает реквизиты/имя контрагента
+            // примерно раз в секунду и стирает нашу подмену обратно на
+            // реальное имя — фоновый ретрай-цикл не гарантирует, что в
+            // момент нажатия кнопки на экране именно ПОДМЕНЁННОЕ имя, а не
+            // успевшее откатиться настоящее. Поэтому прямо перед кадром
+            // принудительно переприменяем обе подмены синхронно, вместо
+            // того чтобы полагаться на то, что фоновый цикл уже победил.
+            if (currentDisplayName) {
+                replaceNameInUserList(currentDisplayName);
+                replaceNicknameInChat(currentDisplayName);
+                if (isBuyPage()) {
+                    replaceFioInPaymentDetails(currentDisplayName);
+                }
+            }
+            if (currentSellMyName) {
+                replaceFioInSellPaymentDetails(currentSellMyName);
+            }
+            // Небольшая пауза, чтобы браузер успел перерисовать DOM с
+            // подменённым именем ДО того, как расширение попросит снять
+            // видимый кадр вкладки.
+            await new Promise(r => setTimeout(r, 80));
+
             try {
                 screenshotDataUrl = await captureScreenshot();
             } catch (error) {
@@ -709,7 +735,63 @@ async function createUnifiedFormSection() {
     const dateInputWrapper = createInput('Дата и время ордера (МСК)', 'order-date-input', '');
     const dateInput = dateInputWrapper.querySelector('#order-date-input');
     dateInput.type = 'datetime-local';
-    dateInput.value = getCurrentMskDateTimeLocal();
+    // ИСПРАВЛЕНО: раньше поле ВСЕГДА ставилось на текущий момент — дата,
+    // которую находит parseOrderInfo() (из чата ордера), нигде не
+    // применялась к этому полю, а использовалась только для BUY/SELL.
+    // В итоге при пробитии позже реальной сделки в дату попадал момент
+    // пробития, а не момент создания ордера. Теперь поле сразу
+    // заполняется распарсенной датой; если распознать не удалось,
+    // parseOrderInfo() сама возвращает текущий момент — то есть худший
+    // случай не хуже старого поведения.
+    let dateUserEdited = false;
+    dateInput.addEventListener('input', () => { dateUserEdited = true; }, { once: true });
+
+    // ИСПРАВЛЕНО (продолжение): даже когда парсинг "что-то находит" с
+    // первого раза, это может быть более ПОЗДНЕЕ системное сообщение
+    // (например "отмечен для оплаты"), если ранняя часть истории чата
+    // ещё скрыта за "Показать больше" и не успела подгрузиться после
+    // клика (expandOrderChatHistory сама по себе асинхронна — клик есть,
+    // а контент приходит чуть позже). Поэтому просто "нашлась хоть
+    // какая-то дата" недостаточно — сравниваем несколько попыток и
+    // оставляем самую РАННЮЮ дату, а не первую найденную.
+    let bestCreatedAt = null; // ISO-строка самой ранней найденной даты
+    const applyIfEarlier = (iso) => {
+        if (!iso) return;
+        if (!bestCreatedAt || new Date(iso).getTime() < new Date(bestCreatedAt).getTime()) {
+            bestCreatedAt = iso;
+            if (!dateUserEdited) {
+                dateInput.value = utcIsoToMskDateTimeLocal(iso);
+            }
+        }
+    };
+
+    try {
+        const parsedInfo = parseOrderInfo();
+        dateInput.value = parsedInfo && parsedInfo.createdAt
+            ? utcIsoToMskDateTimeLocal(parsedInfo.createdAt)
+            : getCurrentMskDateTimeLocal();
+        if (parsedInfo && parsedInfo.dateFound) bestCreatedAt = parsedInfo.createdAt;
+
+        // Несколько повторных разборов в течение ~4 секунд: клик по
+        // "Показать больше" мог случиться только что, контенту нужно
+        // время подгрузиться — берём самую раннюю дату из всех попыток.
+        let attempts = 0;
+        const dateRetryInterval = setInterval(() => {
+            attempts++;
+            if (dateUserEdited || attempts >= 8) {
+                clearInterval(dateRetryInterval);
+                return;
+            }
+            try {
+                const retryInfo = parseOrderInfo();
+                if (retryInfo && retryInfo.dateFound) {
+                    applyIfEarlier(retryInfo.createdAt);
+                }
+            } catch (e) { /* ignore, попробуем ещё раз */ }
+        }, 500);
+    } catch (e) {
+        dateInput.value = getCurrentMskDateTimeLocal();
+    }
     formSection.appendChild(dateInputWrapper);
 
     // Create bank dropdown wrapper
@@ -920,36 +1002,84 @@ function extractNumber(text) {
     return isNaN(num) ? null : num;
 }
 
+// ИСПРАВЛЕНО: у чата ордера часть истории (включая самое первое системное
+// сообщение "Подождите, покупатель ещё не заплатил...", ближе всего к
+// реальному моменту создания ордера) подгружается только по клику на
+// "Показать больше" — без клика видна лишь более ПОЗДНЯЯ часть переписки,
+// и в дату мог попасть, например, момент "отмечен для оплаты" вместо
+// момента открытия ордера (разница может быть 8+ минут). Кликаем
+// программно, если такая кнопка ещё видна на странице.
+function expandOrderChatHistory() {
+    try {
+        const candidates = document.querySelectorAll('.sys-space');
+        for (const el of candidates) {
+            if (getComputedStyle(el).display === 'none') continue;
+            if ((el.textContent || '').trim() === 'Показать больше') {
+                el.click();
+                return true;
+            }
+        }
+    } catch (e) { /* ignore */ }
+    return false;
+}
+
 function parseOrderInfo() {
     const orderInfo = {};
     let dateFound = false;
-    const dateRegex = /(\d{4}[-/]\d{2}[-/]\d{2}\s+\d{2}:\d{2}:\d{2})/;
+    const dateTimeRegex = /(\d{4}[-/]\d{2}[-/]\d{2}\s+\d{2}:\d{2}:\d{2})/;
+    const dateOnlyRegex = /^(\d{4}[-/]\d{2}[-/]\d{2})$/;
+    const timeOnlyRegex = /(\d{2}:\d{2}:\d{2})/;
+
+    expandOrderChatHistory();
 
     try {
-        const userListItems = document.querySelectorAll('.user-list li');
-        if (userListItems.length > 0) {
-            for (const li of userListItems) {
-                const text = li.textContent || '';
-                if (text.includes('Последняя сделка') || text.includes('Latest deal')) {
-                    const match = text.match(dateRegex);
-                    if (match) {
-                        const dateStr = match[1].replace(/\//g, '-');
-                        const parsedDate = new Date(dateStr);
-                        if (!isNaN(parsedDate.getTime())) {
-                            orderInfo.createdAt = parsedDate.toISOString(); 
-                            dateFound = true;
-                            break;
-                        }
-                    }
+        // ИСПРАВЛЕНО: раньше дата бралась из .user-list ("Последняя сделка
+        // со мной: ...") — это дата ПОСЛЕДНЕЙ сделки с этим контрагентом
+        // ВООБЩЕ (любой другой ордер), а не дата ЭТОГО конкретного ордера.
+        // Из-за этого либо подставлялась чужая дата, либо (если такой
+        // строки не было) код проваливался в самый низ и брал текущий
+        // момент — то есть момент пробития чека, а не создания ордера.
+        //
+        // Теперь дата берётся из чата САМОГО ордера: системные сообщения
+        // (класс .sys-space) содержат разделитель-дату ("2026-09-15") и,
+        // отдельно, системные события с временем в конце текста
+        // ("...18:41:06"). Берём первую дату-разделитель + первое время
+        // после неё — это момент начала переписки по этому ордеру,
+        // что гораздо ближе к реальному созданию ордера, чем что-либо
+        // из общей статистики контрагента.
+        const sysMessages = Array.from(document.querySelectorAll('.sys-space'));
+        let datePart = null;
+        let timePart = null;
+        for (const el of sysMessages) {
+            const text = (el.textContent || '').trim();
+            if (!datePart && dateOnlyRegex.test(text)) {
+                datePart = text.replace(/\//g, '-');
+                continue;
+            }
+            if (datePart && !timePart) {
+                const m = text.match(timeOnlyRegex);
+                if (m) {
+                    timePart = m[1];
+                    break;
                 }
             }
         }
+        if (datePart && timePart) {
+            const parsedDate = new Date(`${datePart} ${timePart}`);
+            if (!isNaN(parsedDate.getTime())) {
+                orderInfo.createdAt = parsedDate.toISOString();
+                dateFound = true;
+            }
+        }
 
+        // Фолбэк — только явные блоки деталей ордера (НЕ .user-list и НЕ
+        // document.body целиком, чтобы снова случайно не зацепить статистику
+        // контрагента "Последняя сделка"/"Последний вывод").
         if (!dateFound) {
             const contentBlocks = document.querySelectorAll('.l-trade-detail, .baseInfo, .trade-info-list, .order-detail-container');
             for (const block of contentBlocks) {
                 const text = block.textContent || '';
-                const match = text.match(dateRegex);
+                const match = text.match(dateTimeRegex);
                 if (match) {
                     const dateStr = match[1].replace(/\//g, '-');
                     const parsedDate = new Date(dateStr);
@@ -962,25 +1092,13 @@ function parseOrderInfo() {
             }
         }
 
-        if (!dateFound) {
-            const bodyText = document.body.innerText;
-            const globalMatch = bodyText.match(dateRegex);
-            if (globalMatch) {
-                const dateStr = globalMatch[1].replace(/\//g, '-');
-                const parsedDate = new Date(dateStr);
-                if (!isNaN(parsedDate.getTime())) {
-                    orderInfo.createdAt = parsedDate.toISOString();
-                    dateFound = true;
-                }
-            }
-        }
-
     } catch (e) { /* ignore */ }
-    
+
     if (!dateFound) {
         orderInfo.createdAt = new Date().toISOString();
     }
-    
+    orderInfo.dateFound = dateFound; // чтобы вызывающий код знал, реальная это дата или фолбэк "сейчас"
+
     orderInfo.type = detectOrderType().toUpperCase();
     return orderInfo;
 }
@@ -1481,6 +1599,7 @@ function initializeMutationObserver() {
             // Имя контрагента (user-list) — BUY и SELL
             if (currentDisplayName) {
                 replaceNameInUserList(currentDisplayName);
+                replaceNicknameInChat(currentDisplayName);
                 if (isBuyPage()) {
                     replaceFioInPaymentDetails(currentDisplayName);
                 }
@@ -1531,6 +1650,30 @@ function replaceNameInUserList(name) {
         return true;
     } catch (e) {
         console.warn('P2P Analytics HTX: replaceNameInUserList error:', e);
+        return false;
+    }
+}
+
+// НОВОЕ: никнейм контрагента в шапке чата (.chat-relative .name-hover) —
+// отдельный элемент от реального ФИО в .user-list, раньше вообще не
+// заменялся. У HTX это либо кастомный ник, либо числовой UID, если ник
+// не задан — в любом случае это тоже идентифицирующие данные контрагента.
+function replaceNicknameInChat(name) {
+    if (!name) return false;
+    try {
+        const nickEl = document.querySelector('.chat-relative .name-hover');
+        if (!nickEl) return false;
+
+        const currentText = (nickEl.textContent || '').trim();
+        if (!originalNickname && currentText) {
+            originalNickname = currentText;
+        }
+        if (currentText === name) return true;
+
+        nickEl.textContent = name;
+        return true;
+    } catch (e) {
+        console.warn('P2P Analytics HTX: replaceNicknameInChat error:', e);
         return false;
     }
 }
@@ -1604,6 +1747,11 @@ function restoreOriginalName() {
                 const span = wrapper.querySelector('.detail span');
                 if (span) span.textContent = originalFioName;
             }
+        }
+        if (originalNickname) {
+            const nickEl = document.querySelector('.chat-relative .name-hover');
+            if (nickEl) nickEl.textContent = originalNickname;
+            originalNickname = '';
         }
     } catch (e) { /* ignore */ }
 }
@@ -1685,6 +1833,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         nameReplacementStarted = false;
         originalBuyName = '';
         originalFioName = '';
+        if (fioReapplyInterval) { clearInterval(fioReapplyInterval); fioReapplyInterval = null; }
+        if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
         restoreOriginalName();
         chrome.storage.sync.set({ displayName: '' }).catch(() => {});
         sendResponse({ success: true });
@@ -1695,10 +1845,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (name && isSellPage()) {
             currentSellMyName = name;
             replaceFioInSellPaymentDetails(name);
-            let attempts = 0;
-            const interval = setInterval(() => {
-                attempts++;
-                if (replaceFioInSellPaymentDetails(name) || attempts >= 20) clearInterval(interval);
+            // ИСПРАВЛЕНО: replaceFioInSellPaymentDetails всегда возвращает
+            // true после того, как САМ только что проставил значение — то
+            // есть старый ретрай на условии "успех || 20 попыток" стопался
+            // практически сразу после первого тика и переставал что-либо
+            // делать. А HTX живьём переопрашивает это поле и откатывает
+            // его обратно на реальное ФИО примерно раз в секунду — без
+            // ПОСТОЯННОГО переприменения поле быстро возвращается к
+            // настоящему имени. Теперь интервал не останавливается сам —
+            // он держится, пока явно не придёт reset/новое имя.
+            if (fioReapplyInterval) clearInterval(fioReapplyInterval);
+            fioReapplyInterval = setInterval(() => {
+                replaceFioInSellPaymentDetails(name);
             }, 300);
         }
         sendResponse({ success: true });
@@ -1709,12 +1867,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         nameReplacementStarted = false;
         if (name) {
             replaceNameInUserList(name);
+            replaceNicknameInChat(name);
             nameReplacementStarted = true;
-            let attempts = 0;
-            const sellInterval = setInterval(() => {
-                attempts++;
-                const r = replaceNameInUserList(name);
-                if (attempts >= 20 || r) clearInterval(sellInterval);
+            // См. комментарий выше про applyMyName — та же причина:
+            // держим интервал постоянно, не останавливаем по "успеху".
+            if (sellNameReapplyInterval) clearInterval(sellNameReapplyInterval);
+            sellNameReapplyInterval = setInterval(() => {
+                replaceNameInUserList(name);
+                replaceNicknameInChat(name);
             }, 300);
         }
         sendResponse({ success: true });

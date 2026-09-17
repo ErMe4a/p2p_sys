@@ -24,7 +24,13 @@ let currentUrl = window.location.href;
 let urlWatchInterval = null;
 let currentCounterpartyName = '';      // ← добавить сюда
 let currentRealName = '';
-let counterpartyNameObserver = null;  
+let counterpartyNameObserver = null;
+let originalCounterpartyNickname = ''; // реальный ник контрагента до подмены
+let originalCounterpartyRealName = ''; // реальное/KYC имя контрагента до подмены
+let realNameObserver = null;  // ИСПРАВЛЕНО: раньше объявлялась только у строки ~2358,
+                               // а использовалась в cleanupResources() на строке ~1214 —
+                               // если очистка вызывалась раньше, чем скрипт доходил до
+                               // старого места объявления, ловили ReferenceError (TDZ).
 // Load widget collapsed state from storage
 let widgetCollapsed = false;
 try {
@@ -83,11 +89,17 @@ function isColorGreen(colorStr) {
 // [0] — span с английским лейблом, [1] — span со значением. Ищем по
 // тексту лейбла, а не по классам — устойчивее к очередному редизайну.
 function getMexcInfoRowValueEl(labelText) {
+    // ИСПРАВЛЕНО: искал только по одному (английскому) варианту лейбла, а
+    // реальный интерфейс MEXC у большинства пользователей — русский
+    // ("Время создания", "Сумма", "Имя КУС" и т.д.), где старый код вообще
+    // ничего не находил. labelText теперь может быть строкой или массивом
+    // вариантов на разных языках — проверяем все.
+    const variants = (Array.isArray(labelText) ? labelText : [labelText]).map(v => v.toLowerCase());
     const rows = document.querySelectorAll('div.flex.items-center.justify-between.gap-3.py-2');
     for (const row of rows) {
         if (row.children.length < 2) continue;
         const label = (row.children[0].textContent || '').trim().toLowerCase();
-        if (label === labelText.toLowerCase()) {
+        if (variants.includes(label)) {
             return row.children[1];
         }
     }
@@ -1311,7 +1323,7 @@ function parseOrderInfo() {
         const timeRow = document.querySelector('[data-testid="info-row-timeCreated"]');
         const valueEl = timeRow
             ? timeRow.querySelector('.InfoRow_value__9xKf4')
-            : getMexcInfoRowValueEl('Time Created'); // редизайн авг 2026
+            : getMexcInfoRowValueEl(['Time Created', 'Время создания']); // редизайн авг 2026
         if (valueEl) {
             const text = (valueEl.textContent || '').trim();
             console.log('P2P Analytics MEXC [parseOrderInfo] raw date text:', text);
@@ -1374,7 +1386,7 @@ function parsePriceFromPage() {
         const row = document.querySelector('[data-testid="info-row-price"]');
         const valueEl = row
             ? row.querySelector('.InfoRow_value__9xKf4')
-            : getMexcInfoRowValueEl('Price'); // редизайн авг 2026
+            : getMexcInfoRowValueEl(['Price', 'Цена']); // редизайн авг 2026
         if (valueEl) {
             const text = (valueEl.textContent || '').trim();
             console.log('P2P Analytics MEXC [parsePriceFromPage] raw text:', text);
@@ -1402,7 +1414,7 @@ function parseQuantityFromPage() {
         const row = document.querySelector('[data-testid="info-row-quantity"]');
         const valueEl = row
             ? row.querySelector('.CouponQuantity_quantityValue__5hj2c')
-            : getMexcInfoRowValueEl('Quantity'); // редизайн авг 2026
+            : getMexcInfoRowValueEl(['Quantity', 'Количество']); // редизайн авг 2026
         if (valueEl) {
             const text = (valueEl.textContent || '').trim();
             console.log('P2P Analytics MEXC [parseQuantityFromPage] raw text:', text);
@@ -1436,7 +1448,7 @@ function parseAmountFromPage() {
         const row = document.querySelector('[data-testid="info-row-amount"]');
         const valueEl = row
             ? row.querySelector('.CouponAmount_amount__eC1N0')
-            : getMexcInfoRowValueEl('Amount'); // редизайн авг 2026
+            : getMexcInfoRowValueEl(['Amount', 'Сумма']); // редизайн авг 2026
         if (valueEl) {
             const text = (valueEl.textContent || '').trim();
             console.log('P2P Analytics MEXC [parseAmountFromPage] raw text:', text);
@@ -1522,7 +1534,7 @@ function waitForMexcPriceRow(maxAttempts = 20, delayMs = 300) {
     return new Promise((resolve) => {
         let attempts = 0;
         const check = () => {
-            const el = document.querySelector('[data-testid="info-row-price"]') || getMexcInfoRowValueEl('Price');
+            const el = document.querySelector('[data-testid="info-row-price"]') || getMexcInfoRowValueEl(['Price', 'Цена']);
             if (el) {
                 resolve(el);
                 return;
@@ -2315,8 +2327,13 @@ function replaceNickName() {
     const btn = findCounterpartyHeaderButton();
     if (btn) {
         const truncateEl = btn.children[1].children[0].querySelector('.truncate');
-        if (truncateEl && truncateEl.textContent !== currentCounterpartyName) {
-            truncateEl.textContent = currentCounterpartyName;
+        if (truncateEl) {
+            if (!originalCounterpartyNickname && truncateEl.textContent !== currentCounterpartyName) {
+                originalCounterpartyNickname = truncateEl.textContent;
+            }
+            if (truncateEl.textContent !== currentCounterpartyName) {
+                truncateEl.textContent = currentCounterpartyName;
+            }
         }
     }
 }
@@ -2344,9 +2361,26 @@ function replaceRealName() {
     const btn = findCounterpartyHeaderButton();
     if (btn) {
         const nameSpan = btn.children[1].children[1].children[0];
-        if (nameSpan && nameSpan.textContent !== currentRealName) {
-            nameSpan.textContent = currentRealName;
+        if (nameSpan) {
+            if (!originalCounterpartyRealName && nameSpan.textContent !== currentRealName) {
+                originalCounterpartyRealName = nameSpan.textContent;
+            }
+            if (nameSpan.textContent !== currentRealName) {
+                nameSpan.textContent = currentRealName;
+            }
         }
+    }
+
+    // НОВОЕ: строка "KYC Name" в левой инфопанели заказа — отдельный от
+    // шапки чата элемент, раньше вообще не подменялся, хотя нужный для
+    // этого хелпер (getMexcInfoRowValueEl) уже существовал и используется
+    // для Amount/Price/Quantity/Time Created, просто не для имени.
+    const kycNameEl = getMexcInfoRowValueEl(['KYC Name', 'Имя КУС', 'Имя KYC']);
+    if (kycNameEl && !originalCounterpartyRealName && kycNameEl.textContent !== currentRealName) {
+        originalCounterpartyRealName = kycNameEl.textContent;
+    }
+    if (kycNameEl && kycNameEl.textContent !== currentRealName) {
+        kycNameEl.textContent = currentRealName;
     }
 }
 
@@ -2354,8 +2388,6 @@ function replaceCounterpartyName() {
     replaceNickName();
     replaceRealName();
 }
-
-let realNameObserver = null;
 
 function startRealNameObserver() {
     if (realNameObserver) {
@@ -2428,6 +2460,50 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             counterpartyNameObserver.disconnect();
             counterpartyNameObserver = null;
         }
+        if (originalCounterpartyNickname) {
+            const btn = findCounterpartyHeaderButton();
+            const truncateEl = btn ? btn.children[1].children[0].querySelector('.truncate') : null;
+            if (truncateEl) truncateEl.textContent = originalCounterpartyNickname;
+            originalCounterpartyNickname = '';
+        }
+        sendResponse({ success: true });
+        return true;
+    }
+
+    // ИСПРАВЛЕНО: попап реально шлёт именно 'resetCounterpartyNames' для
+    // кнопки сброса контрагента (как и у Bybit) — этого action тут вообще
+    // не было, сообщение уходило в никуда, поэтому кнопка не работала
+    // (только F5, потому что это просто свежая перезагруженная страница).
+    // Восстанавливает и ник, и реальное/KYC имя во всех местах, где они
+    // подменяются.
+    if (message.action === 'resetCounterpartyNames') {
+        currentCounterpartyName = '';
+        currentRealName = '';
+        if (counterpartyNameObserver) {
+            counterpartyNameObserver.disconnect();
+            counterpartyNameObserver = null;
+        }
+        if (realNameObserver) {
+            realNameObserver.disconnect();
+            realNameObserver = null;
+        }
+
+        const btn = findCounterpartyHeaderButton();
+        if (originalCounterpartyNickname) {
+            const truncateEl = btn ? btn.children[1].children[0].querySelector('.truncate') : null;
+            if (truncateEl) truncateEl.textContent = originalCounterpartyNickname;
+        }
+        if (originalCounterpartyRealName) {
+            const nameSpan = btn ? btn.children[1].children[1].children[0] : null;
+            if (nameSpan) nameSpan.textContent = originalCounterpartyRealName;
+            const kycNameEl = getMexcInfoRowValueEl(['KYC Name', 'Имя КУС', 'Имя KYC']);
+            if (kycNameEl) kycNameEl.textContent = originalCounterpartyRealName;
+            const realNameEl = document.querySelector('.ChatHeader_realName-box__5lbOA');
+            if (realNameEl) realNameEl.textContent = originalCounterpartyRealName;
+        }
+
+        originalCounterpartyNickname = '';
+        originalCounterpartyRealName = '';
         sendResponse({ success: true });
         return true;
     }
