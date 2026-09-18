@@ -372,7 +372,7 @@ function createSubmitButton() {
             }
             // Своё имя — только на BUY (плашка чата + ФИО в реквизитах).
             if (isBuyPage() && currentMyName) {
-                replaceNicknameInChat(currentMyName);
+                replaceNameInUserList(currentMyName);
                 replaceFioInPaymentDetails(currentMyName);
             }
             // Небольшая пауза, чтобы браузер успел перерисовать DOM с
@@ -1597,10 +1597,10 @@ function initializeMutationObserver() {
                 if (currentRealName) replaceNameInUserList(currentRealName);
             }
 
-            // Своё имя — по решению работает ТОЛЬКО на BUY: плашка чата
-            // (тот же .chat-relative .name-hover) + ФИО в реквизитах.
+            // Своё имя — по решению работает ТОЛЬКО на BUY: карточка
+            // контрагента (.user-list) + ФИО в реквизитах.
             if (isBuyPage() && currentMyName) {
-                replaceNicknameInChat(currentMyName);
+                replaceNameInUserList(currentMyName);
                 replaceFioInPaymentDetails(currentMyName);
             }
         }, 100);
@@ -1778,12 +1778,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     } else if (message.action === 'applyMyName') {
         // Своё имя — ПО РЕШЕНИЮ работает ТОЛЬКО на BUY-странице (там, где
-        // трейдер сам покупает крипту), и бьёт ДВА места сразу: плашку
-        // чата (.chat-relative .name-hover — тот же узел, что и никнейм
-        // контрагента на SELL) и ФИО в реквизитах (.info-item-wrapper —
-        // тот же узел, что и реальное имя контрагента на BUY, см.
-        // applyRealName выше). На SELL это действие теперь ничего не
-        // делает — там реквизиты/чат трогает только замена контрагента.
+        // трейдер сам покупает крипту), и бьёт ДВА места сразу: карточку
+        // контрагента (.user-list — ИСПРАВЛЕНО: раньше по ошибке трогал
+        // никнейм в шапке чата .chat-relative, это разные элементы, нужен
+        // именно .user-list) и ФИО в реквизитах (.info-item-wrapper). На
+        // SELL это действие теперь ничего не делает — там реквизиты/чат
+        // трогает только замена контрагента.
         const name = (message.name || '').trim();
         if (!name) {
             sendResponse({ success: false, error: 'Имя пустое' });
@@ -1792,13 +1792,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentMyName = name;
         let replaced = false;
         if (isBuyPage()) {
-            replaced = replaceNicknameInChat(name) || replaced;
+            replaced = replaceNameInUserList(name) || replaced;
             replaced = replaceFioInPaymentDetails(name) || replaced;
         }
         if (myNameReapplyInterval) clearInterval(myNameReapplyInterval);
         myNameReapplyInterval = setInterval(() => {
             if (isBuyPage()) {
-                replaceNicknameInChat(name);
+                replaceNameInUserList(name);
                 replaceFioInPaymentDetails(name);
             }
         }, 300);
