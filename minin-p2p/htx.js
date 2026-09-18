@@ -17,12 +17,9 @@ const HTX_GOLD_COLOR = '#F7A600';
 // State variables
 let observer = null;
 let isInitializing = false;
-let currentDisplayName = '';  // Активное имя для текущей страницы (BUY или SELL)
-let storedBuyName = '';       // Из storage — применяется ТОЛЬКО на BUY страницах
+let currentDisplayName = '';  // Никнейм контрагента (.chat-relative .name-hover)
 let originalBuyName = '';
 let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
-let currentSellMyName = ''; // своё имя на SELL (из storage → .l-trade-payment)
-let fioReapplyInterval = null;   // постоянный ретрай для replaceFioInSellPaymentDetails
 let sellNameReapplyInterval = null; // постоянный ретрай для replaceNicknameInChat (никнейм контрагента)
 let originalNickname = '';       // оригинальный никнейм контрагента (.chat-relative .name-hover)
 let currentRealName = '';        // "Имя" контрагента (.user-list), отдельно от никнейма чата
@@ -146,17 +143,10 @@ function isSellPage() {
     try { return detectOrderType() === 'sell'; } catch (_) { return false; }
 }
 
-async function loadDisplayNameFromStorage() {
-    try {
-        const res = await chrome.storage.sync.get(['displayName']);
-        storedBuyName = res.displayName || '';
-        return storedBuyName;
-    } catch (e) {
-        console.warn('P2P Analytics HTX: Failed to load display name:', e);
-        storedBuyName = '';
-        return '';
-    }
-}
+// ИСПРАВЛЕНО: замена своего ФИО в реквизитах на SELL-странице отключена
+// по решению — на HTX работает только замена никнейма и реального имени
+// КОНТРАГЕНТА, своё ФИО в плашке "Способ получения платежей" больше не
+// трогаем вообще (функция replaceFioInSellPaymentDetails удалена).
 
 async function waitForOrderIdInDOM(maxAttempts = 20, delayMs = 300) {
     console.log('P2P Analytics HTX: Waiting for order ID to appear in DOM...');
@@ -381,9 +371,6 @@ function createSubmitButton() {
                 if (isBuyPage()) {
                     replaceFioInPaymentDetails(currentRealName);
                 }
-            }
-            if (currentSellMyName) {
-                replaceFioInSellPaymentDetails(currentSellMyName);
             }
             // Небольшая пауза, чтобы браузер успел перерисовать DOM с
             // подменённым именем ДО того, как расширение попросит снять
@@ -1613,11 +1600,6 @@ function initializeMutationObserver() {
                     replaceFioInPaymentDetails(currentRealName);
                 }
             }
-
-            // Своё имя (только SELL, .l-trade-payment)
-            if (currentSellMyName) {
-                replaceFioInSellPaymentDetails(currentSellMyName);
-            }
         }, 100);
     });
 
@@ -1687,31 +1669,6 @@ function replaceNicknameInChat(name) {
     }
 }
 
-function replaceFioInSellPaymentDetails(name) {
-    if (!name) return false;
-    try {
-        const wrappers = document.querySelectorAll('.info-item-wrapper');
-        console.log('[HTX] info-item-wrapper найдено:', wrappers.length);
-        let replaced = false;
-        wrappers.forEach(wrapper => {
-            const label = wrapper.querySelector('.label');
-            if (!label) return;
-            console.log('[HTX] label текст:', JSON.stringify(label.textContent.trim()));
-            if (label.textContent.trim() !== 'ФИО') return;
-            const span = wrapper.querySelector('.detail span');
-            console.log('[HTX] span найден:', !!span, span?.textContent);
-            if (!span) return;
-            span.textContent = name;
-            replaced = true;
-        });
-        console.log('[HTX] replaced:', replaced);
-        return replaced;
-    } catch (e) {
-        console.error('[HTX] ошибка:', e);
-        return false;
-    }
-}
-
 // Замена ФИО в блоке реквизитов контрагента (только на BUY страницах)
 function replaceFioInPaymentDetails(name) {
     if (!name) return false;
@@ -1765,46 +1722,17 @@ function restoreOriginalName() {
     } catch (e) { /* ignore */ }
 }
 
-// ============================================
-// Запуск замены имени с polling (HTX SPA)
-// ============================================
-
-// Добавь флаг вверху файла рядом с остальными state variables
-let nameReplacementStarted = false;
-
-function startNameReplacement() {
-    if (!storedBuyName) return;
-    if (!isSellPage()) return;
-    if (nameReplacementStarted) return;
-    nameReplacementStarted = true;
-
-    currentSellMyName = storedBuyName;
-    replaceFioInSellPaymentDetails(currentSellMyName);
-
-    let attempts = 0;
-    const nameInterval = setInterval(() => {
-        attempts++;
-        const r = replaceFioInSellPaymentDetails(currentSellMyName);
-        if (attempts >= 20 || r) clearInterval(nameInterval);
-    }, 300);
-}
-
 async function initialize() {
     if (isInitializing) return false;
-    
+
     const urlPattern = /htx\.com(\.gt)?.*\/fiat-crypto\/tradeInfo/;
     if (!urlPattern.test(window.location.href)) return false;
-    
+
     if (!window.P2PAuth) return false;
-    
+
     const authData = await window.P2PAuth.getAuthData();
     if (!authData || !authData.token) return false;
-    
-    await loadDisplayNameFromStorage();
-    
-    // ← Добавить сюда:
-    startNameReplacement();
-    
+
     initializeMutationObserver();
     
     const menuInserted = await insertMenuAfterTarget();
@@ -1838,38 +1766,19 @@ if (document.readyState === 'loading') {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'resetBuyName') {
         currentDisplayName = '';
-        currentSellMyName = '';
         currentRealName = '';
-        nameReplacementStarted = false;
         originalBuyName = '';
         originalFioName = '';
-        if (fioReapplyInterval) { clearInterval(fioReapplyInterval); fioReapplyInterval = null; }
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
         if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
         restoreOriginalName();
-        chrome.storage.sync.set({ displayName: '' }).catch(() => {});
         sendResponse({ success: true });
 
     } else if (message.action === 'applyMyName') {
-        const name = message.name || '';
-        storedBuyName = name;
-        if (name && isSellPage()) {
-            currentSellMyName = name;
-            replaceFioInSellPaymentDetails(name);
-            // ИСПРАВЛЕНО: replaceFioInSellPaymentDetails всегда возвращает
-            // true после того, как САМ только что проставил значение — то
-            // есть старый ретрай на условии "успех || 20 попыток" стопался
-            // практически сразу после первого тика и переставал что-либо
-            // делать. А HTX живьём переопрашивает это поле и откатывает
-            // его обратно на реальное ФИО примерно раз в секунду — без
-            // ПОСТОЯННОГО переприменения поле быстро возвращается к
-            // настоящему имени. Теперь интервал не останавливается сам —
-            // он держится, пока явно не придёт reset/новое имя.
-            if (fioReapplyInterval) clearInterval(fioReapplyInterval);
-            fioReapplyInterval = setInterval(() => {
-                replaceFioInSellPaymentDetails(name);
-            }, 300);
-        }
+        // ОТКЛЮЧЕНО по решению: замена своего ФИО в плашке "Способ
+        // получения платежей" на HTX больше не делается вообще — на SELL-
+        // ордерах эта плашка должна оставаться нетронутой. На HTX работает
+        // только замена контрагента (никнейм + реальное имя, см. ниже).
         sendResponse({ success: true });
 
     } else if (message.action === 'applySellName') {
@@ -1925,7 +1834,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // перезагрузкой страницы.
         currentDisplayName = '';
         currentRealName = '';
-        nameReplacementStarted = false;
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
         if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
         restoreOriginalName();
@@ -1933,21 +1841,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     return true;
 });
-chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'sync' || !changes.displayName) return;
-    const newName = changes.displayName.newValue || '';
-    if (!newName || !isSellPage()) return;
-    storedBuyName = newName;
-    currentSellMyName = newName;
-    let attempts = 0;
-    const interval = setInterval(() => {
-        attempts++;
-        if (replaceFioInSellPaymentDetails(newName) || attempts >= 20) clearInterval(interval);
-    }, 300);
-});
-
-
-
 
 let lastUrl = location.href;
 new MutationObserver(() => {
@@ -1955,10 +1848,8 @@ new MutationObserver(() => {
     if (url !== lastUrl) {
         lastUrl = url;
         initRetryCount = 0;
-        nameReplacementStarted = false;
         currentDisplayName = '';
         currentRealName = '';
-        currentSellMyName = '';
         originalBuyName = '';
         originalFioName = '';
         originalNickname = '';
@@ -1969,7 +1860,6 @@ new MutationObserver(() => {
         // принудительным переприменением перед скриншотом чуть выше).
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
         if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
-        if (fioReapplyInterval) { clearInterval(fioReapplyInterval); fioReapplyInterval = null; }
         if (observer) {
             observer.disconnect();
             observer = null;
@@ -1977,32 +1867,3 @@ new MutationObserver(() => {
         setTimeout(tryInitialize, 1000);
     }
 }).observe(document, { subtree: true, childList: true });
-
-chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'sync' || !changes.displayName) return;
-    const newName = changes.displayName.newValue || '';
-    console.log('[HTX] storage изменился, displayName:', newName);
-    if (!newName) return;
-    storedBuyName = newName;
-    currentSellMyName = newName;
-
-    let attempts = 0;
-    const interval = setInterval(() => {
-        attempts++;
-        const wrappers = document.querySelectorAll('.info-item-wrapper');
-        console.log('[HTX] попытка', attempts, 'wrappers:', wrappers.length);
-        let replaced = false;
-        wrappers.forEach(wrapper => {
-            const label = wrapper.querySelector('.label');
-            if (!label) return;
-            console.log('[HTX] label:', JSON.stringify(label.textContent.trim()));
-            if (label.textContent.trim() !== 'ФИО') return;
-            const span = wrapper.querySelector('.detail span');
-            if (!span) return;
-            console.log('[HTX] меняем:', span.textContent, '->', newName);
-            span.textContent = newName;
-            replaced = true;
-        });
-        if (replaced || attempts >= 20) clearInterval(interval);
-    }, 300);
-});
