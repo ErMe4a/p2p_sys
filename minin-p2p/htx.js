@@ -17,13 +17,15 @@ const HTX_GOLD_COLOR = '#F7A600';
 // State variables
 let observer = null;
 let isInitializing = false;
-let currentDisplayName = '';  // Никнейм контрагента (.chat-relative .name-hover)
+let currentDisplayName = '';  // Никнейм контрагента (.chat-relative .name-hover) — только SELL
 let originalBuyName = '';
-let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
-let sellNameReapplyInterval = null; // постоянный ретрай для replaceNicknameInChat (никнейм контрагента)
+let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов
+let sellNameReapplyInterval = null; // постоянный ретрай для replaceNicknameInChat (никнейм контрагента, SELL)
 let originalNickname = '';       // оригинальный никнейм контрагента (.chat-relative .name-hover)
-let currentRealName = '';        // "Имя" контрагента (.user-list), отдельно от никнейма чата
+let currentRealName = '';        // Реальное "Имя" контрагента (.user-list) — только SELL
 let realNameReapplyInterval = null; // постоянный ретрай для replaceNameInUserList
+let currentMyName = '';          // Своё имя — только BUY (плашка чата + ФИО в реквизитах)
+let myNameReapplyInterval = null; // постоянный ретрай для своего имени на BUY
 // ============================================
 // Timezone and Date Helpers (MSK)
 // ============================================
@@ -363,14 +365,15 @@ function createSubmitButton() {
             // успевшее откатиться настоящее. Поэтому прямо перед кадром
             // принудительно переприменяем обе подмены синхронно, вместо
             // того чтобы полагаться на то, что фоновый цикл уже победил.
-            if (currentDisplayName) {
-                replaceNicknameInChat(currentDisplayName);
+            // Контрагент (никнейм + реальное имя) — только на SELL.
+            if (isSellPage()) {
+                if (currentDisplayName) replaceNicknameInChat(currentDisplayName);
+                if (currentRealName) replaceNameInUserList(currentRealName);
             }
-            if (currentRealName) {
-                replaceNameInUserList(currentRealName);
-                if (isBuyPage()) {
-                    replaceFioInPaymentDetails(currentRealName);
-                }
+            // Своё имя — только на BUY (плашка чата + ФИО в реквизитах).
+            if (isBuyPage() && currentMyName) {
+                replaceNicknameInChat(currentMyName);
+                replaceFioInPaymentDetails(currentMyName);
             }
             // Небольшая пауза, чтобы браузер успел перерисовать DOM с
             // подменённым именем ДО того, как расширение попросит снять
@@ -1587,18 +1590,18 @@ function initializeMutationObserver() {
                 }
             }
 
-            // Никнейм контрагента в шапке чата — BUY и SELL
-            if (currentDisplayName) {
-                replaceNicknameInChat(currentDisplayName);
+            // Контрагент (никнейм в шапке чата + реальное "Имя" в .user-list)
+            // — по решению работает ТОЛЬКО на SELL, на BUY отключено.
+            if (isSellPage()) {
+                if (currentDisplayName) replaceNicknameInChat(currentDisplayName);
+                if (currentRealName) replaceNameInUserList(currentRealName);
             }
 
-            // Реальное "Имя" контрагента (.user-list) — отдельное поле/
-            // кнопка в попапе (applyRealName), не путать с никнеймом выше.
-            if (currentRealName) {
-                replaceNameInUserList(currentRealName);
-                if (isBuyPage()) {
-                    replaceFioInPaymentDetails(currentRealName);
-                }
+            // Своё имя — по решению работает ТОЛЬКО на BUY: плашка чата
+            // (тот же .chat-relative .name-hover) + ФИО в реквизитах.
+            if (isBuyPage() && currentMyName) {
+                replaceNicknameInChat(currentMyName);
+                replaceFioInPaymentDetails(currentMyName);
             }
         }, 100);
     });
@@ -1765,73 +1768,79 @@ if (document.readyState === 'loading') {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'resetBuyName') {
-        currentDisplayName = '';
-        currentRealName = '';
+        currentMyName = '';
         originalBuyName = '';
         originalFioName = '';
-        if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
-        if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
+        originalNickname = '';
+        if (myNameReapplyInterval) { clearInterval(myNameReapplyInterval); myNameReapplyInterval = null; }
         restoreOriginalName();
         sendResponse({ success: true });
 
     } else if (message.action === 'applyMyName') {
-        // ОТКЛЮЧЕНО по решению: замена своего ФИО в плашке "Способ
-        // получения платежей" на HTX больше не делается вообще — на SELL-
-        // ордерах эта плашка должна оставаться нетронутой. На HTX работает
-        // только замена контрагента (никнейм + реальное имя, см. ниже).
-        sendResponse({ success: true });
+        // Своё имя — ПО РЕШЕНИЮ работает ТОЛЬКО на BUY-странице (там, где
+        // трейдер сам покупает крипту), и бьёт ДВА места сразу: плашку
+        // чата (.chat-relative .name-hover — тот же узел, что и никнейм
+        // контрагента на SELL) и ФИО в реквизитах (.info-item-wrapper —
+        // тот же узел, что и реальное имя контрагента на BUY, см.
+        // applyRealName выше). На SELL это действие теперь ничего не
+        // делает — там реквизиты/чат трогает только замена контрагента.
+        const name = (message.name || '').trim();
+        if (!name) {
+            sendResponse({ success: false, error: 'Имя пустое' });
+            return true;
+        }
+        currentMyName = name;
+        let replaced = false;
+        if (isBuyPage()) {
+            replaced = replaceNicknameInChat(name) || replaced;
+            replaced = replaceFioInPaymentDetails(name) || replaced;
+        }
+        if (myNameReapplyInterval) clearInterval(myNameReapplyInterval);
+        myNameReapplyInterval = setInterval(() => {
+            if (isBuyPage()) {
+                replaceNicknameInChat(name);
+                replaceFioInPaymentDetails(name);
+            }
+        }, 300);
+        sendResponse({ success: true, replaced });
 
     } else if (message.action === 'applySellName') {
         // Никнейм контрагента в шапке чата (.chat-relative .name-hover) —
-        // ИСПРАВЛЕНО: раньше этот же хендлер заодно переписывал и .user-list
-        // (реальное "Имя"), хотя за него в попапе отвечает отдельное поле/
-        // кнопка "Применить имя" (applyRealName). Из-за общего интервала оба
-        // поля дёргались одним и тем же значением — теперь разделены.
+        // ПО РЕШЕНИЮ работает ТОЛЬКО на SELL, на BUY эту роль теперь играет
+        // своё имя (applyMyName выше).
         const name = (message.name || '').trim();
         currentDisplayName = name;
-        if (name) {
+        if (name && isSellPage()) {
             replaceNicknameInChat(name);
-            // См. комментарий выше про applyMyName — та же причина:
-            // держим интервал постоянно, не останавливаем по "успеху".
             if (sellNameReapplyInterval) clearInterval(sellNameReapplyInterval);
             sellNameReapplyInterval = setInterval(() => {
-                replaceNicknameInChat(name);
+                if (isSellPage()) replaceNicknameInChat(name);
             }, 300);
         }
         sendResponse({ success: true });
 
     } else if (message.action === 'applyRealName') {
-        // ИСПРАВЛЕНО: попап реально шлёт 'applyRealName' для кнопки
-        // "Применить имя" — в htx.js такого обработчика не было вообще,
-        // сообщение уходило в никуда (тот же класс бага, что был у кнопки
-        // сброса на MEXC, см. history.md §46.13). Управляет реальным
-        // "Именем" контрагента — на BUY-странице оно дублируется в ДВУХ
-        // разных узлах DOM: .user-list (список слева) и ФИО в блоке
-        // реквизитов платежа (.info-item-wrapper) — оба нужно поменять
-        // сразу по клику, не дожидаясь следующего срабатывания фонового
-        // MutationObserver (см. initializeMutationObserver).
+        // Реальное "Имя" контрагента (.user-list) — ПО РЕШЕНИЮ работает
+        // ТОЛЬКО на SELL. На BUY эту роль (и плашку чата, и ФИО в
+        // реквизитах) теперь играет своё имя (applyMyName выше).
         const name = (message.name || '').trim();
         if (!name) {
             sendResponse({ success: false, error: 'Имя пустое' });
             return true;
         }
         currentRealName = name;
-        let replaced = replaceNameInUserList(name);
-        if (isBuyPage()) {
-            replaced = replaceFioInPaymentDetails(name) || replaced;
+        let replaced = false;
+        if (isSellPage()) {
+            replaced = replaceNameInUserList(name);
         }
         if (realNameReapplyInterval) clearInterval(realNameReapplyInterval);
         realNameReapplyInterval = setInterval(() => {
-            replaceNameInUserList(name);
-            if (isBuyPage()) replaceFioInPaymentDetails(name);
+            if (isSellPage()) replaceNameInUserList(name);
         }, 300);
         sendResponse({ success: true, replaced });
 
     } else if (message.action === 'resetCounterpartyNames') {
-        // ИСПРАВЛЕНО: попап шлёт именно 'resetCounterpartyNames' для кнопки
-        // "Сбросить замены" — в htx.js такого обработчика тоже не было,
-        // отменить подмену никнейма/имени контрагента можно было только
-        // перезагрузкой страницы.
+        // Сброс замен контрагента (никнейм + реальное имя, SELL).
         currentDisplayName = '';
         currentRealName = '';
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
@@ -1850,6 +1859,7 @@ new MutationObserver(() => {
         initRetryCount = 0;
         currentDisplayName = '';
         currentRealName = '';
+        currentMyName = '';
         originalBuyName = '';
         originalFioName = '';
         originalNickname = '';
@@ -1860,6 +1870,7 @@ new MutationObserver(() => {
         // принудительным переприменением перед скриншотом чуть выше).
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
         if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
+        if (myNameReapplyInterval) { clearInterval(myNameReapplyInterval); myNameReapplyInterval = null; }
         if (observer) {
             observer.disconnect();
             observer = null;
