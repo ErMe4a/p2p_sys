@@ -1896,17 +1896,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         // "Применить имя" — в htx.js такого обработчика не было вообще,
         // сообщение уходило в никуда (тот же класс бага, что был у кнопки
         // сброса на MEXC, см. history.md §46.13). Управляет реальным
-        // "Именем" контрагента в .user-list, отдельно от никнейма чата.
+        // "Именем" контрагента — на BUY-странице оно дублируется в ДВУХ
+        // разных узлах DOM: .user-list (список слева) и ФИО в блоке
+        // реквизитов платежа (.info-item-wrapper) — оба нужно поменять
+        // сразу по клику, не дожидаясь следующего срабатывания фонового
+        // MutationObserver (см. initializeMutationObserver).
         const name = (message.name || '').trim();
         if (!name) {
             sendResponse({ success: false, error: 'Имя пустое' });
             return true;
         }
         currentRealName = name;
-        const replaced = replaceNameInUserList(name);
+        let replaced = replaceNameInUserList(name);
+        if (isBuyPage()) {
+            replaced = replaceFioInPaymentDetails(name) || replaced;
+        }
         if (realNameReapplyInterval) clearInterval(realNameReapplyInterval);
         realNameReapplyInterval = setInterval(() => {
             replaceNameInUserList(name);
+            if (isBuyPage()) replaceFioInPaymentDetails(name);
         }, 300);
         sendResponse({ success: true, replaced });
 
