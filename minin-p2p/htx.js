@@ -23,8 +23,10 @@ let originalBuyName = '';
 let originalFioName = '';     // Оригинальное ФИО в блоке реквизитов (только BUY)
 let currentSellMyName = ''; // своё имя на SELL (из storage → .l-trade-payment)
 let fioReapplyInterval = null;   // постоянный ретрай для replaceFioInSellPaymentDetails
-let sellNameReapplyInterval = null; // постоянный ретрай для replaceNameInUserList
+let sellNameReapplyInterval = null; // постоянный ретрай для replaceNicknameInChat (никнейм контрагента)
 let originalNickname = '';       // оригинальный никнейм контрагента (.chat-relative .name-hover)
+let currentRealName = '';        // "Имя" контрагента (.user-list), отдельно от никнейма чата
+let realNameReapplyInterval = null; // постоянный ретрай для replaceNameInUserList
 // ============================================
 // Timezone and Date Helpers (MSK)
 // ============================================
@@ -372,10 +374,12 @@ function createSubmitButton() {
             // принудительно переприменяем обе подмены синхронно, вместо
             // того чтобы полагаться на то, что фоновый цикл уже победил.
             if (currentDisplayName) {
-                replaceNameInUserList(currentDisplayName);
                 replaceNicknameInChat(currentDisplayName);
+            }
+            if (currentRealName) {
+                replaceNameInUserList(currentRealName);
                 if (isBuyPage()) {
-                    replaceFioInPaymentDetails(currentDisplayName);
+                    replaceFioInPaymentDetails(currentRealName);
                 }
             }
             if (currentSellMyName) {
@@ -1596,12 +1600,17 @@ function initializeMutationObserver() {
                 }
             }
 
-            // Имя контрагента (user-list) — BUY и SELL
+            // Никнейм контрагента в шапке чата — BUY и SELL
             if (currentDisplayName) {
-                replaceNameInUserList(currentDisplayName);
                 replaceNicknameInChat(currentDisplayName);
+            }
+
+            // Реальное "Имя" контрагента (.user-list) — отдельное поле/
+            // кнопка в попапе (applyRealName), не путать с никнеймом выше.
+            if (currentRealName) {
+                replaceNameInUserList(currentRealName);
                 if (isBuyPage()) {
-                    replaceFioInPaymentDetails(currentDisplayName);
+                    replaceFioInPaymentDetails(currentRealName);
                 }
             }
 
@@ -1830,11 +1839,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'resetBuyName') {
         currentDisplayName = '';
         currentSellMyName = '';
+        currentRealName = '';
         nameReplacementStarted = false;
         originalBuyName = '';
         originalFioName = '';
         if (fioReapplyInterval) { clearInterval(fioReapplyInterval); fioReapplyInterval = null; }
         if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
+        if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
         restoreOriginalName();
         chrome.storage.sync.set({ displayName: '' }).catch(() => {});
         sendResponse({ success: true });
@@ -1862,21 +1873,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true });
 
     } else if (message.action === 'applySellName') {
-        const name = message.name || '';
+        // Никнейм контрагента в шапке чата (.chat-relative .name-hover) —
+        // ИСПРАВЛЕНО: раньше этот же хендлер заодно переписывал и .user-list
+        // (реальное "Имя"), хотя за него в попапе отвечает отдельное поле/
+        // кнопка "Применить имя" (applyRealName). Из-за общего интервала оба
+        // поля дёргались одним и тем же значением — теперь разделены.
+        const name = (message.name || '').trim();
         currentDisplayName = name;
-        nameReplacementStarted = false;
         if (name) {
-            replaceNameInUserList(name);
             replaceNicknameInChat(name);
-            nameReplacementStarted = true;
             // См. комментарий выше про applyMyName — та же причина:
             // держим интервал постоянно, не останавливаем по "успеху".
             if (sellNameReapplyInterval) clearInterval(sellNameReapplyInterval);
             sellNameReapplyInterval = setInterval(() => {
-                replaceNameInUserList(name);
                 replaceNicknameInChat(name);
             }, 300);
         }
+        sendResponse({ success: true });
+
+    } else if (message.action === 'applyRealName') {
+        // ИСПРАВЛЕНО: попап реально шлёт 'applyRealName' для кнопки
+        // "Применить имя" — в htx.js такого обработчика не было вообще,
+        // сообщение уходило в никуда (тот же класс бага, что был у кнопки
+        // сброса на MEXC, см. history.md §46.13). Управляет реальным
+        // "Именем" контрагента в .user-list, отдельно от никнейма чата.
+        const name = (message.name || '').trim();
+        if (!name) {
+            sendResponse({ success: false, error: 'Имя пустое' });
+            return true;
+        }
+        currentRealName = name;
+        const replaced = replaceNameInUserList(name);
+        if (realNameReapplyInterval) clearInterval(realNameReapplyInterval);
+        realNameReapplyInterval = setInterval(() => {
+            replaceNameInUserList(name);
+        }, 300);
+        sendResponse({ success: true, replaced });
+
+    } else if (message.action === 'resetCounterpartyNames') {
+        // ИСПРАВЛЕНО: попап шлёт именно 'resetCounterpartyNames' для кнопки
+        // "Сбросить замены" — в htx.js такого обработчика тоже не было,
+        // отменить подмену никнейма/имени контрагента можно было только
+        // перезагрузкой страницы.
+        currentDisplayName = '';
+        currentRealName = '';
+        nameReplacementStarted = false;
+        if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
+        if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
+        restoreOriginalName();
         sendResponse({ success: true });
     }
     return true;
@@ -1905,9 +1949,19 @@ new MutationObserver(() => {
         initRetryCount = 0;
         nameReplacementStarted = false;
         currentDisplayName = '';
-        currentSellMyName = ''; 
+        currentRealName = '';
+        currentSellMyName = '';
         originalBuyName = '';
         originalFioName = '';
+        originalNickname = '';
+        // ИСПРАВЛЕНО: переход на новый заказ (SPA-навигация, без перезагрузки
+        // страницы) — новый контрагент, старые ретрай-интервалы иначе
+        // продолжали бы каждые 300мс переписывать имя/никнейм НОВОГО заказа
+        // значением от ПРЕЖНЕГО (тот же класс проблемы, что решался
+        // принудительным переприменением перед скриншотом чуть выше).
+        if (sellNameReapplyInterval) { clearInterval(sellNameReapplyInterval); sellNameReapplyInterval = null; }
+        if (realNameReapplyInterval) { clearInterval(realNameReapplyInterval); realNameReapplyInterval = null; }
+        if (fioReapplyInterval) { clearInterval(fioReapplyInterval); fioReapplyInterval = null; }
         if (observer) {
             observer.disconnect();
             observer = null;
