@@ -67,6 +67,23 @@ def safe_decimal(value):
         return 0
 
 
+def parse_exchange_rate(value):
+    """
+    Процент биржи из формы редактирования ордера: '0,9' -> Decimal('0.9').
+    None — поле пустое/нечисловое/вне 0..10 (тогда сохранённое значение
+    ордера не трогаем, а не затираем нулём).
+    """
+    if value is None or str(value).strip() == '':
+        return None
+    try:
+        rate = Decimal(str(value).replace(' ', '').replace(',', '.').strip())
+    except Exception:
+        return None
+    if rate < 0 or rate > 10:
+        return None
+    return rate.quantize(Decimal('0.0001'))
+
+
 def truncate(value, places=3):
     """
     Обрезает число до нужного кол-ва знаков БЕЗ округления.
@@ -363,6 +380,10 @@ def edit_order(request, order_id):
         order.operation_type = request.POST.get('operation_type')
         order.exchange_type  = request.POST.get('exchange')
         order.commission_type = request.POST.get('commission_type')
+
+        new_rate = parse_exchange_rate(request.POST.get('exchange_commission_rate'))
+        if new_rate is not None:
+            order.exchange_commission_rate = new_rate
 
         # 3. Валюта (USDT / TON / BTC)
         currency = request.POST.get('currency', '').strip().upper()
@@ -4249,6 +4270,10 @@ def admin_orders_editor(request):
             current_order.cost = to_decimal(request.POST.get('cost'))
             current_order.commission = to_decimal(request.POST.get('commission'))
             current_order.commission_type = request.POST.get('commission_type')
+
+            new_rate = parse_exchange_rate(request.POST.get('exchange_commission_rate'))
+            if new_rate is not None:
+                current_order.exchange_commission_rate = new_rate
 
             date_raw = request.POST.get('created_at')
             if date_raw:

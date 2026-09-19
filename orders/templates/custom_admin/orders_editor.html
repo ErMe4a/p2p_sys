@@ -372,6 +372,10 @@
                         <option value="MONEY" {% if order.commission_type == 'MONEY' %}selected{% endif %}>Рубли</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Процент биржи (%)</label>
+                    <input class="form-control" type="number" name="exchange_commission_rate" step="any" min="0" max="10" value="{{ order.exchange_commission_rate|stringformat:'.4f' }}">
+                </div>
                 <div class="form-group d-flex align-items-end">
                     <button type="submit" name="save_order" class="btn btn-outline-blue w-100" style="height: 38px;">💾 Сохранить и закрыть</button>
                 </div>

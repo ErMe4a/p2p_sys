@@ -379,7 +379,7 @@
         </thead>
         <tbody>
             {% for order in orders %}
-            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize %}
+            {% with order_date=order.created_at|date:"Y-m-d" order_time=order.created_at|date:"H:i" formatted_price=order.price|floatformat:"-8"|unlocalize formatted_amount=order.amount|floatformat:"-8"|unlocalize formatted_cost=order.cost|floatformat:"-8"|unlocalize formatted_comm=order.commission|floatformat:"-8"|unlocalize formatted_exch_rate=order.exchange_commission_rate|floatformat:"-4"|unlocalize %}
             <tr>
                 <td class="fw-bold">{{ order.id }}</td>
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
@@ -410,7 +410,7 @@
                 <td>
                     <div class="d-flex gap-1 justify-content-end align-items-center">
                         <button class="btn btn-action"
-                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}', '{{ order.bank_detail.name|default:""|escapejs }}')">
+                            onclick="openEditModal('{{ order.id }}', '{{ order.operation_type }}', '{{ order.exchange_type }}', '{{ order.bank_detail.id }}', '{{ formatted_price }}', '{{ formatted_amount }}', '{{ formatted_cost }}', '{{ formatted_comm }}', '{{ order.commission_type }}', '{{ order.external_id|escapejs }}', '{{ order_date }}T{{ order_time }}', '{{ order.currency|default:"USDT" }}', '{{ order.bank_detail.name|default:""|escapejs }}', '{{ formatted_exch_rate }}')">
                             Изм.
                         </button>
                         <button class="btn btn-action" onclick="triggerUpload('{{ order.id }}')" title="Загрузить/Заменить (во время сделки)">📷</button>
@@ -544,7 +544,11 @@
                             <label class="form-label">Номер ордера</label>
                             <input type="text" name="external_id" id="modal_ext_id" class="form-control" required>
                         </div>
-                        <div class="col-12">
+                        <div class="col-md-6">
+                            <label class="form-label">Процент биржи (%)</label>
+                            <input type="number" name="exchange_commission_rate" id="modal_exch_rate" class="form-control" step="any" min="0" max="10">
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label">Дата и время</label>
                             <input type="datetime-local" name="created_at" id="modal_date" class="form-control" required>
                         </div>
@@ -626,7 +630,7 @@
         }
     }
 
-    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency, bankName) {
+    function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency, bankName, exchRate) {
         document.getElementById('editForm').action       = '/edit/' + id + '/';
         document.getElementById('display_id').innerText  = id;
         ensureOption(document.getElementById('modal_details'), bankId, bankName);
@@ -642,6 +646,7 @@
         document.getElementById('modal_ext_id').value    = extId;
         document.getElementById('modal_date').value      = date;
         document.getElementById('modal_currency').value  = currency || 'USDT';
+        document.getElementById('modal_exch_rate').value = exchRate;
         new bootstrap.Modal(document.getElementById('editModal')).show();
     }
 
