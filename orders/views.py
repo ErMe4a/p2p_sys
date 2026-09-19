@@ -3155,6 +3155,7 @@ def _calc_all_users_month_profit(users, year, month, all_orders_by_user,
         'gross_all': 0.0, 'gross_usdt': 0.0, 'gross_ton': 0.0,
         'net_all':   0.0, 'net_usdt':   0.0, 'net_ton':   0.0,
         'share_all': 0.0, 'share_usdt': 0.0, 'share_ton': 0.0,
+        'tax_all':   0.0, 'tax_usdt':   0.0, 'tax_ton':   0.0,
     }
 
     for u in users:
@@ -3233,6 +3234,9 @@ def _calc_all_users_month_profit(users, year, month, all_orders_by_user,
         totals['share_all']  += share_all_val
         totals['share_usdt'] += share_usdt_val
         totals['share_ton']  += share_ton_val
+        totals['tax_all']    += ndfl_all
+        totals['tax_usdt']   += ndfl_usdt
+        totals['tax_ton']    += ndfl_ton
 
     return totals
 
@@ -3587,6 +3591,7 @@ def admin_profit_view(request):
                     row[f'{currency}_gross']      = float(cached.gross_traders)
                     row[f'{currency}_net']        = float(cached.net_traders)
                     row[f'{currency}_income']     = float(cached.system_income)
+                    row[f'{currency}_tax']        = float(cached.tax_paid)
                     row[f'{currency}_has_profit'] = True
                     if profit_updated_at is None or cached.updated_at > profit_updated_at:
                         profit_updated_at = cached.updated_at
@@ -3594,6 +3599,7 @@ def admin_profit_view(request):
                     row[f'{currency}_gross']      = 0.0
                     row[f'{currency}_net']        = 0.0
                     row[f'{currency}_income']     = 0.0
+                    row[f'{currency}_tax']        = 0.0
                     row[f'{currency}_has_profit'] = False
 
         for currency in ('all', 'usdt', 'ton'):
@@ -3601,6 +3607,7 @@ def admin_profit_view(request):
             year_data['total'][f'{currency}_gross']  = round(sum(r[f'{currency}_gross']  for r in counted), 2)
             year_data['total'][f'{currency}_net']    = round(sum(r[f'{currency}_net']    for r in counted), 2)
             year_data['total'][f'{currency}_income'] = round(sum(r[f'{currency}_income'] for r in counted), 2)
+            year_data['total'][f'{currency}_tax']    = round(sum(r[f'{currency}_tax']    for r in counted), 2)
 
         return render(request, 'custom_admin/profit_year.html', {
             'current_year':      year,

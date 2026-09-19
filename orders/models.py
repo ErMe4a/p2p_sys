@@ -316,6 +316,7 @@ class MonthlySystemProfitSummary(models.Model):
     gross_traders = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Грязная прибыль трейдеров")
     net_traders = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Чистая прибыль трейдеров")
     system_income = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Доход системы")
+    tax_paid = models.DecimalField(max_digits=20, decimal_places=2, default=0, verbose_name="Налог (НДФЛ) оплачен")
 
     updated_at = models.DateTimeField(auto_now=True)
 

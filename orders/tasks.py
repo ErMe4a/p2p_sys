@@ -613,6 +613,7 @@ def recompute_yearly_profit_summary_task(self, year=None):
                     'gross_traders': round(totals[f'gross_{currency}'], 2),
                     'net_traders':   round(totals[f'net_{currency}'], 2),
                     'system_income': round(totals[f'share_{currency}'], 2),
+                    'tax_paid':      round(totals[f'tax_{currency}'], 2),
                 },
             )
 
