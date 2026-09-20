@@ -280,10 +280,9 @@
                 </div>
                 <div id="corrPriceField">
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Курс</label>
-                    <!-- BTC: система курс не считает, тут обычный ввод. USDT/TON: поле
-                         скрыто целиком (по просьбе Макса) — курс всё равно берётся
-                         автоматически (текущий средний курс остатка) при отправке,
-                         просто больше не показывается трейдеру, см. updateCorrPriceHint. -->
+                    <!-- Поле скрыто целиком (по просьбе Макса) для всех валют — курс
+                         берётся автоматически (текущий средний курс остатка) при
+                         отправке, просто не показывается трейдеру, см. updateCorrPriceHint. -->
                     <div id="corrPriceDisplay" class="input-profit" style="display:flex; align-items:center; color:var(--text); cursor:default;" title="Текущий средний курс остатка">—</div>
                     <input type="number" id="corrPrice" class="input-profit" placeholder="0.00" style="display:none;">
                 </div>
@@ -293,6 +292,7 @@
                         <option value="USDT">USDT</option>
                         <option value="TON">TON</option>
                         <option value="BTC">BTC</option>
+                        <option value="ETH">ETH</option>
                     </select>
                 </div>
                 <div>
@@ -562,19 +562,7 @@
         var priceInput   = document.getElementById('corrPrice');
         var priceDisplay = document.getElementById('corrPriceDisplay');
 
-        // BTC в системе не отслеживается (avg_price для него не считается) —
-        // автоподстановка невозможна, тут остаётся обычное видимое поле ввода.
-        if (currency === 'BTC') {
-            priceField.style.display   = '';
-            priceDisplay.style.display = 'none';
-            priceInput.style.display   = '';
-            priceInput.value           = '';
-            priceInput.title           = 'BTC в системе не отслеживается — введите курс сами';
-            priceInput.placeholder     = '0.00';
-            return;
-        }
-
-        // USDT/TON — по прямому запросу Макса поле "Курс" убрано из формы
+        // Все валюты (USDT/TON/BTC/ETH) — по прямому запросу Макса поле "Курс" убрано из формы
         // ПОЛНОСТЬЮ (трейдер его больше не видит вообще) — раньше трейдеры
         // писали в него "свой" курс вместо реального, это искажало
         // отчётность; при простом показе текущего курса (без ввода) поле
@@ -589,7 +577,7 @@
 
         if (!lastTurnover) { return; }
 
-        var price = currency === 'TON' ? lastTurnover.ton_avg_price : lastTurnover.usdt_avg_price;
+        var price = lastTurnover[currency.toLowerCase() + '_avg_price'];
         if (!price) { return; }
 
         priceDisplay.textContent  = formatRate(price) + ' ₽';
@@ -611,18 +599,13 @@
         var currency = document.getElementById('corrCurrency').value;
         var purpose  = document.getElementById('corrPurpose').value.trim();
 
-        // BTC — курс из обычного поля (вводится вручную, система его не считает).
-        // USDT/TON — курс НЕ из поля ввода (поля больше нет), берём то же число,
-        // что показано в corrPriceDisplay (текущий средний курс остатка).
-        var price = currency === 'BTC'
-            ? safeFloat(document.getElementById('corrPrice').value)
-            : safeFloat(document.getElementById('corrPriceDisplay').dataset.price);
+        // Курс НЕ из поля ввода (поля больше нет) — берём то же число, что
+        // показано в corrPriceDisplay (текущий средний курс остатка по монете).
+        var price = safeFloat(document.getElementById('corrPriceDisplay').dataset.price);
 
         if (amount <= 0 || !purpose) { alert('Заполните количество и назначение.'); return; }
         if (price <= 0) {
-            alert(currency === 'BTC'
-                ? 'Укажите курс.'
-                : 'Курс остатка не определён — за этот месяц ещё нет ни одной сделки, средний курс посчитать не из чего.');
+            alert('Курс остатка не определён — по этой монете ещё нет ни одной сделки, средний курс посчитать не из чего.');
             return;
         }
 
@@ -662,7 +645,7 @@
         if (!corrections.length) { container.innerHTML = '<div class="no-data">Списаний остатка пока нет</div>'; return; }
         var html = '';
         corrections.forEach(function(c) {
-            html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">-' + formatMoney(c.amount) + ' ' + c.currency + ' по курсу ' + formatMoney(c.price) + ' ₽ — ' + c.purpose + '</span><span class="expense-date">' + c.date + '</span></div>'
+            html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">-' + ((c.currency === 'BTC' || c.currency === 'ETH') ? safeFloat(c.amount).toLocaleString('ru-RU', {maximumFractionDigits: 8}) : formatMoney(c.amount)) + ' ' + c.currency + ' по курсу ' + formatMoney(c.price) + ' ₽ — ' + c.purpose + '</span><span class="expense-date">' + c.date + '</span></div>'
                   + '<div style="display:flex;align-items:center;gap:16px;"><button class="btn-delete-expense" onclick="deleteBalanceCorrection(' + c.id + ')">✖</button></div></div>';
         });
         container.innerHTML = html;

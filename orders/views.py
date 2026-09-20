@@ -693,7 +693,7 @@ def user_profit_view(request):
     # через тот же LIFO-расчёт, что и обычные ордера (и на этой странице,
     # и в Excel-отчёте), без дублирования логики в отдельном месте.
     # BalanceCorrection хранит только "назначение" и даёт удобный список/удаление.
-    BALANCE_CORRECTION_CURRENCIES = ('USDT', 'TON', 'BTC')
+    BALANCE_CORRECTION_CURRENCIES = ('USDT', 'TON', 'BTC', 'ETH')
 
     if action == 'get_balance_corrections':
         corrections = (
@@ -1924,7 +1924,7 @@ def export_excel_report(request):
     end_date   = request.GET.get('end')
     bank_id    = request.GET.get('bank_id')
     op_type    = request.GET.get('type')
-    currency   = request.GET.get('currency', '').strip().upper()  # '' | 'USDT' | 'TON'
+    currency   = request.GET.get('currency', '').strip().upper()  # '' | 'USDT' | 'TON' | 'BTC' | 'ETH'
 
     SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
@@ -1957,10 +1957,14 @@ def export_excel_report(request):
     if op_type:    orders = orders.filter(operation_type=op_type)
 
     # === ФИЛЬТР ПО ВАЛЮТЕ ===
-    if currency == 'TON':
-        orders = orders.filter(currency='TON')
-    elif currency == 'USDT':
-        orders = orders.filter(currency='USDT')
+    # Один лист = одна монета: LIFO-остаток считается по одной валюте, смешивать
+    # монеты в одном листе нельзя. Без фильтра — как и раньше USDT + TON
+    # (BTC/ETH выгружаются только явным выбором валюты).
+    if currency in ('USDT', 'TON', 'BTC', 'ETH'):
+        orders = orders.filter(currency=currency)
+    else:
+        currency = ''
+        orders = orders.filter(currency__in=('USDT', 'TON'))
 
     orders_list = list(orders)
 
@@ -1969,7 +1973,7 @@ def export_excel_report(request):
     # он уже сам в orders_list (запрос выше его не исключает) и сам
     # встаёт на нужное место по дате — довставлять его тут не нужно
     # (и нельзя, задвоится).
-    if currency != 'TON' and not has_january_orders:
+    if currency in ('', 'USDT') and not has_january_orders:
         init_order = Order.objects.filter(
             user_id=user_id,
             exchange_type="Остаток (до 1 фев)"
@@ -1993,10 +1997,8 @@ def export_excel_report(request):
     wb = openpyxl.Workbook()
     ws = wb.active
 
-    if currency == 'TON':
-        ws.title = "Отчет TON"
-    elif currency == 'USDT':
-        ws.title = "Отчет USDT"
+    if currency:
+        ws.title = f"Отчет {currency}"
     else:
         ws.title = "Отчет"
 
@@ -2022,7 +2024,7 @@ def export_excel_report(request):
     ws.append([
         "", "", "", "",
         "Кол-во", "Курс", "Стоимость", "Комиссия банка",
-        "Кол-во", "Курс", "Стоимость", "Комиссия банка", "Комиссия биржи (USDT)"
+        "Кол-во", "Курс", "Стоимость", "Комиссия банка", f"Комиссия биржи ({currency or 'USDT'})"
     ])
 
     for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=13):
@@ -2097,10 +2099,8 @@ def export_excel_report(request):
     # Запись строки ордера
     # =====================================================================
     def _get_cv_name(o):
-        if currency == 'TON':
-            return 'TON'
-        elif currency == 'USDT':
-            return 'USDT'
+        if currency:
+            return currency
         if getattr(o, 'currency', '') == 'TON':
             return 'TON'
         return 'USDT'
@@ -2152,7 +2152,7 @@ def export_excel_report(request):
     # Перенос остатка предыдущего месяца
     # =====================================================================
     def write_carry_row(label, prev_ost_row):
-        cv = currency if currency in ('USDT', 'TON') else 'USDT'
+        cv = currency if currency else 'USDT'
         ws.append([
             0, "-", label, cv,
             f"=E{prev_ost_row}",
@@ -4512,6 +4512,10 @@ def export_screenshots_view(request):
 
     if bank_id and bank_id.isdigit():
         orders = orders.filter(bank_detail_id=int(bank_id))
+
+    currency_param = (request.GET.get('currency') or '').strip().upper()
+    if currency_param in ('USDT', 'TON', 'BTC', 'ETH'):
+        orders = orders.filter(currency=currency_param)
 
     orders_list = list(orders)
     if not orders_list:
