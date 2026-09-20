@@ -268,7 +268,13 @@ def my_orders_list(request):
                 "purpose": f"Цифровая валюта {currency}",
             }
             result = create_or_update_and_send_receipt(order, receipt_data)
-            if result.status not in ("SENT", "SKIPPED"):
+            if result.status == "BLOCKED":
+                # Чеки по BTC/ETH временно закрыты — ордер создан, сообщаем
+                # трейдеру заметным баннером (повторов не ставим).
+                request.session['order_error'] = (
+                    f"Ордер {order.external_id} создан, но чек НЕ пробит: {result.error_text}"
+                )
+            elif result.status not in ("SENT", "SKIPPED"):
                 # Первая попытка (синхронно, прямо в запросе) не удалась —
                 # ставим автоповтор с бэкоффом вместо того, чтобы тихо
                 # терять чек (см. history.md §22/23 — silent-failure паттерн).

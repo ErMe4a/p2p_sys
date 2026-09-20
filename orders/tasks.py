@@ -305,9 +305,17 @@ def _try_send_receipt(order: Order):
     в verify_and_receipt_later, но барьер здесь оставлен как вторая линия
     защиты на случай будущих вызовов этой функции из других мест.
     """
-    from .receipt_service import create_or_update_and_send_receipt
+    from .receipt_service import (
+        create_or_update_and_send_receipt, is_receipt_blocked, mark_receipt_blocked,
+    )
 
     if order.receipt and isinstance(order.receipt, dict) and order.receipt.get("uuid"):
+        return
+
+    # Чеки по BTC/ETH временно закрыты (см. receipt_service.RECEIPT_BLOCKED_CURRENCIES).
+    if is_receipt_blocked(order):
+        mark_receipt_blocked(order)
+        logger.info("_try_send_receipt: Order %d — валюта %s, чеки по ней закрыты.", order.id, order.currency)
         return
 
     # ИСПРАВЛЕНО: жёсткая проверка источника данных перед любым дальнейшим шагом
@@ -383,6 +391,11 @@ def retry_manual_receipt(self, order_id: int):
 
     if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
         return  # уже пробит (например, ретрай догнал ручную допробивку)
+
+    from .receipt_service import is_receipt_blocked
+    if is_receipt_blocked(o):
+        logger.info("retry_manual_receipt: Order %d — чеки по %s закрыты, повторы не нужны.", order_id, o.currency)
+        return
 
     _try_send_receipt(o)
 

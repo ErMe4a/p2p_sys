@@ -16,6 +16,44 @@ class ReceiptResponse:
         self.error_text = error_text
         self.evotor_uuid = evotor_uuid
 
+# Валюты, по которым чеки пока НЕ пробиваются вообще (решение: чеки по BTC и
+# ETH временно закрыты). Ордер при этом сохраняется как обычно (оборот и
+# прибыль считаются), только фискальный чек не создаётся. Чтобы открыть —
+# убрать валюту из этого кортежа (и допробить накопленные ордера со статусом
+# receipt.status == "BLOCKED_CURRENCY").
+RECEIPT_BLOCKED_CURRENCIES = ("BTC", "ETH")
+RECEIPT_BLOCKED_MESSAGE = (
+    "Чеки по BTC и ETH пока не пробиваются: ордер сохранён, "
+    "но чек по нему не создан."
+)
+
+
+def is_receipt_blocked(order) -> bool:
+    """True, если по валюте ордера чек сейчас пробивать нельзя."""
+    return str(getattr(order, "currency", "") or "").strip().upper() in RECEIPT_BLOCKED_CURRENCIES
+
+
+def mark_receipt_blocked(order, receipt_data=None):
+    """
+    Помечает ордер статусом BLOCKED_CURRENCY, сохраняя contact/суммы запроса
+    чека (если есть) — чтобы после открытия валюты чек можно было допробить.
+    """
+    current = order.receipt if isinstance(order.receipt, dict) else {}
+    data = receipt_data or {}
+    marked = {
+        **current,
+        "contact": data.get("contact") or current.get("contact"),
+        "price":   data.get("price",  current.get("price")),
+        "amount":  data.get("amount", current.get("amount")),
+        "sum":     data.get("sum",    current.get("sum")),
+        "status":  "BLOCKED_CURRENCY",
+        "error_text": RECEIPT_BLOCKED_MESSAGE,
+    }
+    if marked != current:
+        order.receipt = marked
+        order.save(update_fields=["receipt"])
+
+
 def _bool(v) -> bool:
     """Превращает строку/число/bool в чистый bool"""
     if isinstance(v, bool): return v
@@ -63,6 +101,11 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
             evotor_uuid=order.receipt.get("uuid"),
             error_text=""
         )
+
+    # 1а. Чеки по BTC/ETH временно закрыты — ордер оставляем, чек не бьём.
+    if is_receipt_blocked(order):
+        mark_receipt_blocked(order, receipt_data)
+        return ReceiptResponse(status="BLOCKED", error_text=RECEIPT_BLOCKED_MESSAGE)
 
     # 2. Валидация реквизитов
     # ИСПРАВЛЕНИЕ: Убрали user.payment_address, так как адрес сайта теперь 
