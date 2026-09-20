@@ -217,6 +217,7 @@
                         <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
                         <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
                         <option value="BTC"  {% if saved_data.currency == 'BTC' %}selected{% endif %}>BTC</option>
+                        <option value="ETH"  {% if saved_data.currency == 'ETH' %}selected{% endif %}>ETH</option>
                     </select>
                 </div>
             </div>
@@ -353,6 +354,8 @@
                     <option value="">Все</option>
                     <option value="USDT" {% if filter_currency == 'USDT' %}selected{% endif %}>USDT</option>
                     <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>TON</option>
+                    <option value="BTC"  {% if filter_currency == 'BTC' %}selected{% endif %}>BTC</option>
+                    <option value="ETH"  {% if filter_currency == 'ETH' %}selected{% endif %}>ETH</option>
                 </select>
             </div>
             <div class="col-md-1">
@@ -385,12 +388,14 @@
                 <td class="{% if order.operation_type == 'BUY' %}status-buy{% else %}status-sell{% endif %}">{{ order.get_operation_type_display }}</td>
                 <td><span class="badge badge-exchange">{{ order.exchange_type }}</span></td>
                 <td>{{ order.price|floatformat:"-2" }}</td>
-                <td>{% if order.currency == 'BTC' %}{{ order.amount|floatformat:"-8" }}{% else %}{{ order.amount|floatformat:"-4" }}{% endif %}</td>
+                <td>{% if order.currency == 'BTC' or order.currency == 'ETH' %}{{ order.amount|floatformat:"-8" }}{% else %}{{ order.amount|floatformat:"-4" }}{% endif %}</td>
                 <td>
                     {% if order.currency == 'TON' %}
                         <span style="color:#3d9af5; font-weight:600; font-size:11px;">TON</span>
                     {% elif order.currency == 'BTC' %}
                         <span style="color:#f7931a; font-weight:600; font-size:11px;">BTC</span>
+                    {% elif order.currency == 'ETH' %}
+                        <span style="color:#8c8cff; font-weight:600; font-size:11px;">ETH</span>
                     {% else %}
                         <span style="color:var(--success); font-weight:600; font-size:11px;">USDT</span>
                     {% endif %}
@@ -523,6 +528,7 @@
                                     <option value="USDT">USDT</option>
                                     <option value="TON">TON</option>
                                     <option value="BTC">BTC</option>
+                                    <option value="ETH">ETH</option>
                                 </select>
                             </div>
                         </div>

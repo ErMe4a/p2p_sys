@@ -255,7 +255,7 @@ def my_orders_list(request):
             if not contact_email:
                 contact_email = request.user.email
             currency = request.POST.get('currency', 'USDT').strip().upper()
-            if currency not in ('USDT', 'TON', 'BTC'):
+            if currency not in ('USDT', 'TON', 'BTC', 'ETH'):
                 currency = 'USDT'
             # У BTC нужна точность до сатоши (8 знаков) — 3, как для USDT/TON,
             # обнулили бы небольшие суммы (0.00034521 BTC -> 0.000).
@@ -385,9 +385,9 @@ def edit_order(request, order_id):
         if new_rate is not None:
             order.exchange_commission_rate = new_rate
 
-        # 3. Валюта (USDT / TON / BTC)
+        # 3. Валюта (USDT / TON / BTC / ETH)
         currency = request.POST.get('currency', '').strip().upper()
-        if currency in ('USDT', 'TON', 'BTC'):
+        if currency in ('USDT', 'TON', 'BTC', 'ETH'):
             order.currency = currency
 
         # 4. Дата

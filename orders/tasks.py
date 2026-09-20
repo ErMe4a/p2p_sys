@@ -177,7 +177,7 @@ def verify_and_receipt_later(self, order_id: int):
 
             # Валюта — авторитетно с биржи, та же логика, что и в
             # api_views.order() для мгновенной верификации (см. exchange_api.
-            # _map_known_currency): только известные системе USDT/TON/BTC,
+            # _map_known_currency): только известные системе USDT/TON/BTC/ETH,
             # иначе не трогаем то, что уже было сохранено раньше.
             if api_data.get("currency"):
                 o.currency = api_data["currency"]
