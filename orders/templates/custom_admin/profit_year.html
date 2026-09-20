@@ -20,6 +20,8 @@
     .currency-badge-all  { background: rgba(108,140,255,.2);  color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
     .currency-badge-usdt { background: rgba(88,214,141,.15);  color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
     .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
+    .currency-badge-btc  { background: rgba(247,147,26,.15);  color: #f7931a; border: 1px solid rgba(247,147,26,.35); }
+    .currency-badge-eth  { background: rgba(140,140,255,.15); color: #8c8cff; border: 1px solid rgba(140,140,255,.35); }
 
     .summary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 15px; margin-bottom: 25px; }
     .summary-card {
@@ -62,6 +64,8 @@
                 <option value="all" selected>Все</option>
                 <option value="usdt">USDT</option>
                 <option value="ton">TON</option>
+                <option value="btc">BTC</option>
+                <option value="eth">ETH</option>
             </select>
 
             <select class="form-control form-control-sm filter-select" id="filterExchange" onchange="applyFilters()">
@@ -154,9 +158,13 @@
                 <tr data-all-buy="{{ m.all_buy }}" data-all-sell="{{ m.all_sell }}" data-all-turnover="{{ m.all_turnover }}"
                     data-usdt-buy="{{ m.usdt_buy }}" data-usdt-sell="{{ m.usdt_sell }}" data-usdt-turnover="{{ m.usdt_turnover }}"
                     data-ton-buy="{{ m.ton_buy }}" data-ton-sell="{{ m.ton_sell }}" data-ton-turnover="{{ m.ton_turnover }}"
+                    data-btc-buy="{{ m.btc_buy }}" data-btc-sell="{{ m.btc_sell }}" data-btc-turnover="{{ m.btc_turnover }}"
+                    data-eth-buy="{{ m.eth_buy }}" data-eth-sell="{{ m.eth_sell }}" data-eth-turnover="{{ m.eth_turnover }}"
                     data-all-gross="{{ m.all_gross }}" data-all-net="{{ m.all_net }}" data-all-income="{{ m.all_income }}" data-all-tax="{{ m.all_tax }}" data-all-has-profit="{{ m.all_has_profit|yesno:'1,0' }}"
                     data-usdt-gross="{{ m.usdt_gross }}" data-usdt-net="{{ m.usdt_net }}" data-usdt-income="{{ m.usdt_income }}" data-usdt-tax="{{ m.usdt_tax }}" data-usdt-has-profit="{{ m.usdt_has_profit|yesno:'1,0' }}"
-                    data-ton-gross="{{ m.ton_gross }}" data-ton-net="{{ m.ton_net }}" data-ton-income="{{ m.ton_income }}" data-ton-tax="{{ m.ton_tax }}" data-ton-has-profit="{{ m.ton_has_profit|yesno:'1,0' }}">
+                    data-ton-gross="{{ m.ton_gross }}" data-ton-net="{{ m.ton_net }}" data-ton-income="{{ m.ton_income }}" data-ton-tax="{{ m.ton_tax }}" data-ton-has-profit="{{ m.ton_has_profit|yesno:'1,0' }}"
+                    data-btc-gross="{{ m.btc_gross }}" data-btc-net="{{ m.btc_net }}" data-btc-income="{{ m.btc_income }}" data-btc-tax="{{ m.btc_tax }}" data-btc-has-profit="{{ m.btc_has_profit|yesno:'1,0' }}"
+                    data-eth-gross="{{ m.eth_gross }}" data-eth-net="{{ m.eth_net }}" data-eth-income="{{ m.eth_income }}" data-eth-tax="{{ m.eth_tax }}" data-eth-has-profit="{{ m.eth_has_profit|yesno:'1,0' }}">
                     <td class="fw-bold">{{ m.name }}</td>
                     <td class="text-danger row-buy">{{ m.all_buy }}</td>
                     <td class="text-success row-sell">{{ m.all_sell }}</td>
@@ -171,9 +179,13 @@
                     data-all-buy="{{ year_total.all_buy }}" data-all-sell="{{ year_total.all_sell }}" data-all-turnover="{{ year_total.all_turnover }}"
                     data-usdt-buy="{{ year_total.usdt_buy }}" data-usdt-sell="{{ year_total.usdt_sell }}" data-usdt-turnover="{{ year_total.usdt_turnover }}"
                     data-ton-buy="{{ year_total.ton_buy }}" data-ton-sell="{{ year_total.ton_sell }}" data-ton-turnover="{{ year_total.ton_turnover }}"
+                    data-btc-buy="{{ year_total.btc_buy }}" data-btc-sell="{{ year_total.btc_sell }}" data-btc-turnover="{{ year_total.btc_turnover }}"
+                    data-eth-buy="{{ year_total.eth_buy }}" data-eth-sell="{{ year_total.eth_sell }}" data-eth-turnover="{{ year_total.eth_turnover }}"
                     data-all-gross="{{ year_total.all_gross }}" data-all-net="{{ year_total.all_net }}" data-all-income="{{ year_total.all_income }}" data-all-tax="{{ year_total.all_tax }}" data-all-has-profit="1"
                     data-usdt-gross="{{ year_total.usdt_gross }}" data-usdt-net="{{ year_total.usdt_net }}" data-usdt-income="{{ year_total.usdt_income }}" data-usdt-tax="{{ year_total.usdt_tax }}" data-usdt-has-profit="1"
-                    data-ton-gross="{{ year_total.ton_gross }}" data-ton-net="{{ year_total.ton_net }}" data-ton-income="{{ year_total.ton_income }}" data-ton-tax="{{ year_total.ton_tax }}" data-ton-has-profit="1">
+                    data-ton-gross="{{ year_total.ton_gross }}" data-ton-net="{{ year_total.ton_net }}" data-ton-income="{{ year_total.ton_income }}" data-ton-tax="{{ year_total.ton_tax }}" data-ton-has-profit="1"
+                    data-btc-gross="{{ year_total.btc_gross }}" data-btc-net="{{ year_total.btc_net }}" data-btc-income="{{ year_total.btc_income }}" data-btc-tax="{{ year_total.btc_tax }}" data-btc-has-profit="1"
+                    data-eth-gross="{{ year_total.eth_gross }}" data-eth-net="{{ year_total.eth_net }}" data-eth-income="{{ year_total.eth_income }}" data-eth-tax="{{ year_total.eth_tax }}" data-eth-has-profit="1">
                     <td>Итого за {{ current_year }}</td>
                     <td class="text-danger row-buy">{{ year_total.all_buy }}</td>
                     <td class="text-success row-sell">{{ year_total.all_sell }}</td>
@@ -200,26 +212,27 @@
     function setCurrency(val) {
         currentCurrency = val;
         var badge = document.getElementById('currencyBadge');
-        if (val === 'usdt')      { badge.className = 'currency-badge currency-badge-usdt'; badge.textContent = 'USDT'; }
-        else if (val === 'ton')  { badge.className = 'currency-badge currency-badge-ton';  badge.textContent = 'TON'; }
-        else                     { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
+        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'TON'],
+                          btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'] };
+        if (CUR_STYLE[val]) { badge.className = 'currency-badge ' + CUR_STYLE[val][0]; badge.textContent = CUR_STYLE[val][1]; }
+        else                { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
 
         var sumBuy = 0, sumSell = 0, sumTurnover = 0, sumGross = 0, sumNet = 0, sumIncome = 0, sumTax = 0;
         document.querySelectorAll('#monthsTableBody tr').forEach(function(row) {
             var d = row.dataset;
-            var buy      = parseFloat(val === 'ton' ? d.tonBuy      : val === 'usdt' ? d.usdtBuy      : d.allBuy)      || 0;
-            var sell     = parseFloat(val === 'ton' ? d.tonSell     : val === 'usdt' ? d.usdtSell     : d.allSell)     || 0;
-            var turnover = parseFloat(val === 'ton' ? d.tonTurnover : val === 'usdt' ? d.usdtTurnover : d.allTurnover) || 0;
+            var buy      = parseFloat(d[val + 'Buy'])      || 0;
+            var sell     = parseFloat(d[val + 'Sell'])     || 0;
+            var turnover = parseFloat(d[val + 'Turnover']) || 0;
 
             row.querySelector('.row-buy').textContent      = fmt(buy);
             row.querySelector('.row-sell').textContent     = fmt(sell);
             row.querySelector('.row-turnover').textContent = fmt(turnover);
 
-            var hasProfit = (val === 'ton' ? d.tonHasProfit : val === 'usdt' ? d.usdtHasProfit : d.allHasProfit) === '1';
-            var gross  = parseFloat(val === 'ton' ? d.tonGross  : val === 'usdt' ? d.usdtGross  : d.allGross)  || 0;
-            var net    = parseFloat(val === 'ton' ? d.tonNet    : val === 'usdt' ? d.usdtNet    : d.allNet)    || 0;
-            var income = parseFloat(val === 'ton' ? d.tonIncome : val === 'usdt' ? d.usdtIncome : d.allIncome) || 0;
-            var tax    = parseFloat(val === 'ton' ? d.tonTax    : val === 'usdt' ? d.usdtTax    : d.allTax)    || 0;
+            var hasProfit = d[val + 'HasProfit'] === '1';
+            var gross  = parseFloat(d[val + 'Gross'])  || 0;
+            var net    = parseFloat(d[val + 'Net'])    || 0;
+            var income = parseFloat(d[val + 'Income']) || 0;
+            var tax    = parseFloat(d[val + 'Tax'])    || 0;
 
             row.querySelector('.row-gross').innerHTML  = hasProfit ? fmt(gross)  : '<span class="no-data-yet">—</span>';
             row.querySelector('.row-net').innerHTML    = hasProfit ? fmt(net)    : '<span class="no-data-yet">—</span>';

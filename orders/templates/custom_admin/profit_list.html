@@ -83,6 +83,8 @@
     .currency-badge-all  { background: rgba(108,140,255,.2);  color: #6c8cff; border: 1px solid rgba(108,140,255,.4); }
     .currency-badge-usdt { background: rgba(88,214,141,.15);  color: #58d68d; border: 1px solid rgba(88,214,141,.35); }
     .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
+    .currency-badge-btc  { background: rgba(247,147,26,.15);  color: #f7931a; border: 1px solid rgba(247,147,26,.35); }
+    .currency-badge-eth  { background: rgba(140,140,255,.15); color: #8c8cff; border: 1px solid rgba(140,140,255,.35); }
 
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .sortable:hover { color: var(--text-main); }
@@ -137,6 +139,8 @@
             <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
                 <option value="usdt" selected>USDT</option>
                 <option value="ton">TON</option>
+                <option value="btc">BTC</option>
+                <option value="eth">ETH</option>
                 <option value="all">Все</option>
             </select>
 
@@ -259,6 +263,26 @@
                     data-ton-ndfl="{{ stat.ton_ndfl }}"
                     data-ton-share="{{ stat.ton_share }}"
                     data-ton-net="{{ stat.ton_net }}"
+
+                    data-btc-balance="{{ stat.btc.remainder_qty_display }}"
+                    data-btc-sell="{{ stat.btc.month_sell_cost }}"
+                    data-btc-buy="{{ stat.btc.month_buy_cost }}"
+                    data-btc-gross="{{ stat.btc_gross }}"
+                    data-btc-exch="{{ stat.btc_exch_comm_rub }}"
+                    data-btc-bank="{{ stat.btc_bank_comm }}"
+                    data-btc-ndfl="{{ stat.btc_ndfl }}"
+                    data-btc-share="{{ stat.btc_share }}"
+                    data-btc-net="{{ stat.btc_net }}"
+
+                    data-eth-balance="{{ stat.eth.remainder_qty_display }}"
+                    data-eth-sell="{{ stat.eth.month_sell_cost }}"
+                    data-eth-buy="{{ stat.eth.month_buy_cost }}"
+                    data-eth-gross="{{ stat.eth_gross }}"
+                    data-eth-exch="{{ stat.eth_exch_comm_rub }}"
+                    data-eth-bank="{{ stat.eth_bank_comm }}"
+                    data-eth-ndfl="{{ stat.eth_ndfl }}"
+                    data-eth-share="{{ stat.eth_share }}"
+                    data-eth-net="{{ stat.eth_net }}"
                 >
                     <!-- Пользователь -->
                     <td>
@@ -280,6 +304,18 @@
                             <span class="money">{{ stat.ton.remainder_qty_display }}</span>&nbsp;TON
                             {% if stat.ton.avg_price %}
                                 <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.ton_avg_price_ru }} ₽</span>
+                            {% endif %}
+                        </div>
+                        <div class="fw-bold row-balance-btc" style="font-size: 0.88rem; color: #f7931a;">
+                            <span class="coin-qty">{{ stat.btc.remainder_qty_display|floatformat:"-8" }}</span>&nbsp;BTC
+                            {% if stat.btc.avg_price %}
+                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.btc_avg_price_ru }} ₽</span>
+                            {% endif %}
+                        </div>
+                        <div class="fw-bold row-balance-eth" style="font-size: 0.88rem; color: #8c8cff;">
+                            <span class="coin-qty">{{ stat.eth.remainder_qty_display|floatformat:"-8" }}</span>&nbsp;ETH
+                            {% if stat.eth.avg_price %}
+                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.eth_avg_price_ru }} ₽</span>
                             {% endif %}
                         </div>
                     </td>
@@ -417,16 +453,9 @@
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             if (row.style.display === 'none') return;
             var d = row.dataset;
-            if (currentCurrency === 'ton') {
-                sell  += parseFloat(d.tonSell  || 0); buy   += parseFloat(d.tonBuy   || 0);
-                gross += parseFloat(d.tonGross || 0); share += parseFloat(d.tonShare || 0); net += parseFloat(d.tonNet || 0);
-            } else if (currentCurrency === 'usdt') {
-                sell  += parseFloat(d.usdtSell  || 0); buy   += parseFloat(d.usdtBuy   || 0);
-                gross += parseFloat(d.usdtGross || 0); share += parseFloat(d.usdtShare || 0); net += parseFloat(d.usdtNet || 0);
-            } else {
-                sell  += parseFloat(d.allSell  || 0); buy   += parseFloat(d.allBuy   || 0);
-                gross += parseFloat(d.allGross || 0); share += parseFloat(d.allShare || 0); net += parseFloat(d.allNet || 0);
-            }
+            var cv = currentCurrency;  // 'usdt' | 'ton' | 'btc' | 'eth' | 'all' — имена ключей dataset совпадают
+            sell  += parseFloat(d[cv + 'Sell']  || 0); buy   += parseFloat(d[cv + 'Buy']   || 0);
+            gross += parseFloat(d[cv + 'Gross'] || 0); share += parseFloat(d[cv + 'Share'] || 0); net += parseFloat(d[cv + 'Net'] || 0);
         });
         document.getElementById('sum-sell').textContent   = fmt(sell);
         document.getElementById('sum-buy').textContent    = fmt(buy);
@@ -525,6 +554,8 @@
             // Остаток
             html += '<td><div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
                   + (m.ton_balance !== 0 ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>' : '')
+                  + (m.btc_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#f7931a;">' + m.btc_balance + '&nbsp;BTC</div>' : '')
+                  + (m.eth_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#8c8cff;">' + m.eth_balance + '&nbsp;ETH</div>' : '')
                   + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div></td>';
 
             // Движение
@@ -579,52 +610,51 @@
         if (sel) sel.value = val;
 
         var badge = document.getElementById('currencyBadge');
-        if (val === 'usdt')      { badge.className = 'currency-badge currency-badge-usdt'; badge.textContent = 'USDT'; }
-        else if (val === 'ton')  { badge.className = 'currency-badge currency-badge-ton';  badge.textContent = 'TON'; }
-        else                     { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
+        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'TON'],
+                          btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'] };
+        if (CUR_STYLE[val]) { badge.className = 'currency-badge ' + CUR_STYLE[val][0]; badge.textContent = CUR_STYLE[val][1]; }
+        else                { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
 
         var thBal = document.getElementById('thBalance');
         if (thBal) {
-            if (val === 'ton')       thBal.childNodes[0].nodeValue = 'Остаток (TON)';
-            else if (val === 'usdt') thBal.childNodes[0].nodeValue = 'Остаток (USDT)';
-            else                     thBal.childNodes[0].nodeValue = 'Остаток';
+            thBal.childNodes[0].nodeValue = CUR_STYLE[val] ? ('Остаток (' + CUR_STYLE[val][1] + ')') : 'Остаток';
         }
 
+        var COLORS = { ton: '#3d9af5', btc: '#f7931a', eth: '#8c8cff' };
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
             var usdtBal   = parseFloat(d.usdtBalance || 0);
-            var tonBal    = parseFloat(d.tonBalance  || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
-            var tonBalEl  = row.querySelector('.row-balance-ton');
-            if (!usdtBalEl || !tonBalEl) return;
+            if (!usdtBalEl) return;
 
-            if (val === 'usdt') {
-                usdtBalEl.style.display = ''; tonBalEl.style.display = 'none';
-                usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
-            } else if (val === 'ton') {
-                usdtBalEl.style.display = 'none'; tonBalEl.style.display = '';
-                tonBalEl.className = 'fw-bold row-balance-ton';
-                tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
-            } else {
-                usdtBalEl.style.display = ''; tonBalEl.style.display = '';
-                usdtBalEl.className = 'fw-bold row-balance-usdt ' + (usdtBal >= 0 ? 'balance-positive' : 'balance-negative');
-                tonBalEl.className = 'fw-bold row-balance-ton';
-                tonBalEl.style.color = tonBal >= 0 ? '#3d9af5' : '#ff6c6c';
-            }
+            // Остаток: одна валюта — её строка; "Все" — USDT и TON всегда, BTC/ETH только ненулевые
+            ['usdt', 'ton', 'btc', 'eth'].forEach(function(c) {
+                var el = row.querySelector('.row-balance-' + c);
+                if (!el) return;
+                var bal = parseFloat(d[c + 'Balance'] || 0);
+                var show = (val === c) || (val === 'all' && (c === 'usdt' || c === 'ton' || bal !== 0));
+                el.style.display = show ? '' : 'none';
+                if (c === 'usdt') {
+                    el.className = 'fw-bold row-balance-usdt ' + (bal >= 0 ? 'balance-positive' : 'balance-negative');
+                } else {
+                    el.className = 'fw-bold row-balance-' + c;
+                    el.style.color = bal >= 0 ? COLORS[c] : '#ff6c6c';
+                }
+            });
 
-            row.querySelector('.row-buy').textContent  = fmt(parseFloat(val === 'ton' ? d.tonBuy  : val === 'usdt' ? d.usdtBuy  : d.allBuy)  || 0);
-            row.querySelector('.row-sell').textContent = fmt(parseFloat(val === 'ton' ? d.tonSell : val === 'usdt' ? d.usdtSell : d.allSell) || 0);
-            row.querySelector('.row-bank').textContent = fmt(parseFloat(val === 'ton' ? d.tonBank : val === 'usdt' ? d.usdtBank : d.allBank) || 0);
-            row.querySelector('.row-exch').textContent = fmt(parseFloat(val === 'ton' ? d.tonExch : val === 'usdt' ? d.usdtExch : d.allExch) || 0);
+            row.querySelector('.row-buy').textContent  = fmt(parseFloat(d[val + 'Buy'])  || 0);
+            row.querySelector('.row-sell').textContent = fmt(parseFloat(d[val + 'Sell']) || 0);
+            row.querySelector('.row-bank').textContent = fmt(parseFloat(d[val + 'Bank']) || 0);
+            row.querySelector('.row-exch').textContent = fmt(parseFloat(d[val + 'Exch']) || 0);
 
-            var gross   = parseFloat(val === 'ton' ? d.tonGross : val === 'usdt' ? d.usdtGross : d.allGross) || 0;
+            var gross   = parseFloat(d[val + 'Gross']) || 0;
             var grossEl = row.querySelector('.row-gross');
             grossEl.textContent = fmt(gross);
             grossEl.className   = 'val-money money row-gross ' + (gross >= 0 ? 'text-success' : 'text-danger');
 
-            var ndflVal  = val === 'ton' ? cleanNdflValue(d.tonNdfl)  : val === 'usdt' ? cleanNdflValue(d.usdtNdfl)  : cleanNdflValue(d.allNdfl);
-            var shareVal = val === 'ton' ? parseFloat(d.tonShare || 0) : val === 'usdt' ? parseFloat(d.usdtShare || 0) : parseFloat(d.allShare || 0);
-            var netVal   = val === 'ton' ? parseFloat(d.tonNet   || 0) : val === 'usdt' ? parseFloat(d.usdtNet   || 0) : parseFloat(d.allNet   || 0);
+            var ndflVal  = cleanNdflValue(d[val + 'Ndfl']);
+            var shareVal = parseFloat(d[val + 'Share'] || 0);
+            var netVal   = parseFloat(d[val + 'Net']   || 0);
 
             row.querySelector('.row-ndfl').textContent      = fmt(ndflVal);
             row.querySelector('.row-share').textContent     = fmt(shareVal);
@@ -678,16 +708,16 @@
                 vb = b.querySelector('td:first-child .fw-bold').textContent.trim().toLowerCase();
                 return sortState.dir * va.localeCompare(vb);
             }
-            function pick(row, usdt, ton, all) {
-                return parseFloat(cur === 'ton' ? row[ton] : cur === 'usdt' ? row[usdt] : row[all]) || 0;
+            function pick(row, suffix) {
+                return parseFloat(row[cur + suffix]) || 0;
             }
-            if      (key === 'balance')  { va = pick(d,'usdtBalance','tonBalance','allBalance'); vb = pick(e,'usdtBalance','tonBalance','allBalance'); }
-            else if (key === 'turnover') { va = pick(d,'usdtSell','tonSell','allSell')+pick(d,'usdtBuy','tonBuy','allBuy'); vb = pick(e,'usdtSell','tonSell','allSell')+pick(e,'usdtBuy','tonBuy','allBuy'); }
-            else if (key === 'comm')     { va = pick(d,'usdtBank','tonBank','allBank'); vb = pick(e,'usdtBank','tonBank','allBank'); }
-            else if (key === 'gross')    { va = pick(d,'usdtGross','tonGross','allGross'); vb = pick(e,'usdtGross','tonGross','allGross'); }
-            else if (key === 'ndfl')     { va = pick(d,'usdtNdfl','tonNdfl','allNdfl'); vb = pick(e,'usdtNdfl','tonNdfl','allNdfl'); }
-            else if (key === 'share')    { va = pick(d,'usdtShare','tonShare','allShare'); vb = pick(e,'usdtShare','tonShare','allShare'); }
-            else if (key === 'net')      { va = pick(d,'usdtNet','tonNet','allNet'); vb = pick(e,'usdtNet','tonNet','allNet'); }
+            if      (key === 'balance')  { va = pick(d,'Balance'); vb = pick(e,'Balance'); }
+            else if (key === 'turnover') { va = pick(d,'Sell') + pick(d,'Buy'); vb = pick(e,'Sell') + pick(e,'Buy'); }
+            else if (key === 'comm')     { va = pick(d,'Bank');  vb = pick(e,'Bank'); }
+            else if (key === 'gross')    { va = pick(d,'Gross'); vb = pick(e,'Gross'); }
+            else if (key === 'ndfl')     { va = pick(d,'Ndfl');  vb = pick(e,'Ndfl'); }
+            else if (key === 'share')    { va = pick(d,'Share'); vb = pick(e,'Share'); }
+            else if (key === 'net')      { va = pick(d,'Net');   vb = pick(e,'Net'); }
             return sortState.dir * (va - vb);
         });
         rows.forEach(function(r) { tbody.appendChild(r); });

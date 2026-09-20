@@ -39,6 +39,8 @@
     .summary-card.net::before   { background:linear-gradient(90deg, #a855f7, #ec4899); } 
     .summary-card.balance-usdt::before { background:linear-gradient(90deg, #00d2ff, #3a7bd5); } 
     .summary-card.balance-ton::before  { background:linear-gradient(90deg, #3d9af5, #1a5fb4); }
+    .summary-card.balance-btc::before  { background:linear-gradient(90deg, #f7931a, #b45f06); }
+    .summary-card.balance-eth::before  { background:linear-gradient(90deg, #8c8cff, #4a4ab8); }
     .summary-card.balance-all::before  { background:linear-gradient(90deg, #6c8cff, #a855f7); }
     
     .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
@@ -64,6 +66,8 @@
     .badge-currency { display:inline-block; font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; margin-left:4px; vertical-align:middle; }
     .badge-usdt { background:rgba(88,214,141,.15); color:var(--ok); }
     .badge-ton  { background:rgba(61,154,245,.15); color:var(--ton); }
+    .badge-btc  { background:rgba(247,147,26,.15); color:#f7931a; }
+    .badge-eth  { background:rgba(140,140,255,.15); color:#8c8cff; }
     
     .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
     .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; font-weight: 500;}
@@ -129,6 +133,8 @@
                     <option value="all">Все</option>
                     <option value="usdt">USDT</option>
                     <option value="ton">TON</option>
+                    <option value="btc">BTC</option>
+                    <option value="eth">ETH</option>
                 </select>
             </div>
         </div>
@@ -313,7 +319,8 @@
     let currentStart   = '';
     let currentEnd     = '';
     let currentView    = 'today';
-    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton'
+    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton' | 'btc' | 'eth'
+    const CUR_COLORS = { usdt:'var(--ok)', ton:'var(--ton)', btc:'#f7931a', eth:'#8c8cff' };
     let lastTurnover   = null;   // кэш get_turnover
     let lastMonths     = null;   // кэш get_months
 
@@ -357,6 +364,10 @@
     function pick(data, allKey, usdtKey, tonKey) {
         if (currentCurrency === 'usdt') return safeFloat(data[usdtKey]);
         if (currentCurrency === 'ton')  return safeFloat(data[tonKey]);
+        if (currentCurrency === 'btc' || currentCurrency === 'eth') {
+            // ключи вида usdt_buy_sum -> btc_buy_sum / eth_buy_sum
+            return safeFloat(data[currentCurrency + usdtKey.substring(4)]);
+        }
         return safeFloat(data[allKey]);
     }
 
@@ -383,6 +394,16 @@
             value.textContent = usdt.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT';
             sub.textContent   = usdtPrice ? ('по ' + formatRate(usdtPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток USDT';
+        } else if (currentCurrency === 'btc' || currentCurrency === 'eth') {
+            const cur = currentCurrency, CUR = cur.toUpperCase();
+            const bal = safeFloat(data[cur + '_balance']);
+            const pr  = safeFloat(data[cur + '_avg_price']);
+            card.classList.add('balance-' + cur);
+            title.textContent = 'Остаток ' + CUR;
+            value.style.color = CUR_COLORS[cur];
+            value.textContent = bal.toLocaleString('ru-RU', {minimumFractionDigits:0, maximumFractionDigits:8}) + ' ' + CUR;
+            sub.textContent   = pr ? ('по ' + formatRate(pr) + ' ₽') : '';
+            hint.textContent  = 'Глобальный остаток ' + CUR;
         } else if (currentCurrency === 'ton') {
             card.classList.add('balance-ton');
             title.textContent = 'Остаток TON';
@@ -399,6 +420,13 @@
                           + (usdtPrice ? ' <span style="color:var(--muted);">по ' + formatRate(usdtPrice) + ' ₽</span>' : '') + '</div>'
                           + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON'
                           + (tonPrice ? ' <span style="color:var(--muted);">по ' + formatRate(tonPrice) + ' ₽</span>' : '') + '</div>';
+            ['btc','eth'].forEach(function(cx) {
+                const b = safeFloat(data[cx + '_balance']);
+                if (!b) return;
+                const pr = safeFloat(data[cx + '_avg_price']);
+                sub.innerHTML += '<div style="color:' + CUR_COLORS[cx] + ';">' + b.toLocaleString('ru-RU', {maximumFractionDigits:8}) + ' ' + cx.toUpperCase()
+                              + (pr ? ' <span style="color:var(--muted);">по ' + formatRate(pr) + ' ₽</span>' : '') + '</div>';
+            });
             hint.textContent = 'Глобальный остаток крипты';
         }
     }
@@ -678,29 +706,37 @@
             var label = monthNames[m.month - 1] + ' ' + m.year;
 
             // Выбираем данные по текущей валюте
-            var buyCost    = cur === 'usdt' ? m.usdt_buy_cost  : cur === 'ton' ? m.ton_buy_cost  : m.buy_cost;
-            var sellCost   = cur === 'usdt' ? m.usdt_sell_cost : cur === 'ton' ? m.ton_sell_cost : m.sell_cost;
-            var bankComm   = cur === 'usdt' ? m.usdt_bank_comm : cur === 'ton' ? m.ton_bank_comm : m.bank_comm;
-            var exchComm   = cur === 'usdt' ? m.usdt_exch_comm : cur === 'ton' ? m.ton_exch_comm : m.exch_comm_rub;
-            var gross      = cur === 'usdt' ? m.usdt_gross     : cur === 'ton' ? m.ton_gross     : m.gross;
-            var ndfl       = cur === 'usdt' ? m.usdt_ndfl      : cur === 'ton' ? m.ton_ndfl      : m.ndfl;
-            var shareAmt   = cur === 'usdt' ? m.usdt_share     : cur === 'ton' ? m.ton_share     : m.share_amount;
-            var net        = cur === 'usdt' ? m.usdt_net       : cur === 'ton' ? m.ton_net       : m.net_profit;
+            var pfx = (cur === 'all') ? '' : (cur + '_');
+            var buyCost    = cur === 'all' ? m.buy_cost      : m[pfx + 'buy_cost'];
+            var sellCost   = cur === 'all' ? m.sell_cost     : m[pfx + 'sell_cost'];
+            var bankComm   = cur === 'all' ? m.bank_comm     : m[pfx + 'bank_comm'];
+            var exchComm   = cur === 'all' ? m.exch_comm_rub : m[pfx + 'exch_comm'];
+            var gross      = cur === 'all' ? m.gross         : m[pfx + 'gross'];
+            var ndfl       = cur === 'all' ? m.ndfl          : m[pfx + 'ndfl'];
+            var shareAmt   = cur === 'all' ? m.share_amount  : m[pfx + 'share'];
+            var net        = cur === 'all' ? m.net_profit    : m[pfx + 'net'];
 
             // Остаток — всегда раздельно по валютам
             var remUsdt    = safeFloat(m.usdt_remainder);
             var remTon     = safeFloat(m.ton_remainder_qty);
+            var remBtc     = safeFloat(m.btc_remainder);
+            var remEth     = safeFloat(m.eth_remainder);
             var remColor   = remUsdt >= 0 ? '#6c8cff' : 'var(--danger)';
             var tonColor   = remTon  >= 0 ? 'var(--ton)' : 'var(--danger)';
 
             var balanceCell = '<td>';
             if (cur === 'ton') {
                 balanceCell += '<div style="font-weight:600;color:' + tonColor + ';">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+            } else if (cur === 'btc' || cur === 'eth') {
+                var remX = cur === 'btc' ? remBtc : remEth;
+                balanceCell += '<div style="font-weight:600;color:' + (remX >= 0 ? CUR_COLORS[cur] : 'var(--danger)') + ';">' + remX.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ' + cur.toUpperCase() + '</div>';
             } else if (cur === 'usdt') {
                 balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
             } else {
                 balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
                 if (remTon !== 0) balanceCell += '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+                if (remBtc !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.btc + ';font-size:12px;">' + remBtc.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' BTC</div>';
+                if (remEth !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.eth + ';font-size:12px;">' + remEth.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ETH</div>';
             }
             balanceCell += '<div style="font-size:10px;color:var(--muted);">На конец месяца</div></td>';
 
@@ -810,8 +846,10 @@
             return;
         }
         var filtered = orders;
-        if (currentCurrency === 'usdt') filtered = orders.filter(function(o){ return (o.currency||'USDT') === 'USDT'; });
-        if (currentCurrency === 'ton')  filtered = orders.filter(function(o){ return (o.currency||'USDT') === 'TON'; });
+        if (currentCurrency !== 'all') {
+            var wantCur = currentCurrency.toUpperCase();
+            filtered = orders.filter(function(o){ return (o.currency||'USDT') === wantCur; });
+        }
 
         if (!filtered.length) {
             tbody.innerHTML = '<tr><td colspan="5" class="no-data">Нет сделок по выбранной валюте</td></tr>';
@@ -822,14 +860,14 @@
         tbody.innerHTML = filtered.map(function(o) {
             var rate       = safeFloat(o.price) || (safeFloat(o.amount) > 0 ? safeFloat(o.cost)/safeFloat(o.amount) : 0);
             var currency   = o.currency || 'USDT';
-            var badgeClass = currency === 'TON' ? 'badge-ton' : 'badge-usdt';
+            var badgeClass = currency === 'TON' ? 'badge-ton' : currency === 'BTC' ? 'badge-btc' : currency === 'ETH' ? 'badge-eth' : 'badge-usdt';
             var totalComm  = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
             return '<tr>'
                 + '<td><div style="font-family:monospace;font-size:12px;">' + o.external_id + '</div>'
                 + '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:2px;">' + (o.exchange||'').toUpperCase() + ' • ' + (o.bank||'').toUpperCase() + '</div>'
                 + '<div style="font-size:10px;color:var(--muted);">' + o.date + '</div></td>'
                 + '<td style="font-weight:500;">' + rate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
-                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU',{maximumFractionDigits:4}) + ' <span class="badge-currency ' + badgeClass + '">' + currency + '</span></td>'
+                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU',{maximumFractionDigits:(currency === 'BTC' || currency === 'ETH') ? 8 : 4}) + ' <span class="badge-currency ' + badgeClass + '">' + currency + '</span></td>'
                 + '<td class="amount-cell ' + amountClass + '">' + safeFloat(o.cost).toLocaleString('ru-RU',{minimumFractionDigits:2}) + ' ₽</td>'
                 + '<td style="color:var(--muted);font-size:12px;">' + (totalComm > 0 ? formatMoney(totalComm) + ' ₽' : '0.00 ₽') + '</td>'
                 + '</tr>';
