@@ -138,7 +138,7 @@
 
             <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
                 <option value="usdt" selected>USDT</option>
-                <option value="ton">TON</option>
+                <option value="ton">GRAM</option>
                 <option value="btc">BTC</option>
                 <option value="eth">ETH</option>
                 <option value="all">Все</option>
@@ -301,7 +301,7 @@
                             {% endif %}
                         </div>
                         <div class="fw-bold row-balance-ton" style="font-size: 0.88rem; color: #3d9af5;">
-                            <span class="money">{{ stat.ton.remainder_qty_display }}</span>&nbsp;TON
+                            <span class="money">{{ stat.ton.remainder_qty_display }}</span>&nbsp;GRAM
                             {% if stat.ton.avg_price %}
                                 <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.ton_avg_price_ru }} ₽</span>
                             {% endif %}
@@ -553,7 +553,7 @@
 
             // Остаток
             html += '<td><div class="fw-bold balance-positive" style="font-size:0.88rem;">' + fmt(m.usdt_balance) + '&nbsp;USDT</div>'
-                  + (m.ton_balance !== 0 ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;TON</div>' : '')
+                  + (m.ton_balance !== 0 ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;GRAM</div>' : '')
                   + (m.btc_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#f7931a;">' + m.btc_balance + '&nbsp;BTC</div>' : '')
                   + (m.eth_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#8c8cff;">' + m.eth_balance + '&nbsp;ETH</div>' : '')
                   + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div></td>';
@@ -610,7 +610,7 @@
         if (sel) sel.value = val;
 
         var badge = document.getElementById('currencyBadge');
-        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'TON'],
+        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'GRAM'],
                           btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'] };
         if (CUR_STYLE[val]) { badge.className = 'currency-badge ' + CUR_STYLE[val][0]; badge.textContent = CUR_STYLE[val][1]; }
         else                { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }

@@ -63,7 +63,7 @@
             <select class="form-control form-control-sm filter-select" id="currencySelect" onchange="setCurrency(this.value)" style="width: 110px;">
                 <option value="all" selected>Все</option>
                 <option value="usdt">USDT</option>
-                <option value="ton">TON</option>
+                <option value="ton">GRAM</option>
                 <option value="btc">BTC</option>
                 <option value="eth">ETH</option>
             </select>
@@ -212,7 +212,7 @@
     function setCurrency(val) {
         currentCurrency = val;
         var badge = document.getElementById('currencyBadge');
-        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'TON'],
+        var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'GRAM'],
                           btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'] };
         if (CUR_STYLE[val]) { badge.className = 'currency-badge ' + CUR_STYLE[val][0]; badge.textContent = CUR_STYLE[val][1]; }
         else                { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }

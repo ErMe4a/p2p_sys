@@ -7,6 +7,8 @@ import math
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_DOWN
 
+from .currencies import currency_label, normalize_currency
+
 logger = logging.getLogger(__name__)
 
 EVOTOR_BASE_URL = "https://fiscalization.evotor.ru/possystem/v5"
@@ -141,7 +143,7 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     currency_name = getattr(order, "currency", "USDT")
 
     # Дорогие монеты: количество пробиваем в "единицах ×N" (см. QUANTITY_SCALE).
-    qty_scale = QUANTITY_SCALE.get(str(currency_name).strip().upper(), 1)
+    qty_scale = QUANTITY_SCALE.get(normalize_currency(currency_name), 1)
     if qty_scale != 1:
         raw_quantity = float(Decimal(str(raw_quantity)) * qty_scale)
 
@@ -162,9 +164,9 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     if qty_scale != 1:
         # название всегда со множителем — по нему в чеке видно, что количество
         # указано в единицах ×N (purpose от формы его бы затёр)
-        item_name = f"Цифровая валюта {str(currency_name).strip().upper()}*{qty_scale}"
+        item_name = f"Цифровая валюта {currency_label(currency_name)}*{qty_scale}"
     else:
-        item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_name}"
+        item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_label(currency_name)}"
 
     items_obj = [{
         "name": item_name[:128],

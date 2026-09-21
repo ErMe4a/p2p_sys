@@ -43,6 +43,8 @@ MEXC_IP_WHITELIST_CODE = 700006
 # бралась из того, что прислало расширение (то есть по факту — что выбрал
 # трейдер руками). Теперь API биржи авторитетен и для валюты тоже, как уже
 # давно авторитетен для price/amount/cost/типа сделки.
+from .currencies import normalize_currency
+
 KNOWN_CURRENCIES = {"USDT", "TON", "BTC", "ETH"}
 
 
@@ -53,7 +55,7 @@ def _map_known_currency(raw_token, exchange_label: str, order_id: str, username:
     расширение), только логируем — осознанное решение, чтобы не подставить
     в отчётность валюту, которую система не умеет считать.
     """
-    token = str(raw_token or "").strip().upper()
+    token = normalize_currency(raw_token)   # GRAM -> TON
     if token in KNOWN_CURRENCIES:
         return token
     if token:

@@ -132,7 +132,7 @@
                 <select class="input-profit" id="currencySelect" onchange="handleCurrencyChange()">
                     <option value="all">Все</option>
                     <option value="usdt">USDT</option>
-                    <option value="ton">TON</option>
+                    <option value="ton">GRAM</option>
                     <option value="btc">BTC</option>
                     <option value="eth">ETH</option>
                 </select>
@@ -290,7 +290,7 @@
                     <label style="display:block; margin-bottom:6px; color:var(--muted); font-size:12px;">Криптовалюта</label>
                     <select class="input-profit" id="corrCurrency" onchange="updateCorrPriceHint()">
                         <option value="USDT">USDT</option>
-                        <option value="TON">TON</option>
+                        <option value="TON">GRAM</option>
                         <option value="BTC">BTC</option>
                         <option value="ETH">ETH</option>
                     </select>
@@ -406,11 +406,11 @@
             hint.textContent  = 'Глобальный остаток ' + CUR;
         } else if (currentCurrency === 'ton') {
             card.classList.add('balance-ton');
-            title.textContent = 'Остаток TON';
+            title.textContent = 'Остаток GRAM';
             value.style.color = 'var(--ton)';
-            value.textContent = ton.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' TON';
+            value.textContent = ton.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' GRAM';
             sub.textContent   = tonPrice ? ('по ' + formatRate(tonPrice) + ' ₽') : '';
-            hint.textContent  = 'Глобальный остаток TON';
+            hint.textContent  = 'Глобальный остаток GRAM';
         } else {
             card.classList.add('balance-all');
             title.textContent = 'Текущий остаток';
@@ -418,7 +418,7 @@
             value.textContent = '';
             sub.innerHTML = '<div style="color:var(--ok);line-height:1.6;">' + usdt.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' USDT'
                           + (usdtPrice ? ' <span style="color:var(--muted);">по ' + formatRate(usdtPrice) + ' ₽</span>' : '') + '</div>'
-                          + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' TON'
+                          + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' GRAM'
                           + (tonPrice ? ' <span style="color:var(--muted);">по ' + formatRate(tonPrice) + ' ₽</span>' : '') + '</div>';
             ['btc','eth'].forEach(function(cx) {
                 const b = safeFloat(data[cx + '_balance']);
@@ -645,7 +645,7 @@
         if (!corrections.length) { container.innerHTML = '<div class="no-data">Списаний остатка пока нет</div>'; return; }
         var html = '';
         corrections.forEach(function(c) {
-            html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">-' + ((c.currency === 'BTC' || c.currency === 'ETH') ? safeFloat(c.amount).toLocaleString('ru-RU', {maximumFractionDigits: 8}) : formatMoney(c.amount)) + ' ' + c.currency + ' по курсу ' + formatMoney(c.price) + ' ₽ — ' + c.purpose + '</span><span class="expense-date">' + c.date + '</span></div>'
+            html += '<div class="expense-row"><div class="expense-info"><span class="expense-name">-' + ((c.currency === 'BTC' || c.currency === 'ETH') ? safeFloat(c.amount).toLocaleString('ru-RU', {maximumFractionDigits: 8}) : formatMoney(c.amount)) + ' ' + (c.currency === 'TON' ? 'GRAM' : c.currency) + ' по курсу ' + formatMoney(c.price) + ' ₽ — ' + c.purpose + '</span><span class="expense-date">' + c.date + '</span></div>'
                   + '<div style="display:flex;align-items:center;gap:16px;"><button class="btn-delete-expense" onclick="deleteBalanceCorrection(' + c.id + ')">✖</button></div></div>';
         });
         container.innerHTML = html;
@@ -709,7 +709,7 @@
 
             var balanceCell = '<td>';
             if (cur === 'ton') {
-                balanceCell += '<div style="font-weight:600;color:' + tonColor + ';">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+                balanceCell += '<div style="font-weight:600;color:' + tonColor + ';">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' GRAM</div>';
             } else if (cur === 'btc' || cur === 'eth') {
                 var remX = cur === 'btc' ? remBtc : remEth;
                 balanceCell += '<div style="font-weight:600;color:' + (remX >= 0 ? CUR_COLORS[cur] : 'var(--danger)') + ';">' + remX.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ' + cur.toUpperCase() + '</div>';
@@ -717,7 +717,7 @@
                 balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
             } else {
                 balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
-                if (remTon !== 0) balanceCell += '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' TON</div>';
+                if (remTon !== 0) balanceCell += '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' GRAM</div>';
                 if (remBtc !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.btc + ';font-size:12px;">' + remBtc.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' BTC</div>';
                 if (remEth !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.eth + ';font-size:12px;">' + remEth.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ETH</div>';
             }
@@ -850,7 +850,7 @@
                 + '<div style="font-size:10px;color:var(--accent);font-weight:600;margin-top:2px;">' + (o.exchange||'').toUpperCase() + ' • ' + (o.bank||'').toUpperCase() + '</div>'
                 + '<div style="font-size:10px;color:var(--muted);">' + o.date + '</div></td>'
                 + '<td style="font-weight:500;">' + rate.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + '</td>'
-                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU',{maximumFractionDigits:(currency === 'BTC' || currency === 'ETH') ? 8 : 4}) + ' <span class="badge-currency ' + badgeClass + '">' + currency + '</span></td>'
+                + '<td style="font-weight:500;">' + safeFloat(o.amount).toLocaleString('ru-RU',{maximumFractionDigits:(currency === 'BTC' || currency === 'ETH') ? 8 : 4}) + ' <span class="badge-currency ' + badgeClass + '">' + (currency === 'TON' ? 'GRAM' : currency) + '</span></td>'
                 + '<td class="amount-cell ' + amountClass + '">' + safeFloat(o.cost).toLocaleString('ru-RU',{minimumFractionDigits:2}) + ' ₽</td>'
                 + '<td style="color:var(--muted);font-size:12px;">' + (totalComm > 0 ? formatMoney(totalComm) + ' ₽' : '0.00 ₽') + '</td>'
                 + '</tr>';

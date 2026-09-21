@@ -32,6 +32,7 @@ from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
 from .models import BankDetail, Exchange, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry, BalanceCorrection
 from .receipt_service import create_or_update_and_send_receipt
+from .currencies import currency_label, normalize_currency
 from zoneinfo import ZoneInfo
 MSK = ZoneInfo('Europe/Moscow')
 from .uvedomlenie_generator import build_uvedomlenie, PERIODS
@@ -265,7 +266,7 @@ def my_orders_list(request):
                 "sum":    truncate(order.cost,   2),
                 "price":  truncate(order.price,  2),
                 "amount": truncate(order.amount, amount_places),
-                "purpose": f"Цифровая валюта {currency}",
+                "purpose": f"Цифровая валюта {currency_label(currency)}",
             }
             result = create_or_update_and_send_receipt(order, receipt_data)
             if result.status == "BLOCKED":
@@ -1930,7 +1931,7 @@ def export_excel_report(request):
     end_date   = request.GET.get('end')
     bank_id    = request.GET.get('bank_id')
     op_type    = request.GET.get('type')
-    currency   = request.GET.get('currency', '').strip().upper()  # '' | 'USDT' | 'TON' | 'BTC' | 'ETH'
+    currency   = normalize_currency(request.GET.get('currency', ''))  # '' | 'USDT' | 'TON' (GRAM) | 'BTC' | 'ETH'
 
     SYSTEM_START = datetime(2026, 2, 1, 0, 0, 0, tzinfo=dt_timezone.utc)
 
@@ -2004,7 +2005,7 @@ def export_excel_report(request):
     ws = wb.active
 
     if currency:
-        ws.title = f"Отчет {currency}"
+        ws.title = f"Отчет {currency_label(currency)}"
     else:
         ws.title = "Отчет"
 
@@ -2014,7 +2015,7 @@ def export_excel_report(request):
     center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
     left_align   = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
-    cv_label = f" ({currency})" if currency else ""
+    cv_label = f" ({currency_label(currency)})" if currency else ""
     ws.merge_cells('A1:M1')
     ws['A1'] = f"Учет приобретенной и проданной цифровой валюты (ЦВ){cv_label}"
     ws['A1'].font      = Font(size=14, bold=True)
@@ -2030,7 +2031,7 @@ def export_excel_report(request):
     ws.append([
         "", "", "", "",
         "Кол-во", "Курс", "Стоимость", "Комиссия банка",
-        "Кол-во", "Курс", "Стоимость", "Комиссия банка", f"Комиссия биржи ({currency or 'USDT'})"
+        "Кол-во", "Курс", "Стоимость", "Комиссия банка", f"Комиссия биржи ({currency_label(currency) if currency else 'USDT'})"
     ])
 
     for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=13):
@@ -2106,9 +2107,9 @@ def export_excel_report(request):
     # =====================================================================
     def _get_cv_name(o):
         if currency:
-            return currency
+            return currency_label(currency)
         if getattr(o, 'currency', '') == 'TON':
-            return 'TON'
+            return currency_label('TON')
         return 'USDT'
 
     def write_order_row(o, idx, is_historical=False):
@@ -2158,7 +2159,7 @@ def export_excel_report(request):
     # Перенос остатка предыдущего месяца
     # =====================================================================
     def write_carry_row(label, prev_ost_row):
-        cv = currency if currency else 'USDT'
+        cv = currency_label(currency) if currency else 'USDT'
         ws.append([
             0, "-", label, cv,
             f"=E{prev_ost_row}",
@@ -2362,7 +2363,7 @@ def export_excel_report(request):
     for k, v in col_widths.items():
         ws.column_dimensions[k].width = v
 
-    currency_suffix = f"_{currency}" if currency else ""
+    currency_suffix = f"_{currency_label(currency)}" if currency else ""
     filename = f"report_{user_id}{currency_suffix}.xlsx"
     response = HttpResponse(
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -4519,7 +4520,7 @@ def export_screenshots_view(request):
     if bank_id and bank_id.isdigit():
         orders = orders.filter(bank_detail_id=int(bank_id))
 
-    currency_param = (request.GET.get('currency') or '').strip().upper()
+    currency_param = normalize_currency(request.GET.get('currency'))
     if currency_param in ('USDT', 'TON', 'BTC', 'ETH'):
         orders = orders.filter(currency=currency_param)
 

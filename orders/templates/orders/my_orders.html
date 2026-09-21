@@ -215,7 +215,7 @@
                     <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
                     <select class="form-select currency-select" name="currency" id="main_currency">
                         <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
-                        <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>TON</option>
+                        <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>GRAM</option>
                         <option value="BTC"  {% if saved_data.currency == 'BTC' %}selected{% endif %}>BTC</option>
                         <option value="ETH"  {% if saved_data.currency == 'ETH' %}selected{% endif %}>ETH</option>
                     </select>
@@ -357,7 +357,7 @@
                 <select class="form-select" name="currency">
                     <option value="">Все</option>
                     <option value="USDT" {% if filter_currency == 'USDT' %}selected{% endif %}>USDT</option>
-                    <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>TON</option>
+                    <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>GRAM</option>
                     <option value="BTC"  {% if filter_currency == 'BTC' %}selected{% endif %}>BTC</option>
                     <option value="ETH"  {% if filter_currency == 'ETH' %}selected{% endif %}>ETH</option>
                 </select>
@@ -395,7 +395,7 @@
                 <td>{% if order.currency == 'BTC' or order.currency == 'ETH' %}{{ order.amount|floatformat:"-8" }}{% else %}{{ order.amount|floatformat:"-4" }}{% endif %}</td>
                 <td>
                     {% if order.currency == 'TON' %}
-                        <span style="color:#3d9af5; font-weight:600; font-size:11px;">TON</span>
+                        <span style="color:#3d9af5; font-weight:600; font-size:11px;">GRAM</span>
                     {% elif order.currency == 'BTC' %}
                         <span style="color:#f7931a; font-weight:600; font-size:11px;">BTC</span>
                     {% elif order.currency == 'ETH' %}
@@ -532,7 +532,7 @@
                                 <input type="text" name="amount" id="modal_amount" class="form-control" required>
                                 <select class="form-select currency-select" name="currency" id="modal_currency">
                                     <option value="USDT">USDT</option>
-                                    <option value="TON">TON</option>
+                                    <option value="TON">GRAM</option>
                                     <option value="BTC">BTC</option>
                                     <option value="ETH">ETH</option>
                                 </select>
