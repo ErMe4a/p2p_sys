@@ -5,7 +5,7 @@ import json
 import re
 import math
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,23 @@ def _truncate(value: float, decimals: int) -> float:
     Усечение до N знаков после запятой БЕЗ округления.
     125.12345678 → _truncate(125.12345678, 3) → 125.123
     79.9259999   → _truncate(79.9259999, 3)   → 79.925
+
+    Считает через Decimal: прежняя версия (floor(x * 10**N) / 10**N) из-за шума
+    чисел с плавающей точкой ошибалась на "круглых" значениях —
+    19.99 давало 19.98, 1.001 давало 1.0 (около 3% значений, сумма чека
+    уходила на копейку ниже).
     """
-    factor = 10 ** decimals
-    return math.floor(float(value) * factor) / factor
+    quantum = Decimal(1).scaleb(-decimals)
+    return float(Decimal(str(value)).quantize(quantum, rounding=ROUND_DOWN))
+
+
+# Множитель количества по монетам: у Эвотора quantity принимает максимум 3
+# знака после запятой, а у дорогих монет количество мельче (0.0034963 BTC).
+# Поэтому по таким монетам количество пробивается в "единицах ×N", а название
+# позиции получает суффикс "*N": 0.0034963 BTC → 349.63, "Цифровая валюта
+# BTC*100000". Сумма чека и итог не меняются, меняется только пара
+# количество/цена за единицу.
+QUANTITY_SCALE = {"BTC": 100000}
 
 
 def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -> dict:
@@ -125,6 +139,12 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     # отклоняется целиком (подтверждено на реальных запросах). Точность
     # всегда 3, независимо от валюты.
     currency_name = getattr(order, "currency", "USDT")
+
+    # Дорогие монеты: количество пробиваем в "единицах ×N" (см. QUANTITY_SCALE).
+    qty_scale = QUANTITY_SCALE.get(str(currency_name).strip().upper(), 1)
+    if qty_scale != 1:
+        raw_quantity = float(Decimal(str(raw_quantity)) * qty_scale)
+
     quantity  = _truncate(raw_quantity,  3)    # кол-во: 125.123 (лимит Evotor)
     total_sum = _truncate(raw_total_sum, 2)    # сумма в руб: 9999.999
 
@@ -139,7 +159,12 @@ def build_receipt_payload_v5(order, user, receipt_data: dict, check_type: str) -
     price = _truncate(total_sum / quantity, 2)
 
     # 7. Позиции
-    item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_name}"
+    if qty_scale != 1:
+        # название всегда со множителем — по нему в чеке видно, что количество
+        # указано в единицах ×N (purpose от формы его бы затёр)
+        item_name = f"Цифровая валюта {str(currency_name).strip().upper()}*{qty_scale}"
+    else:
+        item_name = receipt_data.get("purpose") or f"Цифровая валюта {currency_name}"
 
     items_obj = [{
         "name": item_name[:128],
