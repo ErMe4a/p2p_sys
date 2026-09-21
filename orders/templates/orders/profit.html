@@ -41,6 +41,7 @@
     .summary-card.balance-ton::before  { background:linear-gradient(90deg, #3d9af5, #1a5fb4); }
     .summary-card.balance-btc::before  { background:linear-gradient(90deg, #f7931a, #b45f06); }
     .summary-card.balance-eth::before  { background:linear-gradient(90deg, #8c8cff, #4a4ab8); }
+    .summary-card.balance-usdc::before { background:linear-gradient(90deg, #2775ca, #1a4f8a); }
     .summary-card.balance-all::before  { background:linear-gradient(90deg, #6c8cff, #a855f7); }
     
     .summary-title { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:8px; font-weight: 600;}
@@ -68,6 +69,7 @@
     .badge-ton  { background:rgba(61,154,245,.15); color:var(--ton); }
     .badge-btc  { background:rgba(247,147,26,.15); color:#f7931a; }
     .badge-eth  { background:rgba(140,140,255,.15); color:#8c8cff; }
+    .badge-usdc { background:rgba(39,117,202,.15); color:#2775ca; }
     
     .no-data { text-align:center; padding:40px 20px; color:var(--muted); }
     .period-info { background:rgba(255,193,7,.1); border:1px solid rgba(255,193,7,.2); border-radius:8px; padding:10px 16px; margin-bottom:20px; font-size:13px; color:var(--warn); text-align:center; font-weight: 500;}
@@ -135,6 +137,7 @@
                     <option value="ton">GRAM</option>
                     <option value="btc">BTC</option>
                     <option value="eth">ETH</option>
+                    <option value="usdc">USDC</option>
                 </select>
             </div>
         </div>
@@ -293,6 +296,7 @@
                         <option value="TON">GRAM</option>
                         <option value="BTC">BTC</option>
                         <option value="ETH">ETH</option>
+                        <option value="USDC">USDC</option>
                     </select>
                 </div>
                 <div>
@@ -319,8 +323,8 @@
     let currentStart   = '';
     let currentEnd     = '';
     let currentView    = 'today';
-    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton' | 'btc' | 'eth'
-    const CUR_COLORS = { usdt:'var(--ok)', ton:'var(--ton)', btc:'#f7931a', eth:'#8c8cff' };
+    let currentCurrency = 'all'; // 'all' | 'usdt' | 'ton' | 'btc' | 'eth' | 'usdc'
+    const CUR_COLORS = { usdt:'var(--ok)', ton:'var(--ton)', btc:'#f7931a', eth:'#8c8cff', usdc:'#2775ca' };
     let lastTurnover   = null;   // кэш get_turnover
     let lastMonths     = null;   // кэш get_months
 
@@ -364,7 +368,7 @@
     function pick(data, allKey, usdtKey, tonKey) {
         if (currentCurrency === 'usdt') return safeFloat(data[usdtKey]);
         if (currentCurrency === 'ton')  return safeFloat(data[tonKey]);
-        if (currentCurrency === 'btc' || currentCurrency === 'eth') {
+        if (['btc', 'eth', 'usdc'].indexOf(currentCurrency) >= 0) {
             // ключи вида usdt_buy_sum -> btc_buy_sum / eth_buy_sum
             return safeFloat(data[currentCurrency + usdtKey.substring(4)]);
         }
@@ -394,7 +398,7 @@
             value.textContent = usdt.toLocaleString('ru-RU', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' USDT';
             sub.textContent   = usdtPrice ? ('по ' + formatRate(usdtPrice) + ' ₽') : '';
             hint.textContent  = 'Глобальный остаток USDT';
-        } else if (currentCurrency === 'btc' || currentCurrency === 'eth') {
+        } else if (['btc', 'eth', 'usdc'].indexOf(currentCurrency) >= 0) {
             const cur = currentCurrency, CUR = cur.toUpperCase();
             const bal = safeFloat(data[cur + '_balance']);
             const pr  = safeFloat(data[cur + '_avg_price']);
@@ -420,7 +424,7 @@
                           + (usdtPrice ? ' <span style="color:var(--muted);">по ' + formatRate(usdtPrice) + ' ₽</span>' : '') + '</div>'
                           + '<div style="color:var(--ton);">' + ton.toLocaleString('ru-RU', {maximumFractionDigits:2}) + ' GRAM'
                           + (tonPrice ? ' <span style="color:var(--muted);">по ' + formatRate(tonPrice) + ' ₽</span>' : '') + '</div>';
-            ['btc','eth'].forEach(function(cx) {
+            ['btc','eth','usdc'].forEach(function(cx) {
                 const b = safeFloat(data[cx + '_balance']);
                 if (!b) return;
                 const pr = safeFloat(data[cx + '_avg_price']);
@@ -704,14 +708,15 @@
             var remTon     = safeFloat(m.ton_remainder_qty);
             var remBtc     = safeFloat(m.btc_remainder);
             var remEth     = safeFloat(m.eth_remainder);
+            var remUsdc    = safeFloat(m.usdc_remainder);
             var remColor   = remUsdt >= 0 ? '#6c8cff' : 'var(--danger)';
             var tonColor   = remTon  >= 0 ? 'var(--ton)' : 'var(--danger)';
 
             var balanceCell = '<td>';
             if (cur === 'ton') {
                 balanceCell += '<div style="font-weight:600;color:' + tonColor + ';">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' GRAM</div>';
-            } else if (cur === 'btc' || cur === 'eth') {
-                var remX = cur === 'btc' ? remBtc : remEth;
+            } else if (['btc', 'eth', 'usdc'].indexOf(cur) >= 0) {
+                var remX = ({btc: remBtc, eth: remEth, usdc: remUsdc})[cur];
                 balanceCell += '<div style="font-weight:600;color:' + (remX >= 0 ? CUR_COLORS[cur] : 'var(--danger)') + ';">' + remX.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ' + cur.toUpperCase() + '</div>';
             } else if (cur === 'usdt') {
                 balanceCell += '<div style="font-weight:600;color:' + remColor + ';">' + remUsdt.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDT</div>';
@@ -720,6 +725,7 @@
                 if (remTon !== 0) balanceCell += '<div style="font-weight:600;color:' + tonColor + ';font-size:12px;">' + remTon.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' GRAM</div>';
                 if (remBtc !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.btc + ';font-size:12px;">' + remBtc.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' BTC</div>';
                 if (remEth !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.eth + ';font-size:12px;">' + remEth.toLocaleString('ru-RU',{maximumFractionDigits:8}) + ' ETH</div>';
+                if (remUsdc !== 0) balanceCell += '<div style="font-weight:600;color:' + CUR_COLORS.usdc + ';font-size:12px;">' + remUsdc.toLocaleString('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2}) + ' USDC</div>';
             }
             balanceCell += '<div style="font-size:10px;color:var(--muted);">На конец месяца</div></td>';
 
@@ -843,7 +849,7 @@
         tbody.innerHTML = filtered.map(function(o) {
             var rate       = safeFloat(o.price) || (safeFloat(o.amount) > 0 ? safeFloat(o.cost)/safeFloat(o.amount) : 0);
             var currency   = o.currency || 'USDT';
-            var badgeClass = currency === 'TON' ? 'badge-ton' : currency === 'BTC' ? 'badge-btc' : currency === 'ETH' ? 'badge-eth' : 'badge-usdt';
+            var badgeClass = currency === 'TON' ? 'badge-ton' : currency === 'BTC' ? 'badge-btc' : currency === 'ETH' ? 'badge-eth' : currency === 'USDC' ? 'badge-usdc' : 'badge-usdt';
             var totalComm  = safeFloat(o.bank_comm) + safeFloat(o.exchange_comm);
             return '<tr>'
                 + '<td><div style="font-family:monospace;font-size:12px;">' + o.external_id + '</div>'

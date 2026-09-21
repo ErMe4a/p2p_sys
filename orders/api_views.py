@@ -183,9 +183,9 @@ def order(request):
     # ИСПРАВЛЕНО: раньше currency вообще не читалась из payload — все ордера
     # с расширения молча получали дефолт модели (USDT), независимо от того,
     # что реально выбрано в форме (при ручном редактировании).
-    from .currencies import normalize_currency
+    from .currencies import normalize_currency, SUPPORTED_CURRENCIES
     currency = normalize_currency(data.get("currency"))   # GRAM -> TON
-    if currency not in ("USDT", "TON", "BTC", "ETH"):
+    if currency not in SUPPORTED_CURRENCIES:
         currency = None  # не трогаем текущее значение при обновлении / дефолт модели при создании
 
     # ── Защита от ошибочного ввода комиссии (опечатки типа 50 вместо 0.5) ──

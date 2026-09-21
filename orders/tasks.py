@@ -636,7 +636,7 @@ def recompute_yearly_profit_summary_task(self, year=None):
             expenses_by_user_month, manuals_by_user_month,
         )
 
-        for currency in ('all', 'usdt', 'ton', 'btc', 'eth'):
+        for currency in ('all', 'usdt', 'ton', 'btc', 'eth', 'usdc'):
             MonthlySystemProfitSummary.objects.update_or_create(
                 year=year, month=month, currency=currency,
                 defaults={

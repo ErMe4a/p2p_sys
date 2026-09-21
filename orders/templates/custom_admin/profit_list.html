@@ -85,6 +85,7 @@
     .currency-badge-ton  { background: rgba(61,154,245,.15);  color: #3d9af5; border: 1px solid rgba(61,154,245,.35); }
     .currency-badge-btc  { background: rgba(247,147,26,.15);  color: #f7931a; border: 1px solid rgba(247,147,26,.35); }
     .currency-badge-eth  { background: rgba(140,140,255,.15); color: #8c8cff; border: 1px solid rgba(140,140,255,.35); }
+    .currency-badge-usdc { background: rgba(39,117,202,.15);  color: #2775ca; border: 1px solid rgba(39,117,202,.35); }
 
     .sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     .sortable:hover { color: var(--text-main); }
@@ -141,6 +142,7 @@
                 <option value="ton">GRAM</option>
                 <option value="btc">BTC</option>
                 <option value="eth">ETH</option>
+                <option value="usdc">USDC</option>
                 <option value="all">Все</option>
             </select>
 
@@ -283,6 +285,16 @@
                     data-eth-ndfl="{{ stat.eth_ndfl }}"
                     data-eth-share="{{ stat.eth_share }}"
                     data-eth-net="{{ stat.eth_net }}"
+
+                    data-usdc-balance="{{ stat.usdc.remainder_qty_display }}"
+                    data-usdc-sell="{{ stat.usdc.month_sell_cost }}"
+                    data-usdc-buy="{{ stat.usdc.month_buy_cost }}"
+                    data-usdc-gross="{{ stat.usdc_gross }}"
+                    data-usdc-exch="{{ stat.usdc_exch_comm_rub }}"
+                    data-usdc-bank="{{ stat.usdc_bank_comm }}"
+                    data-usdc-ndfl="{{ stat.usdc_ndfl }}"
+                    data-usdc-share="{{ stat.usdc_share }}"
+                    data-usdc-net="{{ stat.usdc_net }}"
                 >
                     <!-- Пользователь -->
                     <td>
@@ -316,6 +328,12 @@
                             <span class="coin-qty">{{ stat.eth.remainder_qty_display|floatformat:"-8" }}</span>&nbsp;ETH
                             {% if stat.eth.avg_price %}
                                 <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.eth_avg_price_ru }} ₽</span>
+                            {% endif %}
+                        </div>
+                        <div class="fw-bold row-balance-usdc" style="font-size: 0.88rem; color: #2775ca;">
+                            <span class="coin-qty">{{ stat.usdc.remainder_qty_display|floatformat:"-4" }}</span>&nbsp;USDC
+                            {% if stat.usdc.avg_price %}
+                                <span style="font-size:0.72rem; color: var(--text-muted); font-weight:400;">по {{ stat.usdc_avg_price_ru }} ₽</span>
                             {% endif %}
                         </div>
                     </td>
@@ -453,7 +471,7 @@
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             if (row.style.display === 'none') return;
             var d = row.dataset;
-            var cv = currentCurrency;  // 'usdt' | 'ton' | 'btc' | 'eth' | 'all' — имена ключей dataset совпадают
+            var cv = currentCurrency;  // 'usdt' | 'ton' | 'btc' | 'eth' | 'usdc' | 'all' — имена ключей dataset совпадают
             sell  += parseFloat(d[cv + 'Sell']  || 0); buy   += parseFloat(d[cv + 'Buy']   || 0);
             gross += parseFloat(d[cv + 'Gross'] || 0); share += parseFloat(d[cv + 'Share'] || 0); net += parseFloat(d[cv + 'Net'] || 0);
         });
@@ -556,6 +574,7 @@
                   + (m.ton_balance !== 0 ? '<div class="fw-bold" style="font-size:0.88rem;color:#3d9af5;">' + fmt(m.ton_balance) + '&nbsp;GRAM</div>' : '')
                   + (m.btc_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#f7931a;">' + m.btc_balance + '&nbsp;BTC</div>' : '')
                   + (m.eth_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#8c8cff;">' + m.eth_balance + '&nbsp;ETH</div>' : '')
+                  + (m.usdc_balance ? '<div class="fw-bold" style="font-size:0.88rem;color:#2775ca;">' + m.usdc_balance + '&nbsp;USDC</div>' : '')
                   + '<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">На конец месяца</div></td>';
 
             // Движение
@@ -611,7 +630,8 @@
 
         var badge = document.getElementById('currencyBadge');
         var CUR_STYLE = { usdt: ['currency-badge-usdt', 'USDT'], ton: ['currency-badge-ton', 'GRAM'],
-                          btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'] };
+                          btc: ['currency-badge-btc', 'BTC'],   eth: ['currency-badge-eth', 'ETH'],
+                          usdc: ['currency-badge-usdc', 'USDC'] };
         if (CUR_STYLE[val]) { badge.className = 'currency-badge ' + CUR_STYLE[val][0]; badge.textContent = CUR_STYLE[val][1]; }
         else                { badge.className = 'currency-badge currency-badge-all';  badge.textContent = 'ВСЕ'; }
 
@@ -620,15 +640,15 @@
             thBal.childNodes[0].nodeValue = CUR_STYLE[val] ? ('Остаток (' + CUR_STYLE[val][1] + ')') : 'Остаток';
         }
 
-        var COLORS = { ton: '#3d9af5', btc: '#f7931a', eth: '#8c8cff' };
+        var COLORS = { ton: '#3d9af5', btc: '#f7931a', eth: '#8c8cff', usdc: '#2775ca' };
         document.querySelectorAll('#statsTableBody tr').forEach(function(row) {
             var d = row.dataset;
             var usdtBal   = parseFloat(d.usdtBalance || 0);
             var usdtBalEl = row.querySelector('.row-balance-usdt');
             if (!usdtBalEl) return;
 
-            // Остаток: одна валюта — её строка; "Все" — USDT и TON всегда, BTC/ETH только ненулевые
-            ['usdt', 'ton', 'btc', 'eth'].forEach(function(c) {
+            // Остаток: одна валюта — её строка; "Все" — USDT и TON всегда, остальные только ненулевые
+            ['usdt', 'ton', 'btc', 'eth', 'usdc'].forEach(function(c) {
                 var el = row.querySelector('.row-balance-' + c);
                 if (!el) return;
                 var bal = parseFloat(d[c + 'Balance'] || 0);

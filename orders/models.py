@@ -307,7 +307,7 @@ class MonthlySystemProfitSummary(models.Model):
     модель — просто персистентный кэш её результата. Оборот (buy/sell) в
     кэш не входит — он дешёвый, страница считает его live.
     """
-    CURRENCY_CHOICES = [('all', 'Все'), ('usdt', 'USDT'), ('ton', 'TON'), ('btc', 'BTC'), ('eth', 'ETH')]
+    CURRENCY_CHOICES = [('all', 'Все'), ('usdt', 'USDT'), ('ton', 'TON'), ('btc', 'BTC'), ('eth', 'ETH'), ('usdc', 'USDC')]
 
     year = models.IntegerField()
     month = models.IntegerField()

@@ -32,7 +32,7 @@ from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
 from .models import BankDetail, Exchange, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry, BalanceCorrection
 from .receipt_service import create_or_update_and_send_receipt
-from .currencies import currency_label, normalize_currency
+from .currencies import currency_label, normalize_currency, SUPPORTED_CURRENCIES
 from zoneinfo import ZoneInfo
 MSK = ZoneInfo('Europe/Moscow')
 from .uvedomlenie_generator import build_uvedomlenie, PERIODS
@@ -256,7 +256,7 @@ def my_orders_list(request):
             if not contact_email:
                 contact_email = request.user.email
             currency = request.POST.get('currency', 'USDT').strip().upper()
-            if currency not in ('USDT', 'TON', 'BTC', 'ETH'):
+            if currency not in SUPPORTED_CURRENCIES:
                 currency = 'USDT'
             # У BTC нужна точность до сатоши (8 знаков) — 3, как для USDT/TON,
             # обнулили бы небольшие суммы (0.00034521 BTC -> 0.000).
@@ -394,7 +394,7 @@ def edit_order(request, order_id):
 
         # 3. Валюта (USDT / TON / BTC / ETH)
         currency = request.POST.get('currency', '').strip().upper()
-        if currency in ('USDT', 'TON', 'BTC', 'ETH'):
+        if currency in SUPPORTED_CURRENCIES:
             order.currency = currency
 
         # 4. Дата
@@ -700,7 +700,7 @@ def user_profit_view(request):
     # через тот же LIFO-расчёт, что и обычные ордера (и на этой странице,
     # и в Excel-отчёте), без дублирования логики в отдельном месте.
     # BalanceCorrection хранит только "назначение" и даёт удобный список/удаление.
-    BALANCE_CORRECTION_CURRENCIES = ('USDT', 'TON', 'BTC', 'ETH')
+    BALANCE_CORRECTION_CURRENCIES = SUPPORTED_CURRENCIES
 
     if action == 'get_balance_corrections':
         corrections = (
@@ -1017,7 +1017,7 @@ def user_profit_view(request):
             # ── по каждой валюте: usdt_*, ton_*, btc_*, eth_* ─────
             for c in PROFIT_CURRENCIES:
                 # BTC/ETH — количество монеты мелкое (0.0035), 2 знака обнулили бы его
-                rem_places = 2 if c in ('usdt', 'ton') else 8
+                rem_places = 2 if c in ('usdt', 'ton', 'usdc') else 8
                 row[f'{c}_remainder'] = round(cres[c]['remainder_qty_display'], rem_places)
                 row[f'{c}_buy_cost']  = round(cres[c]['month_buy_cost'],  2)
                 row[f'{c}_sell_cost'] = round(cres[c]['month_sell_cost'], 2)
@@ -1214,7 +1214,7 @@ def user_profit_view(request):
             payload[f'{c}_ndfl']      = r[c]['ndfl']
             payload[f'{c}_share']     = r[c]['share']
             payload[f'{c}_net']       = r[c]['net']
-            payload[f'{c}_balance']   = round(balance[c], 4 if c in ('usdt', 'ton') else 8)
+            payload[f'{c}_balance']   = round(balance[c], 4 if c in ('usdt', 'ton', 'usdc') else 8)
             payload[f'{c}_avg_price'] = round(cres[c].get('avg_price', 0) or 0, 4)
         return JsonResponse(payload)
 
@@ -1967,7 +1967,7 @@ def export_excel_report(request):
     # Один лист = одна монета: LIFO-остаток считается по одной валюте, смешивать
     # монеты в одном листе нельзя. Без фильтра — как и раньше USDT + TON
     # (BTC/ETH выгружаются только явным выбором валюты).
-    if currency in ('USDT', 'TON', 'BTC', 'ETH'):
+    if currency in SUPPORTED_CURRENCIES:
         orders = orders.filter(currency=currency)
     else:
         currency = ''
@@ -2645,7 +2645,7 @@ def _calc_currency(user, month_start, month_end,
 
 # Валюты, по которым система считает прибыль. Ключи — в нижнем регистре
 # (так они выглядят в JSON/кэше: usdt_gross, btc_net...), Order.currency — в верхнем.
-PROFIT_CURRENCIES = ('usdt', 'ton', 'btc', 'eth')
+PROFIT_CURRENCIES = ('usdt', 'ton', 'btc', 'eth', 'usdc')
 
 
 def _combine_currency_results(by_cur):
@@ -3462,7 +3462,7 @@ def _build_user_month_stat(u, calc, ytd_base, year, month, month_start, month_en
         stat[f'{c}_ndfl']        = ndfl_c[c]
         stat[f'{c}_share']       = share_c[c]
         stat[f'{c}_net']         = net_c[c]
-        if c in ('btc', 'eth'):
+        if c not in ('usdt', 'ton'):
             stat[f'{c}_bank_comm']     = bank_comm_c[c]
             stat[f'{c}_exch_comm_rub'] = exch_comm_rub_c[c]
     return stat
@@ -3706,7 +3706,7 @@ def admin_profit_view(request):
             stat['user'] = u
             # Строки кэша, посчитанные до появления BTC/ETH, этих ключей не
             # содержат — подставляем нули, пока фоновая задача не пересчитает.
-            for _c in ('btc', 'eth'):
+            for _c in ('btc', 'eth', 'usdc'):
                 stat.setdefault(_c, dict(_EMPTY_CURRENCY_RESULT))
                 for _k in ('gross', 'ndfl', 'share', 'net'):
                     stat.setdefault(f'{_c}_{_k}', 0.0)
@@ -3791,6 +3791,11 @@ def admin_profit_view(request):
         'eth_gross':  sum(s['eth_gross']               for s in user_stats),
         'eth_share':  sum(s['eth_share']               for s in user_stats),
         'eth_net':    sum(s['eth_net']                 for s in user_stats),
+        'usdc_sell':  sum(s['usdc']['month_sell_cost'] for s in user_stats),
+        'usdc_buy':   sum(s['usdc']['month_buy_cost']  for s in user_stats),
+        'usdc_gross': sum(s['usdc_gross']              for s in user_stats),
+        'usdc_share': sum(s['usdc_share']              for s in user_stats),
+        'usdc_net':   sum(s['usdc_net']                for s in user_stats),
     }
 
     months_list = [
@@ -4049,6 +4054,7 @@ def api_user_yearly_profit(request):
             'ton_balance':   round(ton['remainder_qty_display'], 4),
             'btc_balance':   round(calc['btc']['remainder_qty_display'], 8),
             'eth_balance':   round(calc['eth']['remainder_qty_display'], 8),
+            'usdc_balance':  round(calc['usdc']['remainder_qty_display'], 4),
         })
 
         total_summary['sell']  += final_sell_cost
@@ -4521,7 +4527,7 @@ def export_screenshots_view(request):
         orders = orders.filter(bank_detail_id=int(bank_id))
 
     currency_param = normalize_currency(request.GET.get('currency'))
-    if currency_param in ('USDT', 'TON', 'BTC', 'ETH'):
+    if currency_param in SUPPORTED_CURRENCIES:
         orders = orders.filter(currency=currency_param)
 
     orders_list = list(orders)

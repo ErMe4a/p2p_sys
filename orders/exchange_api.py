@@ -43,14 +43,14 @@ MEXC_IP_WHITELIST_CODE = 700006
 # бралась из того, что прислало расширение (то есть по факту — что выбрал
 # трейдер руками). Теперь API биржи авторитетен и для валюты тоже, как уже
 # давно авторитетен для price/amount/cost/типа сделки.
-from .currencies import normalize_currency
+from .currencies import normalize_currency, SUPPORTED_CURRENCIES
 
-KNOWN_CURRENCIES = {"USDT", "TON", "BTC", "ETH"}
+KNOWN_CURRENCIES = set(SUPPORTED_CURRENCIES)
 
 
 def _map_known_currency(raw_token, exchange_label: str, order_id: str, username: str):
     """
-    USDT/TON/BTC/ETH — подставляем как есть. Что-то ещё (например SOL на Bybit
+    USDT/USDC/TON/BTC/ETH — подставляем как есть. Что-то ещё (например SOL на Bybit
     P2P) — не трогаем валюту ордера вообще (оставляем то, что прислало
     расширение), только логируем — осознанное решение, чтобы не подставить
     в отчётность валюту, которую система не умеет считать.

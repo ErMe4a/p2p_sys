@@ -218,6 +218,7 @@
                         <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>GRAM</option>
                         <option value="BTC"  {% if saved_data.currency == 'BTC' %}selected{% endif %}>BTC</option>
                         <option value="ETH"  {% if saved_data.currency == 'ETH' %}selected{% endif %}>ETH</option>
+                        <option value="USDC" {% if saved_data.currency == 'USDC' %}selected{% endif %}>USDC</option>
                     </select>
                 </div>
             </div>
@@ -360,6 +361,7 @@
                     <option value="TON"  {% if filter_currency == 'TON' %}selected{% endif %}>GRAM</option>
                     <option value="BTC"  {% if filter_currency == 'BTC' %}selected{% endif %}>BTC</option>
                     <option value="ETH"  {% if filter_currency == 'ETH' %}selected{% endif %}>ETH</option>
+                    <option value="USDC" {% if filter_currency == 'USDC' %}selected{% endif %}>USDC</option>
                 </select>
             </div>
             <div class="col-md-1">
@@ -400,6 +402,8 @@
                         <span style="color:#f7931a; font-weight:600; font-size:11px;">BTC</span>
                     {% elif order.currency == 'ETH' %}
                         <span style="color:#8c8cff; font-weight:600; font-size:11px;">ETH</span>
+                    {% elif order.currency == 'USDC' %}
+                        <span style="color:#2775ca; font-weight:600; font-size:11px;">USDC</span>
                     {% else %}
                         <span style="color:var(--success); font-weight:600; font-size:11px;">USDT</span>
                     {% endif %}
@@ -535,6 +539,7 @@
                                     <option value="TON">GRAM</option>
                                     <option value="BTC">BTC</option>
                                     <option value="ETH">ETH</option>
+                                    <option value="USDC">USDC</option>
                                 </select>
                             </div>
                         </div>
