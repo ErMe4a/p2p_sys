@@ -433,6 +433,11 @@ def order(request):
                     external_id, exchange_name, float(o.price), float(o.cost), float(o.amount),
                 )
                 receipt_debug = create_or_update_and_send_receipt(o, verified_receipt)
+                # Первая попытка (синхронно, в запросе расширения) не удалась из-за
+                # сбоя Эвотора — раньше чек терялся без единого повтора.
+                from .tasks import retry_manual_receipt, _is_retryable_receipt_error
+                if _is_retryable_receipt_error(receipt_debug):
+                    retry_manual_receipt.apply_async(args=[o.id], countdown=60, queue="receipt")
 
     return Response({
         "success": True,

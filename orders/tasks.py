@@ -293,7 +293,18 @@ def retry_blocked_orders_task(self, user_id: int = None):
     return requeued
 
 
-def _try_send_receipt(order: Order):
+def _is_retryable_receipt_error(result) -> bool:
+    """
+    True, если чек не ушёл из-за временного сбоя (таймаут/ошибка Эвотора) и
+    попытку имеет смысл повторить. Постоянные причины (не заполнены настройки
+    кассы) повторять бессмысленно.
+    """
+    if getattr(result, "status", None) != "ERROR":
+        return False
+    return not str(getattr(result, "error_text", "") or "").startswith("Не заполнены настройки")
+
+
+def _try_send_receipt(order: Order, schedule_retry: bool = True):
     """
     Пробивает чек если есть contact и ненулевая сумма.
     Чек уже пробитый не трогаем.
@@ -363,6 +374,11 @@ def _try_send_receipt(order: Order):
             getattr(result, "status", None),
             getattr(result, "evotor_uuid", None),
         )
+        # Сбой Эвотора (таймаут и т.п.) раньше терял чек навсегда — теперь
+        # ставим автоповтор. retry_manual_receipt сам себя повторяет, поэтому
+        # из него сюда приходят с schedule_retry=False (иначе задачи плодились бы).
+        if schedule_retry and _is_retryable_receipt_error(result):
+            retry_manual_receipt.apply_async(args=[order.id], countdown=60, queue="receipt")
     except Exception as e:
         logger.error("_try_send_receipt: Order %d — ошибка: %s", order.id, e)
 
@@ -375,9 +391,10 @@ MANUAL_RECEIPT_MAX_RETRIES = len(MANUAL_RECEIPT_RETRY_SCHEDULE) + 24  # +24ч п
 @shared_task(bind=True, max_retries=MANUAL_RECEIPT_MAX_RETRIES, queue="receipt")
 def retry_manual_receipt(self, order_id: int):
     """
-    Повтор отправки чека для ордеров, созданных через ручную форму
-    "Мои ордеры" (is_manual=True), если самая первая попытка (внутри
-    my_orders_list, синхронно) не удалась (сбой/таймаут Эвотора).
+    Повтор отправки чека, если первая попытка не удалась из-за сбоя/таймаута
+    Эвотора: для ордеров ручной формы "Мои ордеры" (is_manual=True), а также
+    для ордеров от расширения/верификации по API (is_verified=True) — везде,
+    где чек запрашивали (в order.receipt сохранён contact), но он не ушёл.
 
     В отличие от verify_and_receipt_later не ждёт подтверждения биржевым
     API — is_manual=True уже достаточное основание (см. барьер в
@@ -397,7 +414,7 @@ def retry_manual_receipt(self, order_id: int):
         logger.info("retry_manual_receipt: Order %d — чеки по %s закрыты, повторы не нужны.", order_id, o.currency)
         return
 
-    _try_send_receipt(o)
+    _try_send_receipt(o, schedule_retry=False)
 
     o.refresh_from_db(fields=["receipt"])
     if o.receipt and isinstance(o.receipt, dict) and o.receipt.get("uuid"):
