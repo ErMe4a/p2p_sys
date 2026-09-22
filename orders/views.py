@@ -2059,7 +2059,7 @@ def export_excel_report(request):
         abs_qty = abs(remainder_qty)
 
         if abs_qty == 0:
-            return 0.0
+            return 0.0, 0.0
 
         # Только BUY ордера текущего месяца — от последнего к первому.
         # qty <= 0 пропускаем — это не реальная покупка (например, строка
@@ -2083,7 +2083,7 @@ def export_excel_report(request):
                 buys.append((abs(carry_qty), carry_price))
 
         if not buys:
-            return 0.0
+            return 0.0, 0.0
 
         total_cost = 0.0
         need = abs_qty
@@ -2100,7 +2100,16 @@ def export_excel_report(request):
             last_price = buys[-1][1]
             total_cost += need * last_price
 
-        return round(total_cost / abs_qty, 4) if abs_qty > 0 else 0.0
+        # Возвращаем и округлённый курс (для колонки "Курс" — просто для
+        # чтения), и точную себестоимость total_cost. ИСПРАВЛЕНО: раньше
+        # себестоимость остатка в Excel пересчитывалась формулой Кол-во×Курс
+        # из УЖЕ округлённого до 4 знаков курса — при дорогих монетах (BTC,
+        # курс ~6.6 млн ₽) округление курса даёт остаточную погрешность вида
+        # 1.05E-07 в "Прибыли" (видна только в scientific notation, реальных
+        # денег не теряет, но выглядит как ошибка). total_cost — точная сумма
+        # без этого промежуточного округления, ей и считаем "Остаток".
+        price = round(total_cost / abs_qty, 4) if abs_qty > 0 else 0.0
+        return price, total_cost
 
     # =====================================================================
     # Запись строки ордера
@@ -2203,18 +2212,28 @@ def export_excel_report(request):
             )
             carry_qty  = float(prev_carry[0]) if prev_carry else 0.0
             remainder_qty = total_buy_qty + carry_qty - total_sell_qty - total_exch
-            lifo_price    = _calc_lifo_price(month_orders_list, remainder_qty, prev_carry=prev_carry)
+            lifo_price, remainder_cost_abs = _calc_lifo_price(month_orders_list, remainder_qty, prev_carry=prev_carry)
         else:
             lifo_price    = None
             remainder_qty = None
+            remainder_cost_abs = None
         # ──────────────────────────────────────────────────────────────
 
         ost = ws.max_row + 1
+        # ИСПРАВЛЕНО: "Стоимость" остатка раньше считалась формулой Excel
+        # Кол-во×Курс, где Курс — уже округлённый до 4 знаков lifo_price.
+        # При дорогих монетах (BTC) это давало остаточную погрешность в копейки
+        # десятимиллионных долей рубля (видна как 1.05E-07 в "Прибыли"). Пишем
+        # точную себестоимость литералом — без промежуточного округления курса.
+        if remainder_cost_abs is not None:
+            remainder_cost_value = round(remainder_cost_abs, 2) if remainder_qty >= 0 else -round(remainder_cost_abs, 2)
+        else:
+            remainder_cost_value = f"=E{ost}*F{ost}"
         ws.append([
             f"Остаток (нереализованная ЦВ){label_suffix}:", "", "", "",
             f"=E{tr}-I{tr}-M{tr}",
             lifo_price if lifo_price is not None else f"=IFERROR(G{tr}/E{tr},0)",
-            f"=E{ost}*F{ost}",
+            remainder_cost_value,
             0, "", "", "", "", ""
         ])
         ost = ws.max_row
