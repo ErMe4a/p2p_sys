@@ -20,6 +20,11 @@
 <body>
     <div class="login-card">
         <div class="login-title">Вход</div>
+        {% if messages %}
+            {% for message in messages %}
+                <div class="error-msg">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
         <form method="post">
             {% csrf_token %}
             <input type="text" name="username" class="form-control" placeholder="Логин" required>
