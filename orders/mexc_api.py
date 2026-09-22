@@ -257,7 +257,7 @@ def _fetch_page(user, page: int, start_time: int, end_time: int):
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=30, verify=False)
+        response = requests.get(url, headers=headers, timeout=30)
         data = response.json()
 
         code = data.get("code")

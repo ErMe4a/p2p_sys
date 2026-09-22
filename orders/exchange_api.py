@@ -215,7 +215,7 @@ def _get_mexc_order(user, order_id: str, order_date: datetime = None) -> dict | 
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
 
-        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        resp = requests.get(url, headers=headers, timeout=15)
         data = resp.json()
         code = data.get("code")
 
@@ -359,7 +359,7 @@ def _get_mexc_side_via_pagination(user, order_id: str, order_date: datetime = No
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             }
 
-            resp = requests.get(url, headers=headers, timeout=15, verify=False)
+            resp = requests.get(url, headers=headers, timeout=15)
             data = resp.json()
 
             if data.get("code") != 0:
@@ -438,7 +438,7 @@ def probe_mexc_key(user) -> bool:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         }
 
-        resp = requests.get(url, headers=headers, timeout=15, verify=False)
+        resp = requests.get(url, headers=headers, timeout=15)
         data = resp.json()
         code = data.get("code")
 
