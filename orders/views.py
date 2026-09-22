@@ -2395,8 +2395,14 @@ def admin_login(request):
     """Вход в админку"""
     if request.user.is_authenticated and request.user.is_superuser:
         return redirect('admin_users')
-    
+
     if request.method == 'POST':
+        from .auth_backends import is_locked_out
+        posted_login = request.POST.get('username', '')
+        if is_locked_out(request, posted_login):
+            messages.error(request, 'Слишком много неверных попыток входа. Попробуйте позже.')
+            return render(request, 'custom_admin/login.html', {'form': AuthenticationForm()})
+
         form = AuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()

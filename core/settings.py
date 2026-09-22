@@ -94,6 +94,11 @@ DATABASES = {
 # ------------------------------------------------------------------------------
 AUTH_USER_MODEL = 'orders.User'
 
+# Защита от перебора пароля (orders/auth_backends.py) — единая точка для
+# всех входов (/login/, /p2p-admin/login/, /admin/, /api/auth/login), см.
+# докстринг модуля. Заменяет собой implicit-дефолт ['...ModelBackend'].
+AUTHENTICATION_BACKENDS = ['orders.auth_backends.LockoutModelBackend']
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -176,6 +181,19 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = TIME_ZONE  # <-- ДОБАВЛЕНО ДЛЯ СИНХРОНИЗАЦИИ ВРЕМЕНИ
+
+# ------------------------------------------------------------------------------
+# Кэш — тот же Redis, что и Celery-брокер, но отдельная база (индекс 1), чтобы
+# не пересекаться с очередями. Нужен для счётчика неудачных попыток входа
+# (orders/auth_backends.py) — он должен быть ОБЩИМ для всех процессов
+# gunicorn, а не "в памяти" каждого воркера по отдельности.
+# ------------------------------------------------------------------------------
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': env('CACHE_REDIS_URL', default='redis://127.0.0.1:6379/1'),
+    }
+}
 
 # ------------------------------------------------------------------------------
 # Other settings

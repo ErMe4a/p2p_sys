@@ -47,8 +47,22 @@ def get_exchange_name(id_input):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def auth_login(request):
+    from .auth_backends import is_locked_out
+
+    login_value = request.data.get("login")
+
+    # ИСПРАВЛЕНО: раньше request сюда не передавался — LockoutModelBackend
+    # не видел IP (client_ip(None) -> "unknown"), защита от перебора пароля
+    # для этой конкретной точки входа (вход расширения) не работала.
+    if is_locked_out(request._request if hasattr(request, "_request") else request, login_value):
+        return Response(
+            {"message": "Слишком много неверных попыток входа. Попробуйте позже."},
+            status=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
     user = authenticate(
-        username=request.data.get("login"),
+        request=request,
+        username=login_value,
         password=request.data.get("password"),
     )
     if not user:
