@@ -202,17 +202,17 @@
 
         <div class="row mb-3">
             <div class="col-12">
-                <input type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
+                <input autocomplete="off" type="text" name="external_id" class="form-control" placeholder="Номер ордера" required>
             </div>
         </div>
 
         <div class="row g-3 mb-3">
             <div class="col-md-2">
-                <input type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
+                <input autocomplete="off" type="text" name="price" id="main_price" class="form-control" placeholder="Курс" required>
             </div>
             <div class="col-md-2">
                 <div class="commission-group">
-                    <input type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
+                    <input autocomplete="off" type="text" name="amount" id="main_amount" class="form-control" placeholder="Количество" required>
                     <select class="form-select currency-select" name="currency" id="main_currency">
                         <option value="USDT" {% if saved_data.currency == 'USDT' or not saved_data.currency %}selected{% endif %}>USDT</option>
                         <option value="TON"  {% if saved_data.currency == 'TON' %}selected{% endif %}>GRAM</option>
@@ -223,7 +223,7 @@
                 </div>
             </div>
             <div class="col-md-2">
-                <input type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
+                <input autocomplete="off" type="text" name="cost" id="main_cost" class="form-control" placeholder="Стоимость" required>
             </div>
             <div class="col-md-3">
                 <select class="form-select" name="operation_type">
@@ -528,12 +528,12 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Курс</label>
-                            <input type="text" name="price" id="modal_price" class="form-control" required>
+                            <input autocomplete="off" type="text" name="price" id="modal_price" class="form-control" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Количество</label>
                             <div class="commission-group">
-                                <input type="text" name="amount" id="modal_amount" class="form-control" required>
+                                <input autocomplete="off" type="text" name="amount" id="modal_amount" class="form-control" required>
                                 <select class="form-select currency-select" name="currency" id="modal_currency">
                                     <option value="USDT">USDT</option>
                                     <option value="TON">GRAM</option>
@@ -545,7 +545,7 @@
                         </div>
                         <div class="col-12">
                             <label class="form-label">Стоимость</label>
-                            <input type="text" name="cost" id="modal_cost" class="form-control" required>
+                            <input autocomplete="off" type="text" name="cost" id="modal_cost" class="form-control" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Комиссия</label>
@@ -559,7 +559,7 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Номер ордера</label>
-                            <input type="text" name="external_id" id="modal_ext_id" class="form-control" required>
+                            <input autocomplete="off" type="text" name="external_id" id="modal_ext_id" class="form-control" required>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label">Процент биржи (%)</label>
