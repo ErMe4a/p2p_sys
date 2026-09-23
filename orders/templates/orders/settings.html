@@ -95,6 +95,40 @@
         color: var(--text-main);
     }
 
+    .bank-account-row {
+        display: grid;
+        grid-template-columns: 2fr 1.5fr 1.5fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+    }
+    .bank-account-row .form-control { margin-bottom: 15px; }
+    .btn-remove-account {
+        height: 42px;
+        width: 42px;
+        margin-bottom: 15px;
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        color: var(--text-muted);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+    .btn-remove-account:hover { color: #ff6c6c; border-color: #ff6c6c; }
+    .btn-add-account {
+        background: var(--bg-input);
+        border: 1px dashed var(--border-color);
+        color: var(--text-main);
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+    .btn-add-account:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+    @media (max-width: 767px) {
+        .bank-account-row { grid-template-columns: 1fr 1fr; }
+    }
+
     .footer-link {
         text-align: center;
         font-size: 0.75rem;
@@ -192,27 +226,91 @@
         </div>
 
         <div class="section-divider">Банковские счета</div>
-        <div class="row">
-            <div class="col-md-3">
-                <label class="field-label">Банк</label>
-                <input type="text" name="bank_name" class="form-control" value="{{ user.bank_name|default:'' }}">
+
+        <datalist id="bankNamesList">
+            {% for b in common_bank_names %}<option value="{{ b }}">{% endfor %}
+        </datalist>
+
+        <div id="bankAccountsContainer">
+            {% for acc in bank_accounts %}
+            <div class="bank-account-row">
+                <div>
+                    <label class="field-label">Банк</label>
+                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="{{ acc.bank_name }}">
+                </div>
+                <div>
+                    <label class="field-label">Номер счета</label>
+                    <input type="text" name="account_number" class="form-control" maxlength="20" value="{{ acc.account_number }}">
+                </div>
+                <div>
+                    <label class="field-label">Корсчет</label>
+                    <input type="text" name="account_corr" class="form-control" maxlength="20" value="{{ acc.corr_account }}">
+                </div>
+                <div>
+                    <label class="field-label">БИК</label>
+                    <input type="text" name="account_bik" class="form-control" maxlength="9" value="{{ acc.bik }}">
+                </div>
+                <div>
+                    <label class="field-label">&nbsp;</label>
+                    <button type="button" class="btn-remove-account" onclick="this.closest('.bank-account-row').remove()">✕</button>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="field-label">Номер счета</label>
-                <input type="text" name="bank_account_number" class="form-control" maxlength="20"
-                    value="{{ user.bank_account_number|default:'' }}">
+            {% empty %}
+            <div class="bank-account-row">
+                <div>
+                    <label class="field-label">Банк</label>
+                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="">
+                </div>
+                <div>
+                    <label class="field-label">Номер счета</label>
+                    <input type="text" name="account_number" class="form-control" maxlength="20" value="">
+                </div>
+                <div>
+                    <label class="field-label">Корсчет</label>
+                    <input type="text" name="account_corr" class="form-control" maxlength="20" value="">
+                </div>
+                <div>
+                    <label class="field-label">БИК</label>
+                    <input type="text" name="account_bik" class="form-control" maxlength="9" value="">
+                </div>
+                <div>
+                    <label class="field-label">&nbsp;</label>
+                    <button type="button" class="btn-remove-account" onclick="this.closest('.bank-account-row').remove()">✕</button>
+                </div>
             </div>
-            <div class="col-md-3">
-                <label class="field-label">Корсчет</label>
-                <input type="text" name="bank_corr_account" class="form-control" maxlength="20"
-                    value="{{ user.bank_corr_account|default:'' }}">
-            </div>
-            <div class="col-md-3">
-                <label class="field-label">БИК</label>
-                <input type="text" name="bank_bik" class="form-control" maxlength="9"
-                    value="{{ user.bank_bik|default:'' }}">
-            </div>
+            {% endfor %}
         </div>
+
+        <template id="bankAccountRowTemplate">
+            <div class="bank-account-row">
+                <div>
+                    <label class="field-label">Банк</label>
+                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="">
+                </div>
+                <div>
+                    <label class="field-label">Номер счета</label>
+                    <input type="text" name="account_number" class="form-control" maxlength="20" value="">
+                </div>
+                <div>
+                    <label class="field-label">Корсчет</label>
+                    <input type="text" name="account_corr" class="form-control" maxlength="20" value="">
+                </div>
+                <div>
+                    <label class="field-label">БИК</label>
+                    <input type="text" name="account_bik" class="form-control" maxlength="9" value="">
+                </div>
+                <div>
+                    <label class="field-label">&nbsp;</label>
+                    <button type="button" class="btn-remove-account" onclick="this.closest('.bank-account-row').remove()">✕</button>
+                </div>
+            </div>
+        </template>
+
+        <button type="button" class="btn-add-account mb-3" onclick="
+            document.getElementById('bankAccountsContainer').appendChild(
+                document.getElementById('bankAccountRowTemplate').content.cloneNode(true)
+            )
+        ">+ Добавить счёт</button>
 
         <div class="section-divider">Онлайн-касса</div>
         <div class="row">

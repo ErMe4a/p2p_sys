@@ -46,11 +46,6 @@ class User(AbstractUser):
     passport_issue_date = models.DateField(blank=True, null=True, verbose_name="Дата выдачи паспорта")
     passport_issued_by = models.CharField(max_length=255, blank=True, default="", verbose_name="Кем выдан паспорт")
 
-    bank_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Банк")
-    bank_account_number = models.CharField(max_length=20, blank=True, default="", verbose_name="Номер счета")
-    bank_corr_account = models.CharField(max_length=20, blank=True, default="", verbose_name="Корсчет")
-    bank_bik = models.CharField(max_length=9, blank=True, default="", verbose_name="БИК")
-
     # Статус ФНС (уведомления/НДС), пересчитывается фоновой задачей
     # tasks.recompute_fns_status_task — как bybit_key_valid/mexc_key_valid,
     # обычное поле, читается в шаблоне напрямую, без AJAX и без кэша.
@@ -88,6 +83,44 @@ class User(AbstractUser):
     def __str__(self):
         return self.username
 
+
+# Подсказки для поля "Банк" в реквизитах расчётного счёта (settings.html) —
+# не строгий выбор (это datalist, не choices), просто список для автодополнения,
+# юзер может вписать и любой другой банк вручную.
+COMMON_BANK_NAMES = [
+    "ПАО Сбербанк",
+    "АО «Альфа-Банк»",
+    "Банк ВТБ (ПАО)",
+    "АО «Т-Банк»",
+    "ПАО «Совкомбанк»",
+    "АО «Райффайзенбанк»",
+    "Банк ГПБ (АО)",
+    "ПАО «Промсвязьбанк»",
+    "АО «Россельхозбанк»",
+    "ПАО «МКБ»",
+]
+
+
+class UserBankAccount(models.Model):
+    """
+    Расчётный счёт ИП (реквизиты для отчётности) — у пользователя их может
+    быть несколько, поэтому отдельная модель, а не плоские поля на User (по
+    запросу Максима: кнопка "+" добавления счёта в /settings/).
+    Не путать с BankDetail — тот каталог для выбора банка ПОЛУЧЕНИЯ оплаты
+    по P2P-ордеру, этот — собственные расчётные счета для отчётности.
+    """
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='bank_accounts')
+    bank_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Банк")
+    account_number = models.CharField(max_length=20, blank=True, default="", verbose_name="Номер счета")
+    corr_account = models.CharField(max_length=20, blank=True, default="", verbose_name="Корсчет")
+    bik = models.CharField(max_length=9, blank=True, default="", verbose_name="БИК")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.bank_name} — {self.account_number}"
 
 
 class BankDetail(models.Model):
