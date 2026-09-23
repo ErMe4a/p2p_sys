@@ -387,7 +387,15 @@ def edit_order(request, order_id):
         order.commission     = safe_decimal(request.POST.get('commission_value'))
         order.operation_type = request.POST.get('operation_type')
         order.exchange_type  = request.POST.get('exchange')
-        order.commission_type = request.POST.get('commission_type')
+
+        # Защита от IntegrityError (commission_type NOT NULL): на старых
+        # ордерах (особенно с расширения) значение поля в базе иногда не
+        # совпадает ни с одним <option> в форме — тогда select не шлёт имя
+        # вовсе, и .get() вернёт None. Раньше это роняло save() целиком и
+        # теряло заодно ВСЕ остальные правки в этой же форме.
+        new_commission_type = request.POST.get('commission_type')
+        if new_commission_type in ('PERCENT', 'FIX'):
+            order.commission_type = new_commission_type
 
         new_rate = parse_exchange_rate(request.POST.get('exchange_commission_rate'))
         if new_rate is not None:
@@ -4291,7 +4299,12 @@ def admin_orders_editor(request):
             current_order.amount = to_decimal(request.POST.get('amount'))
             current_order.cost = to_decimal(request.POST.get('cost'))
             current_order.commission = to_decimal(request.POST.get('commission'))
-            current_order.commission_type = request.POST.get('commission_type')
+            # Та же защита от IntegrityError (commission_type NOT NULL), что
+            # и в edit_order — не даём select-у без совпадающего <option>
+            # обнулить поле и уронить сохранение целиком.
+            new_commission_type = request.POST.get('commission_type')
+            if new_commission_type in ('PERCENT', 'FIX', 'MONEY'):
+                current_order.commission_type = new_commission_type
 
             new_rate = parse_exchange_rate(request.POST.get('exchange_commission_rate'))
             if new_rate is not None:

@@ -254,7 +254,7 @@
                     <input type="number" name="commission_value" class="form-control" step="0.01" placeholder="0" value="{{ saved_data.commission_value|default:'' }}">
                     <select class="form-select commission-select" name="commission_type">
                         <option value="PERCENT" {% if saved_data.commission_type == 'PERCENT' %}selected{% endif %}>%</option>
-                        <option value="RUB"     {% if saved_data.commission_type == 'RUB' %}selected{% endif %}>₽</option>
+                        <option value="FIX"     {% if saved_data.commission_type == 'FIX' %}selected{% endif %}>₽</option>
                     </select>
                 </div>
             </div>
@@ -553,7 +553,7 @@
                                 <input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1">
                                 <select class="form-select commission-select" name="commission_type" id="modal_comm_type">
                                     <option value="PERCENT">%</option>
-                                    <option value="RUB">₽</option>
+                                    <option value="FIX">₽</option>
                                 </select>
                             </div>
                         </div>
@@ -668,6 +668,12 @@
         document.getElementById('modal_amount').value    = amount;
         document.getElementById('modal_cost').value      = cost;
         document.getElementById('modal_comm_val').value  = commVal;
+        // На старых ордерах (особенно из расширения) commission_type мог
+        // прийти не "PERCENT"/"FIX" (например "MONEY" из старого кода) —
+        // без совпадающего <option> select тихо остаётся не выбранным и
+        // при сохранении браузер вообще не шлёт это поле -> 500 на сервере
+        // (NOT NULL) и теряются ВСЕ правки в форме, не только комиссия.
+        ensureOption(document.getElementById('modal_comm_type'), commType, commType === 'PERCENT' ? '%' : '₽ (устар. формат)');
         document.getElementById('modal_comm_type').value = commType;
         document.getElementById('modal_ext_id').value    = extId;
         document.getElementById('modal_date').value      = date;
