@@ -148,7 +148,72 @@
                 <input type="text" name="phone" class="form-control" maxlength="15"
                     placeholder="79855601686" value="{{ user.phone|default:'' }}">
             </div>
+            <div class="col-md-6">
+                <label class="field-label">ОГРНИП</label>
+                <input type="text" name="ogrnip" class="form-control" maxlength="15"
+                    value="{{ user.ogrnip|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Дата регистрации ИП</label>
+                <input type="date" name="ip_registration_date" class="form-control"
+                    value="{{ user.ip_registration_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-12">
+                <label class="field-label">Адрес прописки</label>
+                <input type="text" name="registration_address" class="form-control"
+                    placeholder="Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
+                    value="{{ user.registration_address|default:'' }}">
+            </div>
+            <div class="col-12">
+                <label class="field-label">Адрес проживания</label>
+                <input type="text" name="residential_address" class="form-control"
+                    placeholder="Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
+                    value="{{ user.residential_address|default:'' }}">
+            </div>
         </div>
+
+        <div class="mt-2 mb-3" style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">Паспортные данные</div>
+        <div class="row">
+            <div class="col-md-4">
+                <label class="field-label">Серия и номер</label>
+                <input type="text" name="passport_series_number" class="form-control"
+                    placeholder="1234 567890" value="{{ user.passport_series_number|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="field-label">Дата выдачи</label>
+                <input type="date" name="passport_issue_date" class="form-control"
+                    value="{{ user.passport_issue_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="field-label">Кем выдан</label>
+                <input type="text" name="passport_issued_by" class="form-control"
+                    value="{{ user.passport_issued_by|default:'' }}">
+            </div>
+        </div>
+
+        <div class="section-divider">Банковские счета</div>
+        <div class="row">
+            <div class="col-md-3">
+                <label class="field-label">Банк</label>
+                <input type="text" name="bank_name" class="form-control" value="{{ user.bank_name|default:'' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="field-label">Номер счета</label>
+                <input type="text" name="bank_account_number" class="form-control" maxlength="20"
+                    value="{{ user.bank_account_number|default:'' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="field-label">Корсчет</label>
+                <input type="text" name="bank_corr_account" class="form-control" maxlength="20"
+                    value="{{ user.bank_corr_account|default:'' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="field-label">БИК</label>
+                <input type="text" name="bank_bik" class="form-control" maxlength="9"
+                    value="{{ user.bank_bik|default:'' }}">
+            </div>
+        </div>
+
         <div class="section-divider">Онлайн-касса</div>
         <div class="row">
             <div class="col-md-6">

@@ -35,6 +35,22 @@ class User(AbstractUser):
     # orders/models.py -> class User
     phone = models.CharField(max_length=15, blank=True, default="", verbose_name="Телефон")
 
+    # Реквизиты ИП и паспортные данные — по запросу Максима, для настроек
+    # (используются людьми вручную, в расчёт чеков/налогов не участвуют).
+    ogrnip = models.CharField(max_length=15, blank=True, default="", verbose_name="ОГРНИП")
+    ip_registration_date = models.DateField(blank=True, null=True, verbose_name="Дата регистрации ИП")
+    registration_address = models.CharField(max_length=500, blank=True, default="", verbose_name="Адрес прописки")
+    residential_address = models.CharField(max_length=500, blank=True, default="", verbose_name="Адрес проживания")
+
+    passport_series_number = models.CharField(max_length=20, blank=True, default="", verbose_name="Серия и номер паспорта")
+    passport_issue_date = models.DateField(blank=True, null=True, verbose_name="Дата выдачи паспорта")
+    passport_issued_by = models.CharField(max_length=255, blank=True, default="", verbose_name="Кем выдан паспорт")
+
+    bank_name = models.CharField(max_length=255, blank=True, default="", verbose_name="Банк")
+    bank_account_number = models.CharField(max_length=20, blank=True, default="", verbose_name="Номер счета")
+    bank_corr_account = models.CharField(max_length=20, blank=True, default="", verbose_name="Корсчет")
+    bank_bik = models.CharField(max_length=9, blank=True, default="", verbose_name="БИК")
+
     # Статус ФНС (уведомления/НДС), пересчитывается фоновой задачей
     # tasks.recompute_fns_status_task — как bybit_key_valid/mexc_key_valid,
     # обычное поле, читается в шаблоне напрямую, без AJAX и без кэша.

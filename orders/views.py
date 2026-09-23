@@ -482,6 +482,23 @@ def profile_settings(request):
         user.oktmo = (request.POST.get('oktmo') or '').strip()
         user.kod_no = (request.POST.get('kod_no') or '').strip()
         user.phone = (request.POST.get('phone') or '').strip()
+
+        # Реквизиты ИП, паспорт, банковские счета
+        user.ogrnip = (request.POST.get('ogrnip') or '').strip()
+        raw_ip_reg_date = (request.POST.get('ip_registration_date') or '').strip()
+        user.ip_registration_date = raw_ip_reg_date or None
+        user.registration_address = (request.POST.get('registration_address') or '').strip()
+        user.residential_address = (request.POST.get('residential_address') or '').strip()
+
+        user.passport_series_number = (request.POST.get('passport_series_number') or '').strip()
+        raw_passport_issue_date = (request.POST.get('passport_issue_date') or '').strip()
+        user.passport_issue_date = raw_passport_issue_date or None
+        user.passport_issued_by = (request.POST.get('passport_issued_by') or '').strip()
+
+        user.bank_name = (request.POST.get('bank_name') or '').strip()
+        user.bank_account_number = (request.POST.get('bank_account_number') or '').strip()
+        user.bank_corr_account = (request.POST.get('bank_corr_account') or '').strip()
+        user.bank_bik = (request.POST.get('bank_bik') or '').strip()
         # 2. Сохраняем ключи API
         user.htx_access_key  = request.POST.get('htx_key')
         user.htx_private_key = request.POST.get('htx_secret')
