@@ -144,11 +144,6 @@
                     placeholder="4 цифры, напр. 7720" value="{{ user.kod_no|default:'' }}">
             </div>
             <div class="col-md-6">
-                <label class="field-label">Телефон</label>
-                <input type="text" name="phone" class="form-control" maxlength="15"
-                    placeholder="79855601686" value="{{ user.phone|default:'' }}">
-            </div>
-            <div class="col-md-6">
                 <label class="field-label">ОГРНИП</label>
                 <input type="text" name="ogrnip" class="form-control" maxlength="15"
                     value="{{ user.ogrnip|default:'' }}">
@@ -157,6 +152,11 @@
                 <label class="field-label">Дата регистрации ИП</label>
                 <input type="date" name="ip_registration_date" class="form-control"
                     value="{{ user.ip_registration_date|date:'Y-m-d'|default:'' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="field-label">Телефон</label>
+                <input type="text" name="phone" class="form-control" maxlength="15"
+                    placeholder="79855601686" value="{{ user.phone|default:'' }}">
             </div>
             <div class="col-12">
                 <label class="field-label">Адрес прописки</label>
