@@ -31,7 +31,7 @@ from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_api import sync_mexc_orders
 from .mexc_service import get_mexc_orders_parallel
 from .models import BankDetail, Exchange, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry, BalanceCorrection
-from .models import UserBankAccount, COMMON_BANK_NAMES
+from .models import UserBankAccount, PRESET_BANK_NAMES
 from .receipt_service import create_or_update_and_send_receipt
 from .currencies import currency_label, normalize_currency, SUPPORTED_CURRENCIES
 from zoneinfo import ZoneInfo
@@ -535,14 +535,17 @@ def profile_settings(request):
         # пришли параллельными списками с фронта (по одному элементу на
         # строку). Простая стратегия: снести старые и создать заново из
         # того, что реально заполнено (та же логика, что и у visible_banks.set).
-        bank_names    = request.POST.getlist('account_bank_name')
+        bank_selects  = request.POST.getlist('account_bank_select')
+        bank_customs  = request.POST.getlist('account_bank_custom')
         account_nums  = request.POST.getlist('account_number')
         corr_accounts = request.POST.getlist('account_corr')
         biks          = request.POST.getlist('account_bik')
 
         new_accounts = []
-        for bank_name, acc_num, corr, bik in zip(bank_names, account_nums, corr_accounts, biks):
-            bank_name, acc_num, corr, bik = bank_name.strip(), acc_num.strip(), corr.strip(), bik.strip()
+        for bank_select, bank_custom, acc_num, corr, bik in zip(bank_selects, bank_customs, account_nums, corr_accounts, biks):
+            bank_select, bank_custom = bank_select.strip(), bank_custom.strip()
+            acc_num, corr, bik = acc_num.strip(), corr.strip(), bik.strip()
+            bank_name = bank_custom if bank_select == '__custom__' else bank_select
             if not (bank_name or acc_num or corr or bik):
                 continue
             new_accounts.append(UserBankAccount(
@@ -577,7 +580,7 @@ def profile_settings(request):
         'visible_bank_ids':      visible_bank_ids,
         'visible_exchange_ids':  visible_exchange_ids,
         'bank_accounts':         user.bank_accounts.all(),
-        'common_bank_names':     COMMON_BANK_NAMES,
+        'preset_bank_names':     PRESET_BANK_NAMES,
     })
 
 UNPROCESSED_PAGE_SIZE = 200

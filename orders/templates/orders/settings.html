@@ -46,6 +46,8 @@
         color: var(--text-main) !important; /* Переменная темы */
     }
 
+    .form-control::placeholder { color: var(--text-muted); opacity: 0.55; }
+
     .form-control:focus, .form-select:focus {
         border-color: var(--accent-blue) !important;
         box-shadow: 0 0 0 2px rgba(61, 90, 254, 0.2);
@@ -195,13 +197,13 @@
             <div class="col-12">
                 <label class="field-label">Адрес прописки</label>
                 <input type="text" name="registration_address" class="form-control"
-                    placeholder="Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
+                    placeholder="пример: Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
                     value="{{ user.registration_address|default:'' }}">
             </div>
             <div class="col-12">
                 <label class="field-label">Адрес проживания</label>
                 <input type="text" name="residential_address" class="form-control"
-                    placeholder="Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
+                    placeholder="пример: Брянская обл., г. Брянск, ул. Ленина, д. 11, кв. 25"
                     value="{{ user.residential_address|default:'' }}">
             </div>
         </div>
@@ -227,16 +229,22 @@
 
         <div class="section-divider">Банковские счета</div>
 
-        <datalist id="bankNamesList">
-            {% for b in common_bank_names %}<option value="{{ b }}">{% endfor %}
-        </datalist>
-
         <div id="bankAccountsContainer">
             {% for acc in bank_accounts %}
             <div class="bank-account-row">
                 <div>
                     <label class="field-label">Банк</label>
-                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="{{ acc.bank_name }}">
+                    <select name="account_bank_select" class="form-select"
+                        onchange="this.nextElementSibling.style.display = (this.value === '__custom__') ? 'block' : 'none'">
+                        <option value="">— Выберите банк —</option>
+                        <option value="ПАО Сбербанк" {% if acc.bank_name == 'ПАО Сбербанк' %}selected{% endif %}>ПАО Сбербанк</option>
+                        <option value="АО Альфа-Банк" {% if acc.bank_name == 'АО Альфа-Банк' %}selected{% endif %}>АО Альфа-Банк</option>
+                        <option value="АО Т-Банк" {% if acc.bank_name == 'АО Т-Банк' %}selected{% endif %}>АО Т-Банк</option>
+                        <option value="__custom__" {% if acc.bank_name and acc.bank_name not in preset_bank_names %}selected{% endif %}>Ввести вручную</option>
+                    </select>
+                    <input type="text" name="account_bank_custom" class="form-control" placeholder="Название банка"
+                        style="display: {% if acc.bank_name and acc.bank_name not in preset_bank_names %}block{% else %}none{% endif %};"
+                        value="{% if acc.bank_name and acc.bank_name not in preset_bank_names %}{{ acc.bank_name }}{% endif %}">
                 </div>
                 <div>
                     <label class="field-label">Номер счета</label>
@@ -259,7 +267,15 @@
             <div class="bank-account-row">
                 <div>
                     <label class="field-label">Банк</label>
-                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="">
+                    <select name="account_bank_select" class="form-select"
+                        onchange="this.nextElementSibling.style.display = (this.value === '__custom__') ? 'block' : 'none'">
+                        <option value="">— Выберите банк —</option>
+                        <option value="ПАО Сбербанк">ПАО Сбербанк</option>
+                        <option value="АО Альфа-Банк">АО Альфа-Банк</option>
+                        <option value="АО Т-Банк">АО Т-Банк</option>
+                        <option value="__custom__">Ввести вручную</option>
+                    </select>
+                    <input type="text" name="account_bank_custom" class="form-control" placeholder="Название банка" style="display: none;" value="">
                 </div>
                 <div>
                     <label class="field-label">Номер счета</label>
@@ -285,7 +301,15 @@
             <div class="bank-account-row">
                 <div>
                     <label class="field-label">Банк</label>
-                    <input type="text" name="account_bank_name" class="form-control" list="bankNamesList" value="">
+                    <select name="account_bank_select" class="form-select"
+                        onchange="this.nextElementSibling.style.display = (this.value === '__custom__') ? 'block' : 'none'">
+                        <option value="">— Выберите банк —</option>
+                        <option value="ПАО Сбербанк">ПАО Сбербанк</option>
+                        <option value="АО Альфа-Банк">АО Альфа-Банк</option>
+                        <option value="АО Т-Банк">АО Т-Банк</option>
+                        <option value="__custom__">Ввести вручную</option>
+                    </select>
+                    <input type="text" name="account_bank_custom" class="form-control" placeholder="Название банка" style="display: none;" value="">
                 </div>
                 <div>
                     <label class="field-label">Номер счета</label>
