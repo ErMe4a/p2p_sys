@@ -3288,6 +3288,24 @@ def export_uvedomlenie(request):
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_export_company_card(request):
+    """Скачивание PDF "Карточка предприятия" — реквизиты ИП трейдера из /settings/."""
+    user_id = request.GET.get('user_id')
+    target = User.objects.filter(id=user_id).first()
+    if not target:
+        return JsonResponse({'error': 'Пользователь не найден.'}, status=404)
+
+    from .company_card_pdf import build_company_card_pdf
+    pdf_bytes, filename = build_company_card_pdf(target)
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
 def _year_turnover_by_month(year, exchange_filter='', bank_filter_id=''):
     """
     Оборот (BUY/SELL сумма в рублях) по месяцам за год, по ВСЕМ юзерам сразу.

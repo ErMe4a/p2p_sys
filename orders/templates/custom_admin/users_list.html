@@ -254,6 +254,7 @@
         <div class="btn-report-grid">
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadScreenshots()" id="downloadScreenshotsBtn">📷 Скриншоты</button>
             <button type="button" class="btn btn-sm btn-outline-blue" onclick="downloadExcel()" id="downloadExcelBtn">📊 Excel</button>
+            <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadCompanyCard()" id="downloadCompanyCardBtn">🪪 Карточка предприятия (PDF)</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" onclick="downloadUsn()" id="downloadUsnBtn">📋 Скачать УСН отчет</button>
             <button type="button" class="btn btn-sm btn-outline-blue btn-full-width" id="downloadUvBtn" onclick="downloadUvedomlenie()">📨 Уведомление XML (КНД 1110355)</button>
 
@@ -601,6 +602,12 @@
         const type = document.getElementById('reportsOperationType').value;
         const currency = document.getElementById('reportsCurrency').value;
         window.location.href = `/admin-panel/export/excel/?user_id=${userId}&start=${start}&end=${end}&bank_id=${bank}&type=${type}&currency=${currency}`;
+    }
+
+    function downloadCompanyCard() {
+        const userId = document.getElementById('reportsUserId').value;
+        if (!userId) { alert("Ошибка: не выбран пользователь"); return; }
+        window.location.href = `/admin-panel/export/company-card/?user_id=${userId}`;
     }
 
     function downloadUsn() {
