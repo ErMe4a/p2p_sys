@@ -615,6 +615,21 @@
     document.getElementById('main_currency').addEventListener('change', syncCryptoReceiptNote);
     syncCryptoReceiptNote();
 
+    // Курс × Количество должно примерно совпадать со Стоимостью — без этой
+    // проверки лишний ноль в Количестве (100 -> 1000 и т.п.) проходит
+    // незамеченным и уходит в чек (реальный случай, из-за которого добавлено).
+    // Допуск 5% — тот же порог, что и у проверки комиссии ниже, чтобы не
+    // мешать легитимным случаям (комиссия/спред, зашитые в стоимость).
+    function checkPriceAmountCostMismatch(priceRaw, amountRaw, costRaw) {
+        const p = parseFloat(String(priceRaw).replace(',', '.'));
+        const a = parseFloat(String(amountRaw).replace(',', '.'));
+        const c = parseFloat(String(costRaw).replace(',', '.'));
+        if (isNaN(p) || isNaN(a) || isNaN(c) || p <= 0 || a <= 0 || c <= 0) return null;
+        const expected = p * a;
+        const diffPct  = Math.abs(expected - c) / expected * 100;
+        return diffPct > 5 ? { expected: expected, diffPct: diffPct } : null;
+    }
+
     document.getElementById('createOrderForm').addEventListener('submit', function(e) {
         const price     = document.getElementById('main_price').value.trim().replace(',', '.');
         const amount    = document.getElementById('main_amount').value.trim().replace(',', '.');
@@ -627,6 +642,13 @@
                 alert('Ошибка! Для формирования чека (Эвотор) Курс, Количество и Стоимость должны быть числами больше нуля.');
                 return;
             }
+        }
+
+        const mismatch = checkPriceAmountCostMismatch(price, amount, cost);
+        if (mismatch) {
+            e.preventDefault();
+            alert('Ошибка! Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%. Проверьте, нет ли опечатки (лишний/недостающий ноль) в Количестве, Курсе или Стоимости.');
+            return;
         }
 
         const commVal  = parseFloat(document.querySelector('[name="commission_value"]').value.replace(',', '.'));
@@ -683,6 +705,16 @@
     }
 
     document.getElementById('editForm').addEventListener('submit', function(e) {
+        const price  = document.getElementById('modal_price').value;
+        const amount = document.getElementById('modal_amount').value;
+        const cost   = document.getElementById('modal_cost').value;
+        const mismatch = checkPriceAmountCostMismatch(price, amount, cost);
+        if (mismatch) {
+            e.preventDefault();
+            alert('Ошибка! Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%. Проверьте, нет ли опечатки (лишний/недостающий ноль) в Количестве, Курсе или Стоимости.');
+            return;
+        }
+
         const commVal  = parseFloat(document.getElementById('modal_comm_val').value.replace(',', '.'));
         const commType = document.getElementById('modal_comm_type').value;
         if (commType === 'PERCENT' && !isNaN(commVal) && commVal > 5) {

@@ -69,6 +69,25 @@ def safe_decimal(value):
         return 0
 
 
+def price_amount_cost_mismatch_pct(price, amount, cost):
+    """
+    Курс * Количество должно примерно совпадать со Стоимостью — без этой
+    проверки опечатка вроде лишнего нуля в Количестве (100 -> 1000) проходит
+    незамеченной и уходит в чек. Допуск 5% — под комиссию/спред, зашитые
+    в стоимость при ручном вводе (реальные случаи дают 2-3%, не больше).
+    Возвращает % расхождения либо None, если сравнивать не из чего/сходится.
+    """
+    try:
+        p, a, c = float(price), float(amount), float(cost)
+    except (TypeError, ValueError):
+        return None
+    if p <= 0 or a <= 0 or c <= 0:
+        return None
+    expected = p * a
+    diff_pct = abs(expected - c) / expected * 100
+    return diff_pct if diff_pct > 5 else None
+
+
 def parse_exchange_rate(value):
     """
     Процент биржи из формы редактирования ордера: '0,9' -> Decimal('0.9').
@@ -198,6 +217,17 @@ def my_orders_list(request):
         amount_val     = safe_decimal(request.POST.get('amount'))
         cost_val       = safe_decimal(request.POST.get('cost'))
         commission_val = safe_decimal(request.POST.get('commission_value'))
+
+        # ЗАЩИТА 3: Курс * Количество должно примерно совпадать со Стоимостью
+        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct)
+        mismatch_pct = price_amount_cost_mismatch_pct(price_val, amount_val, cost_val)
+        if mismatch_pct is not None:
+            request.session['order_error'] = (
+                f'Курс × Количество = {price_val * amount_val:.2f} ₽, а указана Стоимость {cost_val} ₽ '
+                f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
+                f'в Количестве, Курсе или Стоимости.'
+            )
+            return redirect('my_orders')
 
         # 3. Определяем процент биржи
         exchange_name  = exchange_val.lower()
@@ -380,10 +410,25 @@ def edit_order(request, order_id):
                 order.bank_detail = bank_instance
 
         # 2. Основные поля
+        new_price  = safe_decimal(request.POST.get('price'))
+        new_amount = safe_decimal(request.POST.get('amount'))
+        new_cost   = safe_decimal(request.POST.get('cost'))
+
+        # ЗАЩИТА: Курс * Количество должно примерно совпадать со Стоимостью
+        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct)
+        mismatch_pct = price_amount_cost_mismatch_pct(new_price, new_amount, new_cost)
+        if mismatch_pct is not None:
+            request.session['order_error'] = (
+                f'Курс × Количество = {new_price * new_amount:.2f} ₽, а указана Стоимость {new_cost} ₽ '
+                f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
+                f'в Количестве, Курсе или Стоимости.'
+            )
+            return redirect('my_orders')
+
         order.external_id    = request.POST.get('external_id')
-        order.price          = safe_decimal(request.POST.get('price'))
-        order.amount         = safe_decimal(request.POST.get('amount'))
-        order.cost           = safe_decimal(request.POST.get('cost'))
+        order.price          = new_price
+        order.amount         = new_amount
+        order.cost           = new_cost
         order.commission     = safe_decimal(request.POST.get('commission_value'))
         order.operation_type = request.POST.get('operation_type')
         order.exchange_type  = request.POST.get('exchange')
@@ -4238,6 +4283,16 @@ def admin_orders_editor(request):
                     cost_val       = safe_decimal(request.POST.get('cost'))
                     commission_val = safe_decimal(request.POST.get('commission_value'))
 
+                    mismatch_pct = price_amount_cost_mismatch_pct(price_val, amount_val, cost_val)
+                    if mismatch_pct is not None:
+                        messages.error(
+                            request,
+                            f'Курс × Количество = {price_val * amount_val:.2f} ₽, а указана Стоимость {cost_val} ₽ '
+                            f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
+                            f'в Количестве, Курсе или Стоимости.'
+                        )
+                        return redirect('admin_orders_editor')
+
                     exchange_name = exchange_val.lower()
                     user_comm_rate = 0.0
                     if 'bybit' in exchange_name:
@@ -4295,9 +4350,25 @@ def admin_orders_editor(request):
                 if not val: return Decimal('0')
                 return Decimal(str(val).replace(',', '.'))
 
-            current_order.price = to_decimal(request.POST.get('price'))
-            current_order.amount = to_decimal(request.POST.get('amount'))
-            current_order.cost = to_decimal(request.POST.get('cost'))
+            new_price  = to_decimal(request.POST.get('price'))
+            new_amount = to_decimal(request.POST.get('amount'))
+            new_cost   = to_decimal(request.POST.get('cost'))
+
+            # Та же защита, что и на сайте: Курс * Количество должно примерно
+            # совпадать со Стоимостью (страхует от лишнего нуля и т.п.).
+            mismatch_pct = price_amount_cost_mismatch_pct(new_price, new_amount, new_cost)
+            if mismatch_pct is not None:
+                messages.error(
+                    request,
+                    f'Курс × Количество = {float(new_price) * float(new_amount):.2f} ₽, а указана Стоимость '
+                    f'{new_cost} ₽ — расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки '
+                    f'(лишний/недостающий ноль) в Количестве, Курсе или Стоимости.'
+                )
+                return redirect(f'/p2p-admin/orders/?order_id_search={current_order.external_id}')
+
+            current_order.price = new_price
+            current_order.amount = new_amount
+            current_order.cost = new_cost
             current_order.commission = to_decimal(request.POST.get('commission'))
             # Та же защита от IntegrityError (commission_type NOT NULL), что
             # и в edit_order — не даём select-у без совпадающего <option>
