@@ -326,6 +326,23 @@ async function handleFormSubmission() {
         return;
     }
 
+    // На BingX нет автоматической сверки с API биржи (только Bybit/MEXC это
+    // умеют) — данные тут фактически ручные. Курс * Количество должно
+    // примерно совпадать со Стоимостью (₽), иначе опечатка (лишний ноль
+    // и т.п.) уйдёт прямо в чек.
+    if (formData.price > 0 && formData.quantity > 0 && formData.amount > 0) {
+        const expected = formData.price * formData.quantity;
+        const diffPct = Math.abs(expected - formData.amount) / expected * 100;
+        if (diffPct > 5) {
+            alert(
+                `Ошибка! Курс × Количество = ${expected.toFixed(2)} ₽, а указана Стоимость ${formData.amount} ₽ ` +
+                `— расхождение ${diffPct.toFixed(1)}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) ` +
+                `в Количестве, Курсе или Стоимости.`
+            );
+            return;
+        }
+    }
+
     const orderId = getOrderIdFromUrl();
     if (!orderId) {
         alert('Не удалось получить ID заказа из URL страницы');

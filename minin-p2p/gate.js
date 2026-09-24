@@ -498,7 +498,25 @@ function createSubmitButton() {
             showNotification('Ошибка: сумма не может быть 0 или пустой', 'error');
             return;
         }
-        
+
+        // На Gate нет автоматической сверки с API биржи (только Bybit/MEXC это
+        // умеют) — данные тут фактически ручные. Курс * Количество должно
+        // примерно совпадать со Стоимостью (₽), иначе опечатка (лишний ноль
+        // и т.п.) уйдёт прямо в чек.
+        {
+            const expected = formData.price * formData.quantity;
+            const diffPct = Math.abs(expected - formData.amount) / expected * 100;
+            if (diffPct > 5) {
+                showNotification(
+                    `Ошибка! Курс × Количество = ${expected.toFixed(2)} ₽, а указана Стоимость ${formData.amount} ₽ ` +
+                    `— расхождение ${diffPct.toFixed(1)}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) ` +
+                    `в Количестве, Курсе или Стоимости.`,
+                    'error'
+                );
+                return;
+            }
+        }
+
         if (!formData.type || formData.type === 'UNKNOWN') {
             showNotification('Не удалось определить тип заказа (покупка/продажа)', 'error');
             return;

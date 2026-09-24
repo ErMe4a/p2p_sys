@@ -755,7 +755,24 @@ async function handleFormSubmission() {
         alert('Пожалуйста, выберите банк');
         return;
     }
-    
+
+    // При РУЧНОМ редактировании (manualEdit) сервер НЕ сверяет цифры с биржей вообще
+    // (только валюту) — это и есть весь смысл этого режима. Поэтому опечатка вроде
+    // лишнего нуля в количестве проходит незамеченной и уходит прямо в чек (реальный
+    // случай на MEXC). Курс * Количество должно примерно совпадать со Стоимостью (₽).
+    if (formData.manualEdit && formData.price > 0 && formData.quantity > 0 && formData.amount > 0) {
+        const expected = formData.price * formData.quantity;
+        const diffPct = Math.abs(expected - formData.amount) / expected * 100;
+        if (diffPct > 5) {
+            alert(
+                `Ошибка! Курс × Количество = ${expected.toFixed(2)} ₽, а указана Стоимость ${formData.amount} ₽ ` +
+                `— расхождение ${diffPct.toFixed(1)}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) ` +
+                `в Количестве, Курсе или Стоимости.`
+            );
+            return;
+        }
+    }
+
     if (!formData.createdAt) {
         // Не блокируем отправку: дата на странице Bybit не всегда парсится
         // (вёрстка меняется), но сервер умеет сам подтянуть дату создания
