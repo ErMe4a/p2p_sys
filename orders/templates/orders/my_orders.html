@@ -199,6 +199,7 @@
 
     <form method="post" enctype="multipart/form-data" id="createOrderForm">
         {% csrf_token %}
+        <input type="hidden" name="confirm_price_mismatch" id="createConfirmMismatch" value="0">
 
         <div class="row mb-3">
             <div class="col-12">
@@ -500,6 +501,7 @@
             </div>
             <form id="editForm" method="post">
                 {% csrf_token %}
+                <input type="hidden" name="confirm_price_mismatch" id="editConfirmMismatch" value="0">
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -646,9 +648,12 @@
 
         const mismatch = checkPriceAmountCostMismatch(price, amount, cost);
         if (mismatch) {
-            e.preventDefault();
-            alert('Ошибка! Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%. Проверьте, нет ли опечатки (лишний/недостающий ноль) в Количестве, Курсе или Стоимости.');
-            return;
+            const proceed = confirm('Обратите внимание, возможно ошибка: Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%.\n\nЕсли это не опечатка (например, клиент сам перевёл другую сумму) — нажмите OK, чтобы всё равно сохранить.');
+            if (!proceed) {
+                e.preventDefault();
+                return;
+            }
+            document.getElementById('createConfirmMismatch').value = '1';
         }
 
         const commVal  = parseFloat(document.querySelector('[name="commission_value"]').value.replace(',', '.'));
@@ -681,6 +686,7 @@
     function openEditModal(id, opType, exchange, bankId, price, amount, cost, commVal, commType, extId, date, currency, bankName, exchRate) {
         document.getElementById('editForm').action       = '/edit/' + id + '/';
         document.getElementById('display_id').innerText  = id;
+        document.getElementById('editConfirmMismatch').value = '0';
         ensureOption(document.getElementById('modal_details'), bankId, bankName);
         document.getElementById('modal_details').value   = bankId;
         document.getElementById('modal_op_type').value   = opType;
@@ -710,9 +716,12 @@
         const cost   = document.getElementById('modal_cost').value;
         const mismatch = checkPriceAmountCostMismatch(price, amount, cost);
         if (mismatch) {
-            e.preventDefault();
-            alert('Ошибка! Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%. Проверьте, нет ли опечатки (лишний/недостающий ноль) в Количестве, Курсе или Стоимости.');
-            return;
+            const proceed = confirm('Обратите внимание, возможно ошибка: Курс × Количество = ' + mismatch.expected.toFixed(2) + ' ₽, а указана Стоимость ' + cost + ' ₽ — расхождение ' + mismatch.diffPct.toFixed(1) + '%.\n\nЕсли это не опечатка (например, клиент сам перевёл другую сумму) — нажмите OK, чтобы всё равно сохранить.');
+            if (!proceed) {
+                e.preventDefault();
+                return;
+            }
+            document.getElementById('editConfirmMismatch').value = '1';
         }
 
         const commVal  = parseFloat(document.getElementById('modal_comm_val').value.replace(',', '.'));

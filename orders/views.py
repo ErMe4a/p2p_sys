@@ -219,13 +219,15 @@ def my_orders_list(request):
         commission_val = safe_decimal(request.POST.get('commission_value'))
 
         # ЗАЩИТА 3: Курс * Количество должно примерно совпадать со Стоимостью
-        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct)
+        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct).
+        # Мягкая проверка: трейдер может подтвердить на клиенте (реальные случаи вроде
+        # "клиент сам скинул на 500р больше") — тогда придёт confirm_price_mismatch=1.
         mismatch_pct = price_amount_cost_mismatch_pct(price_val, amount_val, cost_val)
-        if mismatch_pct is not None:
+        if mismatch_pct is not None and request.POST.get('confirm_price_mismatch') != '1':
             request.session['order_error'] = (
-                f'Курс × Количество = {price_val * amount_val:.2f} ₽, а указана Стоимость {cost_val} ₽ '
-                f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
-                f'в Количестве, Курсе или Стоимости.'
+                f'Обратите внимание, возможно ошибка: Курс × Количество = {price_val * amount_val:.2f} ₽, '
+                f'а указана Стоимость {cost_val} ₽ — расхождение {mismatch_pct:.1f}%. Если это не опечатка '
+                f'(например, клиент перевёл другую сумму сам) — сохраните ещё раз для подтверждения.'
             )
             return redirect('my_orders')
 
@@ -415,13 +417,15 @@ def edit_order(request, order_id):
         new_cost   = safe_decimal(request.POST.get('cost'))
 
         # ЗАЩИТА: Курс * Количество должно примерно совпадать со Стоимостью
-        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct)
+        # (страхует от опечаток вроде лишнего нуля — см. price_amount_cost_mismatch_pct).
+        # Мягкая проверка: подтверждается на клиенте (confirm_price_mismatch=1) —
+        # бывают реальные случаи, когда клиент сам перевёл другую сумму.
         mismatch_pct = price_amount_cost_mismatch_pct(new_price, new_amount, new_cost)
-        if mismatch_pct is not None:
+        if mismatch_pct is not None and request.POST.get('confirm_price_mismatch') != '1':
             request.session['order_error'] = (
-                f'Курс × Количество = {new_price * new_amount:.2f} ₽, а указана Стоимость {new_cost} ₽ '
-                f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
-                f'в Количестве, Курсе или Стоимости.'
+                f'Обратите внимание, возможно ошибка: Курс × Количество = {new_price * new_amount:.2f} ₽, '
+                f'а указана Стоимость {new_cost} ₽ — расхождение {mismatch_pct:.1f}%. Если это не опечатка '
+                f'(например, клиент перевёл другую сумму сам) — сохраните ещё раз для подтверждения.'
             )
             return redirect('my_orders')
 
@@ -4284,12 +4288,12 @@ def admin_orders_editor(request):
                     commission_val = safe_decimal(request.POST.get('commission_value'))
 
                     mismatch_pct = price_amount_cost_mismatch_pct(price_val, amount_val, cost_val)
-                    if mismatch_pct is not None:
+                    if mismatch_pct is not None and request.POST.get('confirm_price_mismatch') != '1':
                         messages.error(
                             request,
-                            f'Курс × Количество = {price_val * amount_val:.2f} ₽, а указана Стоимость {cost_val} ₽ '
-                            f'— расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) '
-                            f'в Количестве, Курсе или Стоимости.'
+                            f'Обратите внимание, возможно ошибка: Курс × Количество = {price_val * amount_val:.2f} ₽, '
+                            f'а указана Стоимость {cost_val} ₽ — расхождение {mismatch_pct:.1f}%. Если это не опечатка — '
+                            f'подтвердите сохранение ещё раз.'
                         )
                         return redirect('admin_orders_editor')
 
@@ -4357,12 +4361,12 @@ def admin_orders_editor(request):
             # Та же защита, что и на сайте: Курс * Количество должно примерно
             # совпадать со Стоимостью (страхует от лишнего нуля и т.п.).
             mismatch_pct = price_amount_cost_mismatch_pct(new_price, new_amount, new_cost)
-            if mismatch_pct is not None:
+            if mismatch_pct is not None and request.POST.get('confirm_price_mismatch') != '1':
                 messages.error(
                     request,
-                    f'Курс × Количество = {float(new_price) * float(new_amount):.2f} ₽, а указана Стоимость '
-                    f'{new_cost} ₽ — расхождение {mismatch_pct:.1f}%. Проверьте, нет ли опечатки '
-                    f'(лишний/недостающий ноль) в Количестве, Курсе или Стоимости.'
+                    f'Обратите внимание, возможно ошибка: Курс × Количество = {float(new_price) * float(new_amount):.2f} ₽, '
+                    f'а указана Стоимость {new_cost} ₽ — расхождение {mismatch_pct:.1f}%. Если это не опечатка — '
+                    f'подтвердите сохранение ещё раз.'
                 )
                 return redirect(f'/p2p-admin/orders/?order_id_search={current_order.external_id}')
 
