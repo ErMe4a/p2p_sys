@@ -2170,7 +2170,15 @@ def export_excel_report(request):
                     continue
                 cost  = float(o.cost   or 0)
                 price = float(o.price  or 0)
-                unit_price = cost / qty if qty > 0 else price
+                # По прямому указанию Максима: курс сделки (price) — источник
+                # истины, а не cost/qty. В Telegram комиссия зашита в
+                # "Стоимость" (cost), поэтому cost/qty систематически не равен
+                # реальному курсу закупки — это не опечатка, так и задумано в
+                # ручном вводе, но курс остатка/себестоимости должен идти по
+                # фактическому курсу сделки, а не размытой комиссией сумме.
+                # Взвешивание по qty сохраняется — меняется только источник
+                # цены за единицу, не сам метод.
+                unit_price = price if price > 0 else (cost / qty if qty > 0 else 0.0)
                 buys.append((qty, unit_price))
 
         # Если не хватает покупок текущего месяца — добавляем перенос остатка
@@ -2629,7 +2637,10 @@ def _calc_lifo_price(buy_orders, remainder_qty, prev_avg_price=0.0):
             continue
         cost = float(o.cost or 0)
         price = float(o.price or 0)
-        unit_price = cost / qty if qty > 0 else price
+        # По прямому указанию Максима: курс сделки (price), не cost/qty —
+        # в Telegram комиссия зашита в "Стоимость", cost/qty систематически
+        # не равен реальному курсу закупки. Взвешивание по qty сохраняется.
+        unit_price = price if price > 0 else (cost / qty if qty > 0 else 0.0)
         buys.append((qty, unit_price))
 
     if prev_avg_price > 0:
@@ -2844,7 +2855,10 @@ def _calc_lifo_price_excel(month_buy_orders, remainder_qty, prev_carry=None):
             continue
         cost  = float(o.cost or 0)
         price = float(o.price or 0)
-        unit_price = cost / qty if qty > 0 else price
+        # По прямому указанию Максима: курс сделки (price), не cost/qty —
+        # в Telegram комиссия зашита в "Стоимость", cost/qty систематически
+        # не равен реальному курсу закупки. Взвешивание по qty сохраняется.
+        unit_price = price if price > 0 else (cost / qty if qty > 0 else 0.0)
         buys.append((qty, unit_price))
 
     if prev_carry is not None:
