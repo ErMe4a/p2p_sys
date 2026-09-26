@@ -2128,7 +2128,7 @@ def export_excel_report(request):
     # колонкой построчно (Комиссия биржи (USDT) × Курс ЭТОЙ ЖЕ строки), а не
     # скрытой формулой "сумма × курс последней сделки" (см. openspec/changes/
     # fix-exchange-commission-rub-conversion).
-    ws.merge_cells('N2:N3'); ws['N2'] = "Комиссия биржи, эквивалент в руб"
+    ws.merge_cells('N2:N3'); ws['N2'] = "Комиссия биржи, экв. в руб."
 
     ws.append([
         "", "", "", "",
@@ -2486,7 +2486,7 @@ def export_excel_report(request):
     # =====================================================================
     summary_kw = ('торговый', 'реализованный', 'прибыль', 'остаток')
 
-    for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=13):
+    for row in ws.iter_rows(min_row=4, max_row=ws.max_row, min_col=1, max_col=14):
         for cell in row:
             cell.border = thin_border
             val = str(cell.value or '').lower()
@@ -2496,10 +2496,13 @@ def export_excel_report(request):
             else:
                 cell.alignment = Alignment(horizontal='center')
 
+    # По просьбе Максима: колонки с комиссией (H/L/M) сделаны уже — они не
+    # требуют такой же ширины, как "Стоимость" — плюс новая N со своей шириной.
     col_widths = {
         'A': 40, 'B': 14, 'C': 24, 'D': 10,
-        'E': 14, 'F': 12, 'G': 18, 'H': 18,
-        'I': 14, 'J': 12, 'K': 18, 'L': 18, 'M': 20
+        'E': 14, 'F': 12, 'G': 18, 'H': 12,
+        'I': 14, 'J': 12, 'K': 18, 'L': 12, 'M': 14,
+        'N': 14,
     }
     for k, v in col_widths.items():
         ws.column_dimensions[k].width = v
