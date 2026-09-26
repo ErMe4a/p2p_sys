@@ -2113,7 +2113,7 @@ def export_excel_report(request):
     left_align   = Alignment(horizontal='left', vertical='center', wrap_text=True)
 
     cv_label = f" ({currency_label(currency)})" if currency else ""
-    ws.merge_cells('A1:M1')
+    ws.merge_cells('A1:N1')
     ws['A1'] = f"Учет приобретенной и проданной цифровой валюты (ЦВ){cv_label}"
     ws['A1'].font      = Font(size=14, bold=True)
     ws['A1'].alignment = Alignment(horizontal='center')
@@ -2124,14 +2124,20 @@ def export_excel_report(request):
     ws.merge_cells('D2:D3'); ws['D2'] = "Наименование ЦВ"
     ws.merge_cells('E2:H2'); ws['E2'] = "Приобретение цифровой валюты"
     ws.merge_cells('I2:M2'); ws['I2'] = "Продажа цифровой валюты"
+    # По просьбе Максима: рублёвый эквивалент комиссии биржи — отдельной видимой
+    # колонкой построчно (Комиссия биржи (USDT) × Курс ЭТОЙ ЖЕ строки), а не
+    # скрытой формулой "сумма × курс последней сделки" (см. openspec/changes/
+    # fix-exchange-commission-rub-conversion).
+    ws.merge_cells('N2:N3'); ws['N2'] = "Комиссия биржи, эквивалент в руб"
 
     ws.append([
         "", "", "", "",
         "Кол-во", "Курс", "Стоимость", "Комиссия банка",
-        "Кол-во", "Курс", "Стоимость", "Комиссия банка", f"Комиссия биржи ({currency_label(currency) if currency else 'USDT'})"
+        "Кол-во", "Курс", "Стоимость", "Комиссия банка", f"Комиссия биржи ({currency_label(currency) if currency else 'USDT'})",
+        "",
     ])
 
-    for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=13):
+    for row in ws.iter_rows(min_row=1, max_row=3, min_col=1, max_col=14):
         for cell in row:
             cell.font      = bold_font
             cell.alignment = center_align
@@ -2254,11 +2260,16 @@ def export_excel_report(request):
                 price_f,
                 buy_cost_val,
                 total_comm if total_comm > 0 else 0,
-                0, 0, 0, 0, 0
+                0, 0, 0, 0, 0,
+                0,
             ])
         else:
             exch_comm_usdt = amount_f * exch_rate / 100
             sell_cost_val = float(o.cost or 0) if is_telegram else f"=I{row_num}*J{row_num}"
+            # Рублёвый эквивалент комиссии биржи — по курсу ЭТОЙ строки (price_f),
+            # не курсу последней сделки периода. См. openspec/changes/
+            # fix-exchange-commission-rub-conversion.
+            exch_comm_rub = exch_comm_usdt * price_f if exch_rate > 0 else 0
             ws.append([
                 num, label, o.external_id, cv_name,
                 0, 0, 0, 0,
@@ -2266,7 +2277,8 @@ def export_excel_report(request):
                 price_f,
                 sell_cost_val,
                 total_comm if total_comm > 0 else 0,
-                exch_comm_usdt if exch_rate > 0 else 0
+                exch_comm_usdt if exch_rate > 0 else 0,
+                exch_comm_rub,
             ])
 
     # =====================================================================
@@ -2280,7 +2292,8 @@ def export_excel_report(request):
             f"=F{prev_ost_row}",
             f"=G{prev_ost_row}",
             0,
-            0, 0, 0, 0, 0
+            0, 0, 0, 0, 0,
+            0,
         ])
 
     # =====================================================================
@@ -2304,6 +2317,7 @@ def export_excel_report(request):
             f"=SUM(K{data_start}:K{data_end})",
             f"=SUM(L{data_start}:L{data_end})",
             f"=SUM(M{data_start}:M{data_end})",
+            f"=SUM(N{data_start}:N{data_end})",
         ])
         tr = ws.max_row
 
@@ -2359,7 +2373,10 @@ def export_excel_report(request):
 
         ws.append([
             f"Прибыль{label_suffix}:", "", "", "",
-            f"=K{rr}-G{rr}-H{tr}-L{tr}-M{tr}*J{rr}",
+            # Рублёвый эквивалент комиссии биржи — сумма построчных значений
+            # (колонка N), не сумма_USDT × курс последней сделки (M{tr}*J{rr}).
+            # См. openspec/changes/fix-exchange-commission-rub-conversion.
+            f"=K{rr}-G{rr}-H{tr}-L{tr}-N{tr}",
             "", "", "", "", "", "", "", ""
         ])
 
@@ -2946,14 +2963,18 @@ def _calc_all_months_currency_from_orders(user_id, all_orders_by_user, currency,
              if o.commission_type == 'PERCENT' else float(o.commission or 0))
             for o in month_list if o.operation_type == 'SELL'
         )
-        exch_qty = sum(
-            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
-            for o in month_list if o.operation_type == 'SELL'
-        )
-        last_sell_price = 0.0
+        # Комиссия биржи: количество (USDT, для остатка) и рублёвый эквивалент
+        # (для прибыли) — рубли считаются ПО КАЖДОМУ ордеру своим курсом, не
+        # суммой × курсом последней сделки периода (см. openspec/changes/
+        # fix-exchange-commission-rub-conversion).
+        exch_qty = 0.0
+        exch_comm_rub_month = 0.0
         for o in month_list:
-            if o.operation_type == 'SELL' and float(o.price or 0) > 0:
-                last_sell_price = float(o.price or 0)
+            if o.operation_type != 'SELL':
+                continue
+            comm_usdt_row = float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+            exch_qty += comm_usdt_row
+            exch_comm_rub_month += comm_usdt_row * float(o.price or 0)
 
         carry_qty = float(prev_carry[0]) if prev_carry else 0.0
         remainder_qty = buy_qty + carry_qty - sell_qty - exch_qty
@@ -2964,8 +2985,6 @@ def _calc_all_months_currency_from_orders(user_id, all_orders_by_user, currency,
         remainder_cost = remainder_qty * lifo_price
         total_buy_for_month = buy_cost + (carry_qty * (prev_carry[1] if prev_carry else 0.0))
         eq_buy_cost_month = total_buy_for_month - remainder_cost
-
-        exch_comm_rub_month = exch_qty * last_sell_price
 
         if sell_qty == 0:
             gross_month = 0.0
@@ -3105,14 +3124,18 @@ def _calc_currency_from_orders(user_id, month_start, month_end,
              if o.commission_type == 'PERCENT' else float(o.commission or 0))
             for o in filtered_list if o.operation_type == 'SELL'
         )
-        exch_qty = sum(
-            float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
-            for o in filtered_list if o.operation_type == 'SELL'
-        )
-        last_sell_price = 0.0
+        # Комиссия биржи: количество (USDT, для остатка) и рублёвый эквивалент
+        # (для прибыли) — рубли считаются ПО КАЖДОМУ ордеру своим курсом, не
+        # суммой × курсом последней сделки периода (см. openspec/changes/
+        # fix-exchange-commission-rub-conversion).
+        exch_qty = 0.0
+        exch_comm_rub_month = 0.0
         for o in filtered_list:
-            if o.operation_type == 'SELL' and float(o.price or 0) > 0:
-                last_sell_price = float(o.price or 0)
+            if o.operation_type != 'SELL':
+                continue
+            comm_usdt_row = float(o.amount or 0) * float(o.exchange_commission_rate or 0) / 100
+            exch_qty += comm_usdt_row
+            exch_comm_rub_month += comm_usdt_row * float(o.price or 0)
 
         carry_qty = float(prev_carry[0]) if prev_carry else 0.0
         remainder_qty = buy_qty + carry_qty - sell_qty - exch_qty
@@ -3123,8 +3146,6 @@ def _calc_currency_from_orders(user_id, month_start, month_end,
         remainder_cost = remainder_qty * lifo_price
         total_buy_for_month = buy_cost + (carry_qty * (prev_carry[1] if prev_carry else 0.0))
         eq_buy_cost_month = total_buy_for_month - remainder_cost
-
-        exch_comm_rub_month = exch_qty * last_sell_price
 
         if sell_qty == 0:
             gross_month = 0.0

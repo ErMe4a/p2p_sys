@@ -334,12 +334,12 @@ async function handleFormSubmission() {
         const expected = formData.price * formData.quantity;
         const diffPct = Math.abs(expected - formData.amount) / expected * 100;
         if (diffPct > 5) {
-            alert(
-                `Ошибка! Курс × Количество = ${expected.toFixed(2)} ₽, а указана Стоимость ${formData.amount} ₽ ` +
-                `— расхождение ${diffPct.toFixed(1)}%. Проверьте, нет ли опечатки (лишний/недостающий ноль) ` +
-                `в Количестве, Курсе или Стоимости.`
+            const proceed = confirm(
+                `Обратите внимание, возможно ошибка: Курс × Количество = ${expected.toFixed(2)} ₽, а указана Стоимость ${formData.amount} ₽ ` +
+                `— расхождение ${diffPct.toFixed(1)}%.\n\n` +
+                `Если это не опечатка (например, клиент сам перевёл другую сумму) — нажмите OK, чтобы всё равно сохранить.`
             );
-            return;
+            if (!proceed) return;
         }
     }
 
