@@ -146,6 +146,20 @@ def build_nds_declaration(user, year, quarter_key, correction_number=0):
     tax_type = (user.tax_type or "").upper()
     q = QUARTERS[quarter_key]
 
+    # По просьбе Максима: декларация по НДС не формируется за кварталы, целиком
+    # предшествующие регистрации ИП (дата берётся из настроек, User.ip_registration_date) —
+    # до регистрации обязанности подавать декларацию как ИП попросту не было.
+    # Если дата регистрации не заполнена — поведение не меняется (обратная совместимость,
+    # т.к. поле новое и пока пусто у большинства пользователей).
+    # Квартал, в котором произошла сама регистрация (дата registration попадает внутрь
+    # квартала, не на его начало), формируется целиком, без деления по дням внутри квартала —
+    # осознанное упрощение, см. history.md.
+    if user.ip_registration_date and _last_day(year, q["end_month"]) < user.ip_registration_date:
+        raise ValueError(
+            "Декларация по НДС не формируется — квартал целиком предшествует дате "
+            f"регистрации ИП ({user.ip_registration_date.strftime('%d.%m.%Y')})."
+        )
+
     if tax_type in ("OSNO", "OCH"):
         realization = calc_quarter_realization(user, year, q["start_month"], q["end_month"])
     elif tax_type in ("USN_INCOME", "USN_INCOME_OUTCOME"):
