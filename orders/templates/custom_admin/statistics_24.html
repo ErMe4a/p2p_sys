@@ -65,6 +65,16 @@
                     </select>
                 </div>
 
+                <div style="flex: 1; min-width: 130px;">
+                    <label style="color:var(--text-muted); font-size:0.8rem;">Валюта</label>
+                    <select name="currency" class="input">
+                        <option value="">Все валюты</option>
+                        {% for cur in currency_choices %}
+                            <option value="{{ cur }}" {% if current_currency == cur %}selected{% endif %}>{{ cur }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <div style="flex: 0 0 100px;">
                     <label style="color:var(--text-muted); font-size:0.8rem;">Кол-во</label>
                     <select name="limit" class="input">
@@ -114,6 +124,7 @@
                     <th>Сумма ордера (₽)</th>
                     <th>Сумма в чеке (₽)</th>
                     <th>Крипта</th>
+                    <th>Валюта</th>
                     <th>Курс</th>
                     <th>Пробит</th>
                 </tr>
@@ -121,7 +132,7 @@
             <tbody>
                 {% if not is_search %}
                     <tr>
-                        <td colspan="9" class="text-center py-5">
+                        <td colspan="10" class="text-center py-5">
                             <h4 class="text-muted">Нажмите "Обновить данные" для загрузки</h4>
                         </td>
                     </tr>
@@ -143,12 +154,13 @@
                             {% if order.receipt_sum is not None %}{{ order.receipt_sum|floatformat:2 }} ₽{% if order.mismatch %} ⚠{% endif %}{% else %}—{% endif %}
                         </td>
                         <td>{{ order.amount|floatformat:4 }}</td>
+                        <td>{{ order.currency }}</td>
                         <td>{{ order.price|floatformat:2 }}</td>
                         <td>{{ order.sent_at|date:"H:i d.m" }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9" class="text-center py-4 text-muted">Пробитых чеков не найдено за последние 24 часа</td>
+                        <td colspan="10" class="text-center py-4 text-muted">Пробитых чеков не найдено за последние 24 часа</td>
                     </tr>
                     {% endfor %}
                 {% endif %}
@@ -158,11 +170,11 @@
         {% if orders.has_other_pages %}
         <div class="p-3 d-flex justify-content-center gap-2">
             {% if orders.has_previous %}
-                <a href="?page={{ orders.previous_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">←</a>
+                <a href="?page={{ orders.previous_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&currency={{ current_currency }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">←</a>
             {% endif %}
             <span class="btn btn-sm disabled text-white">{{ orders.number }} / {{ orders.paginator.num_pages }}</span>
             {% if orders.has_next %}
-                <a href="?page={{ orders.next_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">→</a>
+                <a href="?page={{ orders.next_page_number }}&user={{ current_user }}&exchange={{ current_exchange }}&type={{ current_type }}&currency={{ current_currency }}&limit={{ current_limit }}" class="btn btn-sm btn-outline-secondary">→</a>
             {% endif %}
         </div>
         {% endif %}

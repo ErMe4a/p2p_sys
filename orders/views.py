@@ -4603,9 +4603,16 @@ def admin_statistics_24h(request):
     создания ордера - не все чеки бьются день-в-день, часть уходит позже
     (ретраи верификации, ручной разбор задним числом).
     """
+    # exchange_type у части ордеров - не название биржи, а служебная пометка
+    # (правка остатка/перенос баланса/январский импорт без опознанного
+    # логина) - в фильтр "Источник" и в саму статистику пробитых чеков
+    # такие попадать не должны.
+    PSEUDO_EXCHANGE_TYPES = ('Коррекция остатка', 'Остаток (до 1 фев)', 'Импорт-уточнить биржу')
+
     f_user = request.GET.get('user', '')
     f_exchange = request.GET.get('exchange', '')  # exchange_type ('Bybit'/'MEXC'/'HTX'/... или '' = все)
     f_type = request.GET.get('type', '')
+    f_currency = request.GET.get('currency', '')
     f_limit = request.GET.get('limit', '50')
 
     is_update_action = bool(request.GET)
@@ -4614,7 +4621,12 @@ def admin_statistics_24h(request):
     # Список реальных значений exchange_type в базе - для выпадающего списка
     exchange_choices = list(
         Order.objects.exclude(exchange_type='').exclude(exchange_type__isnull=True)
+        .exclude(exchange_type__in=PSEUDO_EXCHANGE_TYPES)
         .values_list('exchange_type', flat=True).distinct().order_by('exchange_type')
+    )
+    currency_choices = list(
+        Order.objects.exclude(currency='').exclude(currency__isnull=True)
+        .values_list('currency', flat=True).distinct().order_by('currency')
     )
 
     if is_update_action:
@@ -4628,7 +4640,7 @@ def admin_statistics_24h(request):
         qs = Order.objects.filter(
             created_at__gte=candidates_window,
             receipt__status='SENT',
-        ).select_related('user')
+        ).exclude(exchange_type__in=PSEUDO_EXCHANGE_TYPES).select_related('user')
 
         if f_user and f_user.isdigit():
             qs = qs.filter(user_id=f_user)
@@ -4636,6 +4648,8 @@ def admin_statistics_24h(request):
             qs = qs.filter(exchange_type=f_exchange)
         if f_type in ('BUY', 'SELL'):
             qs = qs.filter(operation_type=f_type)
+        if f_currency:
+            qs = qs.filter(currency=f_currency)
 
         # "Сейчас" в МСК - тем же способом, каким проставлялся сам
         # timestamp чека (datetime.now() + 3ч, наивная строка), чтобы
@@ -4663,6 +4677,7 @@ def admin_statistics_24h(request):
                 'user': o.user,
                 'operation_type': o.operation_type,
                 'exchange_type': o.exchange_type,
+                'currency': o.currency,
                 'order_cost': order_cost,
                 'receipt_sum': receipt_sum,
                 'amount': o.amount,
@@ -4694,9 +4709,11 @@ def admin_statistics_24h(request):
         'orders': page_obj,
         'users': all_users,
         'exchange_choices': exchange_choices,
+        'currency_choices': currency_choices,
         'current_user': int(f_user) if f_user.isdigit() else '',
         'current_exchange': f_exchange,
         'current_type': f_type,
+        'current_currency': f_currency,
         'current_limit': f_limit,
         'total_orders': total_count,
         'buy_count': buy_count,
