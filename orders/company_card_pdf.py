@@ -112,21 +112,18 @@ def build_company_card_pdf(user):
         ], (label_style, value_style)),
     ]
 
-    accounts = list(user.bank_accounts.all())
+    # По запросу Максима: показываем только ОДИН, основной счёт — тот, что
+    # трейдер ввёл первым (UserBankAccount.Meta.ordering = ['id'], поэтому
+    # .first() и есть самый ранний по дате добавления), а не все сразу.
+    primary_account = user.bank_accounts.first()
     story.append(Paragraph('Банковские реквизиты', section_style))
-    if accounts:
-        for i, acc in enumerate(accounts, start=1):
-            if len(accounts) > 1:
-                story.append(Paragraph(f'Счёт {i}', ParagraphStyle(
-                    'AccN', fontName='DejaVuSans-Bold', fontSize=9.5, spaceBefore=6, spaceAfter=2,
-                    textColor=colors.HexColor('#444444'),
-                )))
-            story.append(_requisites_table([
-                ('Банк', _dash(acc.bank_name)),
-                ('Расчетный счет', _dash(acc.account_number)),
-                ('Корреспондентский счет', _dash(acc.corr_account)),
-                ('БИК', _dash(acc.bik)),
-            ], (label_style, value_style)))
+    if primary_account:
+        story.append(_requisites_table([
+            ('Банк', _dash(primary_account.bank_name)),
+            ('Расчетный счет', _dash(primary_account.account_number)),
+            ('Корреспондентский счет', _dash(primary_account.corr_account)),
+            ('БИК', _dash(primary_account.bik)),
+        ], (label_style, value_style)))
     else:
         story.append(Paragraph('Банковские реквизиты не заполнены.', value_style))
 
