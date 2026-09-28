@@ -69,8 +69,8 @@
                     <label style="color:var(--text-muted); font-size:0.8rem;">Валюта</label>
                     <select name="currency" class="input">
                         <option value="">Все валюты</option>
-                        {% for cur in currency_choices %}
-                            <option value="{{ cur }}" {% if current_currency == cur %}selected{% endif %}>{{ cur }}</option>
+                        {% for code, label in currency_choices %}
+                            <option value="{{ code }}" {% if current_currency == code %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
                 </div>

@@ -4612,22 +4612,28 @@ def admin_statistics_24h(request):
     f_user = request.GET.get('user', '')
     f_exchange = request.GET.get('exchange', '')  # exchange_type ('Bybit'/'MEXC'/'HTX'/... или '' = все)
     f_type = request.GET.get('type', '')
-    f_currency = request.GET.get('currency', '')
+    # normalize_currency: пришедший код может быть пользовательским алиасом
+    # (GRAM) - приводим к внутреннему (TON), как и везде в проекте.
+    f_currency = normalize_currency(request.GET.get('currency', ''))
     f_limit = request.GET.get('limit', '50')
 
     is_update_action = bool(request.GET)
     display_rows = []
 
     # Список реальных значений exchange_type в базе - для выпадающего списка
+    # (биржи - открытый список, новые появляются со временем, поэтому берём
+    # из фактических данных, а не хардкодим).
     exchange_choices = list(
         Order.objects.exclude(exchange_type='').exclude(exchange_type__isnull=True)
         .exclude(exchange_type__in=PSEUDO_EXCHANGE_TYPES)
         .values_list('exchange_type', flat=True).distinct().order_by('exchange_type')
     )
-    currency_choices = list(
-        Order.objects.exclude(currency='').exclude(currency__isnull=True)
-        .values_list('currency', flat=True).distinct().order_by('currency')
-    )
+    # Валюты - закрытый список (SUPPORTED_CURRENCIES, orders/currencies.py),
+    # показываем ВСЕ поддерживаемые системой, а не только те, что уже
+    # встретились в БД за последнее время (иначе USDC/ETH не появлялись бы
+    # в фильтре, пока по ним не пройдёт хотя бы один ордер). Код для value,
+    # человекочитаемая метка (TON -> GRAM) для текста.
+    currency_choices = [(c, currency_label(c)) for c in SUPPORTED_CURRENCIES]
 
     if is_update_action:
         # receipt.status/receipt.timestamp - внутри JSONField, не
@@ -4677,7 +4683,7 @@ def admin_statistics_24h(request):
                 'user': o.user,
                 'operation_type': o.operation_type,
                 'exchange_type': o.exchange_type,
-                'currency': o.currency,
+                'currency': currency_label(o.currency),
                 'order_cost': order_cost,
                 'receipt_sum': receipt_sum,
                 'amount': o.amount,
