@@ -1,7 +1,7 @@
 {% extends 'custom_admin/admin_base.html' %}
 {% load l10n %}
 
-{% block title %}API Статистика 24ч{% endblock %}
+{% block title %}Пробитые чеки за 24ч{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -25,7 +25,7 @@
 <div id="loader" class="loader-overlay">
     <div class="text-center">
         <div class="spinner mb-3 mx-auto"></div>
-        <div style="color:white; font-size: 1.2rem;">Синхронизация с Bybit...</div>
+        <div style="color:white; font-size: 1.2rem;">Ищем пробитые чеки...</div>
         <small style="color:var(--text-muted);">Это может занять несколько секунд</small>
     </div>
 </div>
@@ -50,9 +50,10 @@
                     <label style="color:var(--text-muted); font-size:0.8rem;">Источник</label>
                     <select name="exchange" class="input">
                         <option value="">Все источники</option>
-                        <option value="1" {% if current_exchange == '1' %}selected{% endif %}>Bybit</option>
-                        <option value="2" {% if current_exchange == '2' %}selected{% endif %}>MEXC</option>
-                        </select>
+                        {% for ex in exchange_choices %}
+                            <option value="{{ ex }}" {% if current_exchange == ex %}selected{% endif %}>{{ ex }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
 
                 <div style="flex: 1; min-width: 150px;">
@@ -85,7 +86,7 @@
 
     <div class="stats-summary">
         <div class="stat-card">
-            <div style="color:var(--text-muted); font-size:0.8rem;">Всего заказов</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Пробито чеков</div>
             <div class="stat-value">{{ total_orders }}</div>
         </div>
         <div class="stat-card">
@@ -97,7 +98,7 @@
             <div class="stat-value" style="color:#f84960;">{{ sell_count }}</div>
         </div>
         <div class="stat-card">
-            <div style="color:var(--text-muted); font-size:0.8rem;">Оборот (Fiat)</div>
+            <div style="color:var(--text-muted); font-size:0.8rem;">Оборот по ордерам (₽)</div>
             <div class="stat-value" style="color:#3498db;">{{ total_amount|floatformat:0 }} ₽</div>
         </div>
     </div>
@@ -110,16 +111,17 @@
                     <th>Пользователь</th>
                     <th>Тип</th>
                     <th>Биржа</th>
-                    <th>Сумма (₽)</th>
+                    <th>Сумма ордера (₽)</th>
+                    <th>Сумма в чеке (₽)</th>
                     <th>Крипта</th>
                     <th>Курс</th>
-                    <th>Время</th>
+                    <th>Пробит</th>
                 </tr>
             </thead>
             <tbody>
                 {% if not is_search %}
                     <tr>
-                        <td colspan="8" class="text-center py-5">
+                        <td colspan="9" class="text-center py-5">
                             <h4 class="text-muted">Нажмите "Обновить данные" для загрузки</h4>
                         </td>
                     </tr>
@@ -136,14 +138,17 @@
                             {% endif %}
                         </td>
                         <td>{{ order.exchange_type }}</td>
-                        <td>{{ order.cost|floatformat:2 }} ₽</td>
+                        <td>{{ order.order_cost|floatformat:2 }} ₽</td>
+                        <td{% if order.mismatch %} style="color:#f84960; font-weight:bold;" title="Не совпадает с суммой ордера"{% endif %}>
+                            {% if order.receipt_sum is not None %}{{ order.receipt_sum|floatformat:2 }} ₽{% if order.mismatch %} ⚠{% endif %}{% else %}—{% endif %}
+                        </td>
                         <td>{{ order.amount|floatformat:4 }}</td>
                         <td>{{ order.price|floatformat:2 }}</td>
-                        <td>{{ order.created_at|date:"H:i d.m" }}</td>
+                        <td>{{ order.sent_at|date:"H:i d.m" }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">Заказов не найдено</td>
+                        <td colspan="9" class="text-center py-4 text-muted">Пробитых чеков не найдено за последние 24 часа</td>
                     </tr>
                     {% endfor %}
                 {% endif %}

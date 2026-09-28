@@ -27,9 +27,7 @@ from django.conf import settings
 
 # --- Проект ---
 from .bybit_api import sync_bybit_orders
-from .bybit_service import get_orders_parallel as get_bybit_orders
 from .mexc_api import sync_mexc_orders
-from .mexc_service import get_mexc_orders_parallel
 from .models import BankDetail, Exchange, IgnoredOrder, Order, UnprocessedOrder, UserExpense, MonthlyManualEntry, BalanceCorrection
 from .models import UserBankAccount, PRESET_BANK_NAMES
 from .receipt_service import create_or_update_and_send_receipt
@@ -4590,63 +4588,104 @@ def admin_turnover_control(request):
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_statistics_24h(request):
+    """
+    "Все пробитые чеки за последние 24 часа" - по всем биржам сразу
+    (включая HTX/Gate/BingX/Telegram, у которых нет API вообще).
+
+    Раньше страница дёргала API-ключи биржи вживую (bybit_service.py/
+    mexc_service.py) - но у биржи физически нет понятия "пробит ли у нас
+    чек", и живой путь поддерживал только Bybit/MEXC. Правильный источник -
+    наша же БД (Order.receipt), она одна знает, что реально ушло в Evotor.
+
+    Момент "за последние 24 часа" считается по времени ОТПРАВКИ ЧЕКА
+    (Order.receipt['timestamp'], МСК, проставляется в
+    evotor_atol.build_receipt_payload_v5 в момент отправки), а НЕ по дате
+    создания ордера - не все чеки бьются день-в-день, часть уходит позже
+    (ретраи верификации, ручной разбор задним числом).
+    """
     f_user = request.GET.get('user', '')
-    f_exchange = request.GET.get('exchange', '') # Bybit, MEXC, или пусто
+    f_exchange = request.GET.get('exchange', '')  # exchange_type ('Bybit'/'MEXC'/'HTX'/... или '' = все)
     f_type = request.GET.get('type', '')
     f_limit = request.GET.get('limit', '50')
 
     is_update_action = bool(request.GET)
-    orders = []
+    display_rows = []
+
+    # Список реальных значений exchange_type в базе - для выпадающего списка
+    exchange_choices = list(
+        Order.objects.exclude(exchange_type='').exclude(exchange_type__isnull=True)
+        .values_list('exchange_type', flat=True).distinct().order_by('exchange_type')
+    )
 
     if is_update_action:
-        # --- 1. ОПРЕДЕЛЯЕМ ПОЛЬЗОВАТЕЛЕЙ ---
+        # receipt.status/receipt.timestamp - внутри JSONField, не
+        # индексированы, точную фильтрацию по времени пробития чека делаем
+        # ниже в Python. Этим запросом просто сужаем кандидатов по дате
+        # СОЗДАНИЯ ордера (с большим запасом - 60 дней, это заведомо больше
+        # максимального ретрая верификации ~48ч и обычного окна ручного
+        # разбора задним числом), чтобы не сканировать всю историю ордеров.
+        candidates_window = timezone.now() - timedelta(days=60)
+        qs = Order.objects.filter(
+            created_at__gte=candidates_window,
+            receipt__status='SENT',
+        ).select_related('user')
+
         if f_user and f_user.isdigit():
-            # Если выбран конкретный пользователь
-            users_qs = User.objects.filter(id=f_user)
-        else:
-            # Если "Все", берем тех, у кого есть хоть какие-то ключи
-            users_qs = User.objects.filter(
-                Q(bybit_api_key__isnull=False) & ~Q(bybit_api_key='') |
-                Q(mexc_api_key__isnull=False) & ~Q(mexc_api_key='')
-            )
+            qs = qs.filter(user_id=f_user)
+        if f_exchange:
+            qs = qs.filter(exchange_type=f_exchange)
+        if f_type in ('BUY', 'SELL'):
+            qs = qs.filter(operation_type=f_type)
 
-        filters = {'type': f_type, 'exchange': f_exchange}
-        
-        # --- 2. СБОР ДАННЫХ ---
-        
-        # BYBIT
-        # Запускаем, если выбран "Bybit" или "Все источники"
-        if f_exchange == 'Bybit' or f_exchange == '' or f_exchange == '1':
-            # Фильтруем юзеров, у кого есть ключи Bybit, чтобы не гонять пустышки
-            bybit_users = users_qs.exclude(bybit_api_key__isnull=True).exclude(bybit_api_key='')
-            bybit_data = get_bybit_orders(bybit_users, filters)
-            orders.extend(bybit_data)
+        # "Сейчас" в МСК - тем же способом, каким проставлялся сам
+        # timestamp чека (datetime.now() + 3ч, наивная строка), чтобы
+        # сравнение было корректным без путаницы поясов.
+        now_msk = datetime.now() + timedelta(hours=3)
+        cutoff_msk = now_msk - timedelta(hours=24)
 
-        # MEXC
-        # Запускаем, если выбран "MEXC" или "Все источники"
-        if f_exchange == 'MEXC' or f_exchange == '' or f_exchange == '2':
-            # Фильтруем юзеров, у кого есть ключи MEXC
-            mexc_users = users_qs.exclude(mexc_api_key__isnull=True).exclude(mexc_api_key='')
-            mexc_data = get_mexc_orders_parallel(mexc_users, filters)
-            orders.extend(mexc_data)
+        for o in qs:
+            ts_raw = (o.receipt or {}).get('timestamp')
+            if not ts_raw:
+                continue
+            try:
+                sent_at = datetime.strptime(ts_raw, '%d.%m.%Y %H:%M:%S')
+            except (ValueError, TypeError):
+                continue
+            if sent_at < cutoff_msk:
+                continue
 
-        # --- 3. ФИНАЛЬНАЯ СОРТИРОВКА ---
-        # Сортируем общий список по дате (свежие сверху)
-        orders.sort(key=lambda x: x.created_at, reverse=True)
+            receipt_sum = (o.receipt or {}).get('sum')
+            order_cost = float(o.cost or 0)
+            mismatch = receipt_sum is not None and abs(float(receipt_sum) - order_cost) > 0.01
+
+            display_rows.append({
+                'external_id': o.external_id,
+                'user': o.user,
+                'operation_type': o.operation_type,
+                'exchange_type': o.exchange_type,
+                'order_cost': order_cost,
+                'receipt_sum': receipt_sum,
+                'amount': o.amount,
+                'price': o.price,
+                'sent_at': sent_at,
+                'mismatch': mismatch,
+            })
+
+        display_rows.sort(key=lambda x: x['sent_at'], reverse=True)
 
     # Статистика "на лету"
-    total_count = len(orders)
-    buy_count = sum(1 for x in orders if x.operation_type == 'BUY')
-    sell_count = sum(1 for x in orders if x.operation_type == 'SELL')
-    total_sum = sum(x.cost for x in orders)
+    total_count = len(display_rows)
+    buy_count = sum(1 for x in display_rows if x['operation_type'] == 'BUY')
+    sell_count = sum(1 for x in display_rows if x['operation_type'] == 'SELL')
+    total_sum = sum(x['order_cost'] for x in display_rows)
 
     # Пагинация
     try:
         limit = int(f_limit)
-    except:
+    except (TypeError, ValueError):
         limit = 50
-        
-    paginator = Paginator(orders, limit)
+
+    paginator = Paginator(display_rows, limit)
     page_obj = paginator.get_page(request.GET.get('page'))
 
     all_users = User.objects.all().order_by('username')
@@ -4654,6 +4693,7 @@ def admin_statistics_24h(request):
     context = {
         'orders': page_obj,
         'users': all_users,
+        'exchange_choices': exchange_choices,
         'current_user': int(f_user) if f_user.isdigit() else '',
         'current_exchange': f_exchange,
         'current_type': f_type,
