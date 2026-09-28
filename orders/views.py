@@ -4624,7 +4624,7 @@ def admin_statistics_24h(request):
 
         # MEXC
         # Запускаем, если выбран "MEXC" или "Все источники"
-        if f_exchange == 'MEXC' or f_exchange == '':
+        if f_exchange == 'MEXC' or f_exchange == '' or f_exchange == '2':
             # Фильтруем юзеров, у кого есть ключи MEXC
             mexc_users = users_qs.exclude(mexc_api_key__isnull=True).exclude(mexc_api_key='')
             mexc_data = get_mexc_orders_parallel(mexc_users, filters)
