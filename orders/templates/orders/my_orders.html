@@ -552,7 +552,7 @@
                         <div class="col-md-6">
                             <label class="form-label">Комиссия</label>
                             <div class="commission-group">
-                                <input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.1">
+                                <input type="number" name="commission_value" id="modal_comm_val" class="form-control" step="0.01">
                                 <select class="form-select commission-select" name="commission_type" id="modal_comm_type">
                                     <option value="PERCENT">%</option>
                                     <option value="FIX">₽</option>
@@ -696,13 +696,18 @@
         document.getElementById('modal_amount').value    = amount;
         document.getElementById('modal_cost').value      = cost;
         document.getElementById('modal_comm_val').value  = commVal;
-        // На старых ордерах (особенно из расширения) commission_type мог
-        // прийти не "PERCENT"/"FIX" (например "MONEY" из старого кода) —
-        // без совпадающего <option> select тихо остаётся не выбранным и
-        // при сохранении браузер вообще не шлёт это поле -> 500 на сервере
-        // (NOT NULL) и теряются ВСЕ правки в форме, не только комиссия.
-        ensureOption(document.getElementById('modal_comm_type'), commType, commType === 'PERCENT' ? '%' : '₽ (устар. формат)');
-        document.getElementById('modal_comm_type').value = commType;
+        // "MONEY" - известный легаси-синоним "FIX" (расширение до сих пор шлёт
+        // именно его на всех биржах, см. order_api.js COMMISSION_TYPE_MONEY) -
+        // не показываем как "устаревший формат", просто приравниваем к "FIX";
+        // при сохранении формы значение само перезапишется на каноническое.
+        const normalizedCommType = commType === 'MONEY' ? 'FIX' : commType;
+        // На совсем старых ордерах commission_type мог прийти каким-то ещё
+        // не предусмотренным значением - без совпадающего <option> select
+        // тихо остаётся не выбранным и при сохранении браузер вообще не
+        // шлёт это поле -> 500 на сервере (NOT NULL) и теряются ВСЕ правки
+        // в форме, не только комиссия. ensureOption - страховка на этот случай.
+        ensureOption(document.getElementById('modal_comm_type'), normalizedCommType, normalizedCommType === 'PERCENT' ? '%' : '₽ (устар. формат)');
+        document.getElementById('modal_comm_type').value = normalizedCommType;
         document.getElementById('modal_ext_id').value    = extId;
         document.getElementById('modal_date').value      = date;
         document.getElementById('modal_currency').value  = currency || 'USDT';
