@@ -1,5 +1,5 @@
 # orders/receipt_service.py
-from .models import Order
+from .models import Order, Exchange
 # Убрали импорт Receipt, так как модели больше нет
 from .evotor_atol import (
     evotor_get_token,
@@ -93,6 +93,21 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
 
     if 'intelion' in str(getattr(order, 'exchange_type', '')).lower():
         return ReceiptResponse(status="SKIPPED", error_text="Чеки для биржи Intelion отключены")
+
+    # Админ может глобально отключить чек для конкретной биржи из каталога
+    # (custom_admin/catalog.html) - сопоставление по имени (не FK, Exchange
+    # исторически не связан с Order.exchange_type). Список исключений -
+    # пользователи, для которых чек всё равно продолжает отправляться.
+    exchange = Exchange.objects.filter(
+        name__iexact=str(getattr(order, 'exchange_type', '') or ''),
+        is_deleted=False,
+    ).first()
+    if exchange and not exchange.receipts_enabled and not exchange.receipt_exception_users.filter(pk=order.user_id).exists():
+        return ReceiptResponse(
+            status="SKIPPED",
+            error_text=f"Чеки для биржи {exchange.name} отключены администратором",
+        )
+
     user = order.user
 
     # 1. Если чек уже есть в базе, не бьем повторно (защита)

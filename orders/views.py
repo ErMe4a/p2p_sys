@@ -1988,11 +1988,35 @@ def admin_catalog(request):
                 target_user.visible_exchanges.remove(exchange)
                 messages.success(request, f'{target_user.username} убран(а) из доступа к бирже "{exchange.name}".')
 
+        elif action == 'toggle_exchange_receipts':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            if exchange:
+                exchange.receipts_enabled = not exchange.receipts_enabled
+                exchange.save(update_fields=['receipts_enabled'])
+                messages.success(
+                    request,
+                    f'Чек для биржи "{exchange.name}" {"включён" if exchange.receipts_enabled else "отключён"}.'
+                )
+
+        elif action == 'add_receipt_exception_user':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if exchange and target_user:
+                exchange.receipt_exception_users.add(target_user)
+                messages.success(request, f'{target_user.username} добавлен(а) в исключения по чеку для биржи "{exchange.name}".')
+
+        elif action == 'remove_receipt_exception_user':
+            exchange = Exchange.objects.filter(id=request.POST.get('id')).first()
+            target_user = User.objects.filter(id=request.POST.get('user_id')).first()
+            if exchange and target_user:
+                exchange.receipt_exception_users.remove(target_user)
+                messages.success(request, f'{target_user.username} убран(а) из исключений по чеку для биржи "{exchange.name}".')
+
         return redirect('admin_catalog')
 
     return render(request, 'custom_admin/catalog.html', {
         'banks':     BankDetail.objects.all().order_by('is_deleted', 'name').prefetch_related('allowed_users'),
-        'exchanges': Exchange.objects.all().order_by('is_deleted', 'name').prefetch_related('allowed_users'),
+        'exchanges': Exchange.objects.all().order_by('is_deleted', 'name').prefetch_related('allowed_users', 'receipt_exception_users'),
     })
 
 
