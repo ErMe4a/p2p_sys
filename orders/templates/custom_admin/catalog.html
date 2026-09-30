@@ -40,18 +40,6 @@
         font-size: 0.9rem; line-height: 1; padding: 0 4px;
     }
     .access-chip-remove:hover { color: var(--danger, #e55); }
-
-    /* Отдельный от access-panel вид - чтобы не перепутать "кому видна биржа"
-       (access-panel, пунктирная рамка) с "кому всё равно бить чек при
-       отключении" (сплошная рамка с акцентом слева). */
-    .receipt-exception-panel {
-        margin: -4px 0 8px 0; padding: 10px 12px; border-radius: 8px;
-        border: 1px solid var(--border-color); border-left: 3px solid #f0ad4e;
-        background: var(--bg-card);
-    }
-    .receipt-exception-panel .catalog-hint-title {
-        font-size: 0.78rem; color: #f0ad4e; font-weight: 600; margin-bottom: 8px;
-    }
     .access-user-search-wrap { position: relative; }
     .access-user-search-dropdown {
         position: absolute; top: 100%; left: 0; right: 0; z-index: 20;
@@ -187,45 +175,13 @@
                             {% csrf_token %}
                             <input type="hidden" name="action" value="toggle_exchange_receipts">
                             <input type="hidden" name="id" value="{{ exchange.id }}">
-                            <button type="submit" class="btn btn-sm {% if exchange.receipts_enabled %}btn-outline-danger{% else %}btn-outline-success{% endif %}"
-                                    title="{% if exchange.receipts_enabled %}Сейчас чек бьётся — отключить фискализацию для этой биржи{% else %}Сейчас чек отключён — включить фискализацию обратно{% endif %}">
-                                {% if exchange.receipts_enabled %}Отключить чек{% else %}Включить чек{% endif %}
+                            <button type="submit" class="btn btn-sm {% if exchange.receipts_enabled %}btn-outline-success{% else %}btn-outline-danger{% endif %}"
+                                    title="{% if exchange.receipts_enabled %}Чек включён — нажмите, чтобы отключить фискализацию для этой биржи{% else %}Чек отключён — нажмите, чтобы включить фискализацию обратно{% endif %}">
+                                🧾
                             </button>
                         </form>
                     </div>
                 </div>
-                {% if not exchange.receipts_enabled %}
-                    <div class="receipt-exception-panel">
-                        <div class="catalog-hint-title">⚠ Чек отключён для этой биржи — кому всё равно бить:</div>
-                        <div class="access-users">
-                            {% for u in exchange.receipt_exception_users.all %}
-                                <span class="access-chip">
-                                    {{ u.username }}
-                                    <form method="POST" style="display:inline;">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="remove_receipt_exception_user">
-                                        <input type="hidden" name="id" value="{{ exchange.id }}">
-                                        <input type="hidden" name="user_id" value="{{ u.id }}">
-                                        <button type="submit" class="access-chip-remove" title="Убрать исключение">×</button>
-                                    </form>
-                                </span>
-                            {% empty %}
-                                <span class="catalog-hint" style="margin:0;">Исключений нет — чек не бьётся вообще ни для кого на этой бирже.</span>
-                            {% endfor %}
-                        </div>
-                        <form method="POST" class="access-add-form">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="add_receipt_exception_user">
-                            <input type="hidden" name="id" value="{{ exchange.id }}">
-                            <input type="hidden" name="user_id" class="access-user-id">
-                            <div class="access-user-search-wrap">
-                                <input type="text" class="access-user-search form-control form-control-sm" autocomplete="off"
-                                       placeholder="Добавить пользователя...">
-                                <div class="access-user-search-dropdown" style="display:none;"></div>
-                            </div>
-                        </form>
-                    </div>
-                {% endif %}
                 {% if not exchange.is_public %}
                     <div class="access-panel">
                         <div class="access-users">

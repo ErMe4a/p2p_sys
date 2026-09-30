@@ -96,13 +96,13 @@ def create_or_update_and_send_receipt(order, receipt_data: dict) -> ReceiptRespo
 
     # Админ может глобально отключить чек для конкретной биржи из каталога
     # (custom_admin/catalog.html) - сопоставление по имени (не FK, Exchange
-    # исторически не связан с Order.exchange_type). Список исключений -
-    # пользователи, для которых чек всё равно продолжает отправляться.
+    # исторически не связан с Order.exchange_type). Без исключений по
+    # пользователям - если чек для биржи отключён, он отключён для всех.
     exchange = Exchange.objects.filter(
         name__iexact=str(getattr(order, 'exchange_type', '') or ''),
         is_deleted=False,
     ).first()
-    if exchange and not exchange.receipts_enabled and not exchange.receipt_exception_users.filter(pk=order.user_id).exists():
+    if exchange and not exchange.receipts_enabled:
         return ReceiptResponse(
             status="SKIPPED",
             error_text=f"Чеки для биржи {exchange.name} отключены администратором",

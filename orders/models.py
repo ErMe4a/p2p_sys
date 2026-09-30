@@ -136,14 +136,10 @@ class Exchange(models.Model):
     is_public = models.BooleanField(default=True, verbose_name="Публичная (видна всем)")
     is_deleted = models.BooleanField(default=False, verbose_name="Удалено")
     # Глобальный флаг фискализации по бирже — сопоставление с Order.exchange_type
-    # идёт по имени (name__iexact), не по FK, см. receipt_service.py.
+    # идёт по имени (name__iexact), не по FK, см. receipt_service.py. Без
+    # исключений по пользователям (по прямому решению Максима: "если чек не
+    # нужен, то он точно никому не нужен") — было и убрано, см. history.md.
     receipts_enabled = models.BooleanField(default=True, verbose_name="Чек включён")
-    receipt_exception_users = models.ManyToManyField(
-        User,
-        blank=True,
-        related_name='receipt_exception_exchanges',
-        verbose_name="Исключения по чеку",
-    )
 
     def __str__(self):
         return self.name
