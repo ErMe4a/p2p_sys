@@ -108,19 +108,18 @@
             wrapper.style.alignItems = 'flex-start';
             
             if (isNewTable) {
-                // For new table: Position absolutely to the left of the status content
-                // Ensure container is relative for absolute positioning context
+                // Новая таблица Bybit (moly-table; и merchant-admin, и /p2p/orderList): статус прижат к правому краю ячейки, поэтому
+                // вешаем бейджи на ЛЕВЫЙ край всей ячейки статуса и выносим их влево за него —
+                // они встают в пустое место между статусом и «Go to Chatbox», ничего не перекрывая.
                 if (getComputedStyle(container).position === 'static') {
                     container.style.position = 'relative';
                 }
-                
                 wrapper.style.position = 'absolute';
-                wrapper.style.right = '100%'; // Push to the left of the container
+                wrapper.style.right = '100%';
                 wrapper.style.top = '50%';
-                wrapper.style.transform = 'translateY(-50%)'; // Center vertically
-                wrapper.style.marginRight = '24px'; // Space between badges and status
-                wrapper.style.width = 'max-content'; // Prevent wrapping
-                
+                wrapper.style.transform = 'translateY(-50%)';
+                wrapper.style.marginRight = '-20px';
+                wrapper.style.width = 'max-content';
                 container.insertBefore(wrapper, container.firstChild);
             } else {
                 // For old table: Insert into flow with horizontal spacing
@@ -186,21 +185,37 @@
         wrapper.style.display = hasAnyBadge ? 'flex' : 'none';
     }
 
+    // Видимая подсказка на странице: без неё сбой входа/разметки выглядит как «расширение молчит»
+    function showHint(text) {
+        try {
+            let el = document.getElementById('p2p-analytics-hint');
+            if (!text) { if (el) el.remove(); return; }
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'p2p-analytics-hint';
+                el.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:320px;' +
+                    'padding:10px 14px;border-radius:8px;background:#fff3cd;color:#664d03;border:1px solid #ffe69c;' +
+                    'font:13px/1.4 sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.2);cursor:pointer;';
+                el.title = 'Нажмите, чтобы скрыть';
+                el.addEventListener('click', () => el.remove());
+                (document.body || document.documentElement).appendChild(el);
+            }
+            el.textContent = text;
+        } catch (_) {}
+    }
+
     function extractOrderIdFromRow(row) {
         // Old Bybit table DOM: order id is inside td.order-id span.id
         let idEl = row.querySelector('td.fiat-amount .order-id .id, .order-id .id, .fiat-amount .id, span.id');
         if (idEl) return (idEl.textContent || '').trim();
 
-        // New merchant admin table: Order ID is in the 2nd column (index 1)
-        // Check if it's the new table structure by checking for cells
-        const cells = row.querySelectorAll('td');
-        if (cells.length >= 2) {
-             // The order ID is in the text of the 2nd cell.
-             // We look for a long sequence of digits.
-             const text = cells[1].textContent || '';
-             const match = text.match(/\d{18,}/); 
-             if (match) return match[0];
-        }
+        // New merchant admin table: layout changes often, so look for the long
+        // numeric order id anywhere in the row (skip our own badges).
+        const text = Array.from(row.children)
+            .map(c => c.querySelector && c.querySelector('.p2p-analytics-badges-wrapper') ? '' : (c.textContent || ''))
+            .join(' ');
+        const match = text.match(/\d{18,}/);
+        if (match) return match[0];
         return null;
     }
 
@@ -228,10 +243,53 @@
         return { isSaved, hasReceipt };
     }
 
+    // Кэш между перезагрузками страницы (localStorage Bybit, ключ — id пользователя mininp2p):
+    // бейджи рисуются сразу, а свежий ответ сервера потом их при необходимости обновляет.
+    const PERSIST_MAX = 600;
+    let persistKey = null;
+    let persisted = {};
+    let persistTimer = null;
+
+    async function loadPersisted() {
+        persisted = {};
+        persistKey = null;
+        try {
+            const user = await getAuth().getCurrentUser();
+            if (!user) return;
+            persistKey = 'p2pBadgeCache:' + user.id;
+            persisted = JSON.parse(localStorage.getItem(persistKey) || '{}') || {};
+        } catch (_) { persisted = {}; }
+    }
+
+    function savePersistedSoon() {
+        if (!persistKey || persistTimer) return;
+        persistTimer = setTimeout(() => {
+            persistTimer = null;
+            try {
+                const keys = Object.keys(persisted);
+                if (keys.length > PERSIST_MAX) {
+                    keys.sort((a, b) => persisted[a].t - persisted[b].t)
+                        .slice(0, keys.length - PERSIST_MAX)
+                        .forEach(k => delete persisted[k]);
+                }
+                localStorage.setItem(persistKey, JSON.stringify(persisted));
+            } catch (_) {}
+        }, 500);
+    }
+
+    function rememberOrder(orderId, order) {
+        if (!persistKey) return;
+        persisted[orderId] = { r: !!(order && order.receipt && order.receipt.uuid), t: Date.now() };
+        savePersistedSoon();
+    }
+
+    const orderCache = new Map(); // orderId -> {order, ts}: повторный скан строки без запроса к серверу
+    const ORDER_CACHE_TTL = 60000;
     const rowStates = new Map(); // orderId -> {status: 'loading'|'done'|'error', ts}
 
     function clearRowStates() {
         rowStates.clear();
+        orderCache.clear();
         console.log('[P2P] Row states cleared for new page');
     }
 
@@ -270,7 +328,50 @@
         }
     }
 
-    const requestQueue = new RequestQueue(3); // Max 3 concurrent requests
+    const requestQueue = new RequestQueue(6); // Max 6 concurrent requests
+
+    // Рисует бейджи в строке по данным ордера (без сети — используется и для кэша)
+    function applyToRow(row, order) {
+        const state = formatBadgeState(order);
+        // Detect table type and status cell (selectors tolerant to Bybit redesigns)
+        let statusCell = row.querySelector('td.fiat-order-status');
+        let isNewTable = false;
+
+        if (!statusCell) {
+            const cells = row.querySelectorAll(':scope > td');
+            if (cells.length > 0) {
+                statusCell = cells[cells.length - 1];
+                isNewTable = true;
+            }
+    }
+
+    if (statusCell) {
+        // Только завершённые ордера: RU/EN/ZH текст статуса в последней ячейке
+        const COMPLETED_RE = /Завершено|Завершён|Completed|已完成/i;
+        let isCompleted;
+        if (isNewTable) {
+            const clone = statusCell.cloneNode(true);
+            clone.querySelectorAll('.p2p-analytics-badges-wrapper').forEach(n => n.remove());
+            isCompleted = COMPLETED_RE.test(clone.textContent || '');
+        } else {
+            const statusText = statusCell.querySelector('.moly-space-item.w-full.moly-space-item-first');
+            isCompleted = !!statusText && COMPLETED_RE.test(statusText.textContent.trim());
+        }
+
+        if (isCompleted) {
+            let targetContainer = statusCell;
+            if (isNewTable) {
+                // Новая таблица: якорь — сама ячейка статуса (см. upsertBadges)
+                targetContainer = statusCell;
+            }
+
+            const badgesData = upsertBadges(targetContainer, isNewTable);
+            if (badgesData) {
+                setBadgesState(badgesData, state);
+            }
+        }
+    }
+    }
 
     async function processRow(row) {
         const orderId = extractOrderIdFromRow(row);
@@ -280,6 +381,17 @@
         const prev = rowStates.get(orderId);
         if (prev && (prev.status === 'loading' || prev.status === 'stop404')) return;
 
+        // Свежий ответ уже есть — рисуем сразу, без очереди и сети
+        const cached = orderCache.get(orderId);
+        if (cached && Date.now() - cached.ts < ORDER_CACHE_TTL) {
+            applyToRow(row, cached.order);
+            return;
+        }
+
+        // Есть запись с прошлых загрузок — рисуем мгновенно, актуализируем ответом сервера ниже
+        const stored = persisted[orderId];
+        if (stored) applyToRow(row, { receipt: stored.r ? { uuid: 'cached' } : {} });
+
         // Add to queue to prevent overwhelming the API
         return requestQueue.add(async () => {
             rowStates.set(orderId, { status: 'loading', ts: Date.now() });
@@ -288,6 +400,8 @@
                 let order = null;
                 try {
                     order = await fetchOrder(orderId);
+                    orderCache.set(orderId, { order, ts: Date.now() });
+                    rememberOrder(orderId, order);
                 } catch (e) {
                     // If backend returned non-ok, makeAuthenticatedRequest throws. Consider 404 as not saved.
                     const msg = String(e && e.message ? e.message : e || '');
@@ -314,45 +428,7 @@
                     }
                 }
 
-            const state = formatBadgeState(order);
-            // Detect table type and status cell
-            let statusCell = row.querySelector('td.fiat-order-status');
-            let isNewTable = false;
-
-            if (!statusCell) {
-                const cells = row.querySelectorAll('td');
-                // In new table, status is last column (index 5 usually, but safer to take last)
-                if (cells.length > 0 && row.closest('.merchant-order-list__table')) {
-                    statusCell = cells[cells.length - 1];
-                    isNewTable = true;
-                }
-            }
-
-            if (statusCell) {
-                // Проверяем, что это завершенный ордер
-                let isCompleted = false;
-                if (isNewTable) {
-                    // In new table, look for "Завершено" text
-                    isCompleted = (statusCell.textContent || '').includes('Завершено');
-                } else {
-                    const statusText = statusCell.querySelector('.moly-space-item.w-full.moly-space-item-first');
-                    isCompleted = statusText && statusText.textContent.trim() === 'Завершено';
-                }
-                
-                if (isCompleted) {
-                    let targetContainer = statusCell;
-                    if (isNewTable) {
-                        // Insert inside the flex column container to stack properly
-                        const innerDiv = statusCell.querySelector('.merchant-order-list__py-3');
-                        if (innerDiv) targetContainer = innerDiv;
-                    }
-
-                    const badgesData = upsertBadges(targetContainer, isNewTable);
-                    if (badgesData) {
-                        setBadgesState(badgesData, state);
-                    }
-                }
-            }
+            applyToRow(row, order);
                 rowStates.set(orderId, { status: 'done', ts: Date.now() });
             } catch (err) {
                 console.error('[P2P] Error processing row:', err);
@@ -362,9 +438,8 @@
     }
 
     async function processAllVisibleRows() {
-        const table = document.querySelector('.otc-order-table, .merchant-order-list__table');
-        if (!table) return;
-        const rows = $all('tbody > tr', table);
+        const rows = $all('tbody > tr').filter(r => r.querySelector(':scope > td') && extractOrderIdFromRow(r));
+        if (!rows.length) return;
         
         // Process rows through queue (automatically throttled to 3 concurrent)
         const promises = rows.map(row => processRow(row).catch(err => {
@@ -380,7 +455,7 @@
         listObserver = new MutationObserver(() => {
             // Debounced re-scan
             if (startListObserver._t) clearTimeout(startListObserver._t);
-            startListObserver._t = setTimeout(processAllVisibleRows, 120);
+            startListObserver._t = setTimeout(processAllVisibleRows, 60);
         });
         listObserver.observe(document.documentElement, { subtree: true, childList: true });
     }
@@ -506,10 +581,21 @@
             return; 
         }
         
+        let signedIn = false;
+        try { signedIn = await getAuth().isAuthenticated(); } catch (_) {}
+        if (!signedIn) {
+            console.log('[P2P] Not signed in to mininp2p.ru — badges disabled');
+            showHint('mininp2p.ru: нет входа в расширении. Откройте иконку расширения, войдите и обновите страницу.');
+            initInProgress = false;
+            return;
+        }
+        showHint(null);
+        await loadPersisted();
+
         console.log('[P2P] Auth ready, processing rows and starting observer...');
         
         // Wait a bit for DOM to settle after SPA navigation
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => setTimeout(resolve, 100));
         
         processAllVisibleRows();
         startListObserver();
