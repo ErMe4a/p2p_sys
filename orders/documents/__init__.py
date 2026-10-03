@@ -13,6 +13,9 @@
 import io
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 from dataclasses import dataclass, field
 from datetime import date
@@ -156,3 +159,26 @@ def build_document(form_key, user, params):
     stamp = params['date'].strftime('%d%m%Y') if isinstance(params.get('date'), date) else ''
     filename = f'{form.filename_prefix}_{user.last_name.strip()}_{stamp}.docx'
     return filename, data
+
+
+def docx_to_pdf(docx_bytes, timeout=60):
+    """
+    Конвертирует .docx в PDF через LibreOffice (headless, пакет libreoffice-writer-nogui
+    на сервере). Отдельный профиль LibreOffice на каждый вызов во временной папке:
+    у www-data нет записываемого HOME, а общий профиль не даёт параллельных конвертаций.
+    """
+    soffice = shutil.which('soffice') or shutil.which('libreoffice')
+    if not soffice:
+        raise RuntimeError('На сервере не установлен LibreOffice — PDF сформировать нельзя.')
+    with tempfile.TemporaryDirectory(prefix='doc2pdf_') as tmp:
+        src = os.path.join(tmp, 'document.docx')
+        with open(src, 'wb') as f:
+            f.write(docx_bytes)
+        subprocess.run(
+            [soffice, f'-env:UserInstallation=file://{tmp}/profile', '--headless',
+             '--convert-to', 'pdf', '--outdir', tmp, src],
+            check=True, timeout=timeout, capture_output=True,
+        )
+        with open(os.path.join(tmp, 'document.pdf'), 'rb') as f:
+            return f.read()
+

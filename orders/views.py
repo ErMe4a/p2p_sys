@@ -4574,10 +4574,19 @@ def admin_export_document(request):
             messages.error(request, problem)
         return redirect(back_url)
 
-    response = HttpResponse(
-        data, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-    )
-    ascii_name = filename if filename.isascii() else 'document.docx'
+    content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    if request.GET.get('format') == 'pdf':
+        from .documents import docx_to_pdf
+        try:
+            data = docx_to_pdf(data)
+        except Exception as e:
+            messages.error(request, f'Не удалось сформировать PDF: {e}. Скачайте Word-версию.')
+            return redirect(back_url)
+        filename = filename[:-len('.docx')] + '.pdf'
+        content_type = 'application/pdf'
+
+    response = HttpResponse(data, content_type=content_type)
+    ascii_name = filename if filename.isascii() else ('document.pdf' if filename.endswith('.pdf') else 'document.docx')
     response['Content-Disposition'] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
     return response
 
