@@ -6,25 +6,27 @@
 <style>
     .form-control, .form-select { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: var(--text-main) !important; }
     .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px; }
-    .doc-grid .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
+    .doc-grid .form-group label, .doc-label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
     .doc-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
     .doc-errors { border: 1px solid rgba(248, 73, 96, 0.4); background: rgba(248, 73, 96, 0.06); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; color: #f84960; font-size: 0.88rem; }
     .doc-errors div + div { margin-top: 4px; }
-    @media (max-width: 768px) { .doc-grid { grid-template-columns: 1fr; } }
+    .obds-table { color: var(--text-main); font-size: 0.85rem; }
+    .obds-table th { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+    .obds-row-form { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)) auto auto; gap: 6px; align-items: center; }
+    @media (max-width: 768px) { .doc-grid, .obds-row-form { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
 {% block content %}
+{# Сообщения раскладываются по блокам JS-ом: тег obds — блок базы ОБДС, остальные — форма документов #}
+<script type="application/json" id="pageMessages">[{% for m in messages %}{"text": "{{ m|escapejs }}", "obds": {% if 'obds' in m.tags %}true{% else %}false{% endif %}}{% if not forloop.last %},{% endif %}{% endfor %}]</script>
+
 <div class="card-custom">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h5 class="m-0">🗂 Документооборот</h5>
     </div>
 
-    {% if messages %}
-        <div class="doc-errors">
-            {% for message in messages %}<div>⚠️ {{ message }}</div>{% endfor %}
-        </div>
-    {% endif %}
+    <div class="doc-errors" id="docErrors" style="display:none;"></div>
 
     <form method="get" action="{% url 'admin_export_document' %}">
         <div class="doc-grid">
@@ -57,9 +59,11 @@
                     <label>{{ ff.field.label }}</label>
                     <input class="form-control" type="text" name="f_{{ ff.field.name }}" value="{{ ff.value }}"
                            placeholder="{{ ff.field.placeholder }}" autocomplete="off"
-                           {% if ff.field.suggest == 'banks' %}list="docBanksList"{% endif %}>
+                           {% if ff.field.suggest == 'banks' %}list="docBanksList"{% elif ff.field.name == 'request_number' %}list="docReqList"{% endif %}>
                 </div>
             {% endfor %}
+            {# REQ-номера выбранного пользователя из базы ОБДС (заполняется JS-ом) #}
+            <datalist id="docReqList"></datalist>
             <datalist id="docBanksList">
                 {% for name in bank_names %}<option value="{{ name }}"></option>{% endfor %}
             </datalist>
@@ -71,29 +75,142 @@
         <button type="submit" name="format" value="pdf" class="btn btn-sm btn-outline-blue ms-2">📕 Скачать PDF</button>
     </form>
 </div>
+
+<div class="card-custom mt-4" id="obds">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h5 class="m-0">🗃 База данных ОБДС</h5>
+    </div>
+
+    <div class="doc-errors" id="obdsErrors" style="display:none;"></div>
+
+    <form method="get" action="{% url 'admin_documents' %}#obds" class="mb-3" id="obdsUserForm">
+        <div style="max-width: 480px;">
+            <label class="doc-label">Пользователь</label>
+            <input class="form-control" type="text" id="obdsUserSearch" list="docUsersList" autocomplete="off"
+                   placeholder="Начните вводить логин или фамилию…"
+                   value="{% if obds_user %}{{ obds_user.username }}{% if obds_user.last_name %} — {{ obds_user.last_name }} {{ obds_user.first_name }}{% endif %}{% endif %}">
+            <input type="hidden" name="obds_user" id="obdsUserId" value="{{ obds_user.id|default:'' }}">
+        </div>
+    </form>
+
+    {% if obds_user %}
+        <div class="table-responsive">
+            <table class="table table-sm obds-table">
+                <thead>
+                    <tr>
+                        <th>REQ</th><th>Идентификатор банка отправителя</th><th>Банк отправителя</th>
+                        <th>Идентификатор банка получателя</th><th>Банк получателя</th><th class="text-end">Сумма</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in obds_records %}
+                        <tr class="obds-view" data-id="{{ r.id }}">
+                            <td>{{ r.req_number }}</td><td>{{ r.sender_bank_id }}</td><td>{{ r.sender_bank }}</td>
+                            <td>{{ r.receiver_bank_id }}</td><td>{{ r.receiver_bank }}</td>
+                            <td class="text-end text-nowrap">{{ r.amount|floatformat:"2g" }} ₽</td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-secondary obds-edit" title="Исправить">✏️</button>
+                                <form method="post" action="{% url 'admin_obds' %}" class="d-inline obds-delete">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                    <input type="hidden" name="record_id" value="{{ r.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить">🗑</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <tr class="obds-edit-row" data-id="{{ r.id }}" style="display:none;">
+                            <td colspan="7">
+                                <form method="post" action="{% url 'admin_obds' %}" class="obds-row-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="update">
+                                    <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                    <input type="hidden" name="record_id" value="{{ r.id }}">
+                                    <input class="form-control form-control-sm" name="req_number" value="{{ r.req_number }}" placeholder="REQ">
+                                    <input class="form-control form-control-sm" name="sender_bank_id" value="{{ r.sender_bank_id }}" placeholder="Ид. банка отправителя">
+                                    <input class="form-control form-control-sm" name="sender_bank" value="{{ r.sender_bank }}" placeholder="Банк отправителя" list="docBanksList">
+                                    <input class="form-control form-control-sm" name="receiver_bank_id" value="{{ r.receiver_bank_id }}" placeholder="Ид. банка получателя">
+                                    <input class="form-control form-control-sm" name="receiver_bank" value="{{ r.receiver_bank }}" placeholder="Банк получателя" list="docBanksList">
+                                    <input class="form-control form-control-sm" name="amount" value="{{ r.amount|floatformat:2 }}" placeholder="Сумма">
+                                    <button type="submit" class="btn btn-sm btn-outline-blue">Сохранить</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary obds-cancel">Отмена</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7" class="text-muted">Записей пока нет.</td></tr>
+                    {% endfor %}
+                </tbody>
+                {% if obds_records %}
+                    <tfoot>
+                        <tr><th colspan="5" class="text-end">Итого</th><th class="text-end text-nowrap">{{ obds_total|floatformat:"2g" }} ₽</th><th></th></tr>
+                    </tfoot>
+                {% endif %}
+            </table>
+        </div>
+
+        <form method="post" action="{% url 'admin_obds' %}" class="obds-row-form mt-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add">
+            <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+            <input class="form-control form-control-sm" name="req_number" value="{{ obds_form.req_number|default:'' }}" placeholder="REQ">
+            <input class="form-control form-control-sm" name="sender_bank_id" value="{{ obds_form.sender_bank_id|default:'' }}" placeholder="Ид. банка отправителя">
+            <input class="form-control form-control-sm" name="sender_bank" value="{{ obds_form.sender_bank|default:'' }}" placeholder="Банк отправителя" list="docBanksList">
+            <input class="form-control form-control-sm" name="receiver_bank_id" value="{{ obds_form.receiver_bank_id|default:'' }}" placeholder="Ид. банка получателя">
+            <input class="form-control form-control-sm" name="receiver_bank" value="{{ obds_form.receiver_bank|default:'' }}" placeholder="Банк получателя" list="docBanksList">
+            <input class="form-control form-control-sm" name="amount" value="{{ obds_form.amount|default:'' }}" placeholder="Сумма">
+            <button type="submit" class="btn btn-sm btn-outline-blue">➕ Добавить</button>
+        </form>
+    {% else %}
+        <div class="text-muted" style="font-size:0.9rem;">Выберите пользователя, чтобы увидеть и заполнить его записи.</div>
+    {% endif %}
+</div>
+{{ obds_req_by_user|json_script:"obdsReqByUser" }}
 {% endblock %}
 
 {% block extra_js %}
 <script>
 (function () {
-    const search = document.getElementById('docUserSearch');
-    const hidden = document.getElementById('docUserId');
-    const hint = document.getElementById('docUserHint');
     const byLabel = {};
     document.querySelectorAll('#docUsersList option').forEach(function (o) { byLabel[o.value] = o.dataset.id; });
-
-    function sync() {
-        const v = search.value.trim();
-        // точное совпадение с подсказкой, либо ровно логин
+    // Выбранный в поиске пользователь: точное совпадение с подсказкой, либо ровно логин
+    function resolveUser(text) {
+        const v = (text || '').trim();
         let id = byLabel[v];
         if (!id) {
             const hit = Object.keys(byLabel).filter(function (k) { return k.split(' — ')[0] === v; });
             if (hit.length === 1) id = byLabel[hit[0]];
         }
-        hidden.value = id || '';
-        return !!id;
+        return id || '';
+    }
+
+    // Сообщения: obds — в блок базы, остальные — в блок документов
+    function showMessages(box, list) {
+        if (!list.length) return;
+        box.innerHTML = list.map(function (m) { return '<div>⚠️ ' + m.text.replace(/</g, '&lt;') + '</div>'; }).join('');
+        box.style.display = '';
+    }
+    const msgs = JSON.parse(document.getElementById('pageMessages').textContent || '[]');
+    showMessages(document.getElementById('docErrors'), msgs.filter(function (m) { return !m.obds; }));
+    showMessages(document.getElementById('obdsErrors'), msgs.filter(function (m) { return m.obds; }));
+
+    // --- Форма документов ---
+    const search = document.getElementById('docUserSearch');
+    const hidden = document.getElementById('docUserId');
+    const hint = document.getElementById('docUserHint');
+    const reqByUser = JSON.parse(document.getElementById('obdsReqByUser').textContent || '{}');
+    const reqList = document.getElementById('docReqList');
+    function sync() {
+        hidden.value = resolveUser(search.value);
+        // подсказки «Номер запроса ЦБ» — REQ выбранного пользователя из базы ОБДС
+        reqList.innerHTML = '';
+        (reqByUser[hidden.value] || []).forEach(function (r) {
+            const o = document.createElement('option'); o.value = r; reqList.appendChild(o);
+        });
+        return !!hidden.value;
     }
     search.addEventListener('input', function () { sync(); hint.style.display = 'none'; });
+    sync();
 
     // Показываем только поля выбранной формы; скрытые отключаем, чтобы не уходили в запрос
     const formSel = document.getElementById('docForm');
@@ -108,6 +225,34 @@
     toggleFormFields();
     search.form.addEventListener('submit', function (e) {
         if (!sync()) { e.preventDefault(); hint.style.display = ''; search.focus(); }
+    });
+
+    // --- База данных ОБДС ---
+    const obdsSearch = document.getElementById('obdsUserSearch');
+    const obdsId = document.getElementById('obdsUserId');
+    function openObdsUser() {
+        const id = resolveUser(obdsSearch.value);
+        if (id && id !== obdsId.value) { obdsId.value = id; document.getElementById('obdsUserForm').submit(); }
+    }
+    obdsSearch.addEventListener('change', openObdsUser);
+    obdsSearch.addEventListener('input', function () { if (byLabel[obdsSearch.value.trim()]) openObdsUser(); });
+
+    document.querySelectorAll('.obds-edit').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const row = btn.closest('tr');
+            row.style.display = 'none';
+            document.querySelector('.obds-edit-row[data-id="' + row.dataset.id + '"]').style.display = '';
+        });
+    });
+    document.querySelectorAll('.obds-cancel').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const row = btn.closest('tr');
+            row.style.display = 'none';
+            document.querySelector('.obds-view[data-id="' + row.dataset.id + '"]').style.display = '';
+        });
+    });
+    document.querySelectorAll('.obds-delete').forEach(function (f) {
+        f.addEventListener('submit', function (e) { if (!confirm('Удалить запись?')) e.preventDefault(); });
     });
 })();
 </script>

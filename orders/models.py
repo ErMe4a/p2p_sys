@@ -291,6 +291,29 @@ class IgnoredOrder(models.Model):
         return f"Ignored {self.order_id} ({self.exchange_type})"
 
 
+class ObdsRecord(models.Model):
+    """
+    «База данных ОБДС» (админка → Документооборот): подозрительный перевод из базы
+    ЦБ «операций без согласия клиента», который банк назвал по REQ-номеру. Только
+    учёт — в прибыль, оборот, налоги и чеки не входит.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='obds_records')
+    req_number = models.CharField(max_length=100, verbose_name="REQ")
+    sender_bank_id = models.CharField(max_length=100, verbose_name="Идентификатор банка отправителя")
+    sender_bank = models.CharField(max_length=255, verbose_name="Банк отправителя")
+    receiver_bank_id = models.CharField(max_length=100, verbose_name="Идентификатор банка получателя")
+    receiver_bank = models.CharField(max_length=255, verbose_name="Банк получателя")
+    amount = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Сумма")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['req_number', 'created_at']
+        indexes = [models.Index(fields=['user', 'req_number'])]
+
+    def __str__(self):
+        return f"{self.req_number}: {self.amount}"
+
+
 class UserExpense(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='expenses')
     name = models.CharField(max_length=255, verbose_name="Наименование")

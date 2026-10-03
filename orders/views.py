@@ -4550,8 +4550,22 @@ def admin_documents(request):
     if not params['form']:
         params['form'] = next(iter(FORMS))
 
+    # --- База данных ОБДС (блок ниже формы документов) ---
+    from .models import ObdsRecord
+    obds_user_id = (request.GET.get('obds_user') or '').strip()
+    obds_user = User.objects.filter(id=obds_user_id).first() if obds_user_id.isdigit() else None
+    obds_records = list(ObdsRecord.objects.filter(user=obds_user)) if obds_user else []
+    req_by_user = {}
+    for uid, req in ObdsRecord.objects.values_list('user_id', 'req_number').distinct().order_by('req_number'):
+        req_by_user.setdefault(str(uid), []).append(req)
+
     return render(request, 'custom_admin/documents.html', {
         'users': User.objects.all().order_by('username'),
+        'obds_user': obds_user,
+        'obds_records': obds_records,
+        'obds_total': sum((r.amount for r in obds_records), Decimal('0')),
+        'obds_form': request.session.pop('obds_form', None) or {},
+        'obds_req_by_user': req_by_user,
         'forms': FORMS.values(),
         # поля каждой формы с текущими значениями (после ошибки поля не сбрасываются)
         'form_fields': [
@@ -4561,6 +4575,80 @@ def admin_documents(request):
         'bank_names': list(BankDetail.objects.filter(is_deleted=False).order_by('name').values_list('name', flat=True)),
         'p': params,
     })
+
+
+OBDS_FIELDS = (
+    ('req_number', 'REQ'),
+    ('sender_bank_id', 'Идентификатор банка отправителя'),
+    ('sender_bank', 'Банк отправителя'),
+    ('receiver_bank_id', 'Идентификатор банка получателя'),
+    ('receiver_bank', 'Банк получателя'),
+    ('amount', 'Сумма'),
+)
+
+
+def _parse_obds_amount(raw):
+    """'15 000,50' -> Decimal('15000.50'); None если не число или <= 0."""
+    from decimal import InvalidOperation, ROUND_HALF_UP
+    clean = str(raw or '').replace(' ', '').replace(' ', '').replace(',', '.').strip()
+    try:
+        value = Decimal(clean)
+    except (InvalidOperation, ValueError):
+        return None
+    if not value.is_finite() or value <= 0:
+        return None
+    return value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+@require_POST
+def admin_obds(request):
+    """База данных ОБДС: добавление / правка / удаление записи. Только учёт, на расчёты не влияет."""
+    from .models import ObdsRecord
+
+    action = request.POST.get('action')
+    user_id = (request.POST.get('obds_user') or '').strip()
+    target = get_user_model().objects.filter(id=user_id).first() if user_id.isdigit() else None
+    back = reverse('admin_documents') + (f'?obds_user={target.id}' if target else '') + '#obds'
+    if not target:
+        messages.error(request, 'Выберите пользователя.', extra_tags='obds')
+        return redirect(back)
+
+    if action == 'delete':
+        ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).delete()
+        return redirect(back)
+
+    data = {name: (request.POST.get(name) or '').strip() for name, _ in OBDS_FIELDS}
+    data['req_number'] = data['req_number'].upper()
+    problems = [f'Не заполнено поле «{label}»' for name, label in OBDS_FIELDS if not data[name]]
+    amount = _parse_obds_amount(data['amount']) if data['amount'] else None
+    if data['amount'] and amount is None:
+        problems.append('Сумма должна быть положительным числом, например 15 000,50')
+
+    record = None
+    if action == 'update':
+        record = ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).first()
+        if not record:
+            problems.append('Запись не найдена.')
+    elif action != 'add':
+        problems.append('Неизвестное действие.')
+
+    if problems:
+        for p in problems:
+            messages.error(request, p, extra_tags='obds')
+        if action == 'add':
+            request.session['obds_form'] = data
+        return redirect(back)
+
+    values = {**data, 'amount': amount}
+    if record:
+        for k, v in values.items():
+            setattr(record, k, v)
+        record.save()
+    else:
+        ObdsRecord.objects.create(user=target, **values)
+    return redirect(back)
 
 
 @login_required(login_url='admin_login')
