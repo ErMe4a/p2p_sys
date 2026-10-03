@@ -102,16 +102,6 @@ def _repeat_paragraph(xml, token, items):
     return xml
 
 
-def parse_req_numbers(raw):
-    """'req-1, REQ-2; REQ-1' -> ['REQ-1', 'REQ-2'] (порядок сохраняется, дубли убираются)."""
-    out = []
-    for part in re.split(r'[,;\s]+', raw or ''):
-        part = part.strip().upper()
-        if part and part not in out:
-            out.append(part)
-    return out
-
-
 def merge_pdfs(parts):
     """Склеивает PDF (bytes) в один по порядку. Битый файл — ValueError с номером части."""
     from pypdf import PdfReader, PdfWriter
@@ -187,12 +177,12 @@ OBDS_APPENDIX_DEFAULT = 'Решение ЦБ от отказе в исключе
 
 def _obds_values(user, params):
     female = user.gender == 'F'
-    reqs = parse_req_numbers(params['fields']['request_number'])
-    appendices = params.get('appendices') or []  # [{'req': ...}, ...] — решения ЦБ, по порядку
+    reqs = params.get('reqs') or []  # REQ операций, где банк-адресат — банк-отправитель (готовит view)
+    appendices = params.get('appendices') or []  # решения ЦБ пользователя, в порядке загрузки
     return {
         '{{APPENDIX}}': (
-            [f'Приложение №{i}: Решение ЦБ об отказе в исключении данных из базы ({a["req"]})'
-             for i, a in enumerate(appendices, 1)]
+            [f'Приложение №{i}: Решение ЦБ об отказе в исключении данных из базы'
+             for i, _ in enumerate(appendices, 1)]
             or OBDS_APPENDIX_DEFAULT
         ),
         '{{BANK}}': params['fields']['bank'],
@@ -225,8 +215,7 @@ FORMS = {
         required_profile=['last_name', 'first_name', 'registration_address', 'phone', 'email', 'gender'],
         build_values=_obds_values,
         fields=[
-            FormField('bank', 'Банк (кому)', 'Например: ПАО Сбербанк', suggest='banks'),
-            FormField('request_number', 'Номера запросов ЦБ', 'REQ-…, REQ-… (через запятую)'),
+            FormField('bank', 'Банк (кому)', 'Банк-отправитель из базы ОБДС', suggest='obds_banks'),
         ],
     ),
 }

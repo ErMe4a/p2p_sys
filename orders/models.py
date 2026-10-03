@@ -298,7 +298,7 @@ class ObdsRecord(models.Model):
     учёт — в прибыль, оборот, налоги и чеки не входит.
     """
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='obds_records')
-    req_number = models.CharField(max_length=100, verbose_name="REQ")
+    # Идентификатор операции = REQ-номер ЦБ для соответствующего банка (как в таблице решения ЦБ)
     sender_bank_id = models.CharField(max_length=100, verbose_name="Идентификатор банка отправителя")
     sender_bank = models.CharField(max_length=255, verbose_name="Банк отправителя")
     receiver_bank_id = models.CharField(max_length=100, verbose_name="Идентификатор банка получателя")
@@ -310,28 +310,26 @@ class ObdsRecord(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['req_number', 'created_at']
-        indexes = [models.Index(fields=['user', 'req_number'])]
+        ordering = ['created_at']
 
     def __str__(self):
-        return f"{self.req_number}: {self.amount}"
+        return f"{self.sender_bank_id}: {self.amount}"
 
 
 class ObdsDecision(models.Model):
-    """«Решение ЦБ» об отказе в исключении из ОБДС — один PDF на пару пользователь + REQ.
-    Прикладывается к «Запросу данных по ОБДС» как приложение."""
+    """«Решение ЦБ» об отказе в исключении из ОБДС — PDF-файлы трейдера (без привязки к REQ:
+    одно решение покрывает несколько операций). Все прикладываются к «Запросу данных по ОБДС»
+    как «Приложение №N» в порядке загрузки."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='obds_decisions')
-    req_number = models.CharField(max_length=100, verbose_name="REQ")
     file = models.FileField(upload_to='obds/decisions/%Y/%m/', verbose_name="Решение ЦБ (PDF)")
     original_name = models.CharField(max_length=255, blank=True, default="")
-    uploaded_at = models.DateTimeField(auto_now=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['req_number']
-        unique_together = [('user', 'req_number')]
+        ordering = ['uploaded_at', 'id']
 
     def __str__(self):
-        return f"Решение ЦБ {self.req_number}"
+        return f"Решение ЦБ {self.original_name}"
 
 
 class UserExpense(models.Model):

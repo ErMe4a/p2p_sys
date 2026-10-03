@@ -4560,22 +4560,19 @@ def admin_documents(request):
         r.amount_display = rub(r.amount)
     from .models import ObdsDecision
     obds_decisions = list(ObdsDecision.objects.filter(user=obds_user)) if obds_user else []
-    # REQ пользователя — и из записей, и из решений (решение могли загрузить раньше переводов)
-    req_by_user = {}
-    pairs = set(ObdsRecord.objects.values_list('user_id', 'req_number')) | \
-        set(ObdsDecision.objects.values_list('user_id', 'req_number'))
-    for uid, req in sorted(pairs, key=lambda p: p[1]):
-        req_by_user.setdefault(str(uid), []).append(req)
+    # Банки-отправители пользователя из базы ОБДС — подсказки «Банк (кому)» в «Запросе данных по ОБДС»
+    sender_banks_by_user = {}
+    for uid, bank in sorted(set(ObdsRecord.objects.values_list('user_id', 'sender_bank')), key=lambda p: p[1]):
+        sender_banks_by_user.setdefault(str(uid), []).append(bank)
 
     return render(request, 'custom_admin/documents.html', {
         'users': User.objects.all().order_by('username'),
         'obds_user': obds_user,
         'obds_records': obds_records,
         'obds_decisions': obds_decisions,
-        'obds_user_reqs': req_by_user.get(str(obds_user.id), []) if obds_user else [],
         'obds_total': rub(sum((r.amount for r in obds_records), Decimal('0'))),
         'obds_form': request.session.pop('obds_form', None) or {},
-        'obds_req_by_user': req_by_user,
+        'obds_sender_banks': sender_banks_by_user,
         'forms': FORMS.values(),
         # поля каждой формы с текущими значениями (после ошибки поля не сбрасываются)
         'form_fields': [
@@ -4588,7 +4585,6 @@ def admin_documents(request):
 
 
 OBDS_FIELDS = (
-    ('req_number', 'REQ'),
     ('sender_bank_id', 'Идентификатор банка отправителя'),
     ('sender_bank', 'Банк отправителя'),
     ('receiver_bank_id', 'Идентификатор банка получателя'),
@@ -4650,14 +4646,18 @@ def _obds_file_action(request, action, target, back):
     f = request.FILES.get('file')
     problem = _obds_pdf_problem(f)
     if action == 'decision_upload':
-        req = (request.POST.get('req_number') or '').strip().upper()
-        if not req:
-            problem = problem or 'Укажите REQ, к которому относится решение.'
+        # без decision_id — новое решение; с decision_id — замена файла существующего
+        d = None
+        if request.POST.get('decision_id'):
+            d = ObdsDecision.objects.filter(id=request.POST.get('decision_id'), user=target).first()
+            if not d:
+                problem = problem or 'Решение не найдено.'
         if problem:
             messages.error(request, problem, extra_tags='obds')
             return redirect(back)
-        d, _ = ObdsDecision.objects.get_or_create(user=target, req_number=req)
-        if d.file:
+        if d is None:
+            d = ObdsDecision(user=target)
+        elif d.file:
             d.file.delete(save=False)
         d.file.save(f.name, f, save=False)
         d.original_name = f.name[:255]
@@ -4728,7 +4728,8 @@ def admin_obds(request):
         return _obds_file_action(request, action, target, back)
 
     data = {name: (request.POST.get(name) or '').strip() for name, _ in OBDS_FIELDS}
-    data['req_number'] = data['req_number'].upper()
+    for k in ('sender_bank_id', 'receiver_bank_id'):  # REQ-номера — в верхнем регистре
+        data[k] = data[k].upper()
     problems = [f'Не заполнено поле «{label}»' for name, label in OBDS_FIELDS if not data[name]]
     amount = _parse_obds_amount(data['amount']) if data['amount'] else None
     if data['amount'] and amount is None:
@@ -4777,17 +4778,26 @@ def admin_export_document(request):
         return redirect(back_url)
 
     # Приложения «Запроса данных по ОБДС»: решения ЦБ по REQ из поля формы, в порядке перечисления
+    # «Запрос данных по ОБДС»: REQ — идентификаторы операций, где банк-адресат выступает банком-
+    # отправителем; приложения — все решения ЦБ пользователя в порядке загрузки
     appendices = []
     if params['form'] == 'obds_request':
-        from .documents import parse_req_numbers
-        from .models import ObdsDecision
-        decisions = {d.req_number: d for d in ObdsDecision.objects.filter(user=target)}
+        from .models import ObdsDecision, ObdsRecord
+        bank = params['fields'].get('bank', '')
+        norm = lambda v: ' '.join((v or '').lower().split())
+        reqs = []
+        for rec in ObdsRecord.objects.filter(user=target):
+            if bank and norm(rec.sender_bank) == norm(bank) and rec.sender_bank_id not in reqs:
+                reqs.append(rec.sender_bank_id)
+        if bank and not reqs:
+            messages.error(request, f'В базе ОБДС у пользователя нет операций, где «{bank}» — банк-отправитель.')
+            return redirect(back_url)
+        params['reqs'] = reqs
         try:
-            for req in parse_req_numbers(params['fields'].get('request_number', '')):
-                d = decisions.get(req)
-                if d and d.file:
+            for d in ObdsDecision.objects.filter(user=target):
+                if d.file:
                     with d.file.open('rb') as fh:
-                        appendices.append({'req': req, 'data': fh.read()})
+                        appendices.append({'name': d.original_name, 'data': fh.read()})
         except Exception as e:
             messages.error(request, f'Не удалось прочитать файл решения ЦБ: {e}')
             return redirect(back_url)
@@ -4822,7 +4832,7 @@ def admin_export_document(request):
         with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
             z.writestr(filename, data)
             for i, a in enumerate(appendices, 1):
-                z.writestr(f"Приложение_{i}_{a['req']}.pdf", a['data'])
+                z.writestr(f"Приложение_{i}.pdf", a['data'])
         data = buf.getvalue()
         filename = filename[:-len('.docx')] + '.zip'
         content_type = 'application/zip'
