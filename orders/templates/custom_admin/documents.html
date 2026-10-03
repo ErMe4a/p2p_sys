@@ -85,16 +85,6 @@
 
     <div class="doc-errors" id="obdsErrors" style="display:none;"></div>
 
-    <form method="get" action="{% url 'admin_documents' %}#obds" class="mb-3" id="obdsUserForm">
-        <div style="max-width: 480px;">
-            <label class="doc-label">Пользователь</label>
-            <input class="form-control" type="text" id="obdsUserSearch" list="docUsersList" autocomplete="off"
-                   placeholder="Начните вводить логин или фамилию…"
-                   value="{% if obds_user %}{{ obds_user.username }}{% if obds_user.last_name %} — {{ obds_user.last_name }} {{ obds_user.first_name }}{% endif %}{% endif %}">
-            <input type="hidden" name="obds_user" id="obdsUserId" value="{{ obds_user.id|default:'' }}">
-        </div>
-    </form>
-
     {% if obds_user %}
         {# Решения ЦБ — по одному PDF на REQ, прикладываются к «Запросу данных по ОБДС» #}
         <div class="obds-section-title">Решения ЦБ</div>
@@ -220,7 +210,7 @@
             <button type="submit" class="btn btn-sm btn-outline-blue">➕ Добавить</button>
         </form>
     {% else %}
-        <div class="text-muted" style="font-size:0.9rem;">Выберите пользователя, чтобы увидеть и заполнить его записи.</div>
+        <div class="text-muted" style="font-size:0.9rem;">Выберите пользователя вверху страницы — здесь откроются его записи.</div>
     {% endif %}
 </div>
 {{ obds_sender_banks|json_script:"obdsSenderBanks" }}
@@ -286,14 +276,23 @@
     });
 
     // --- База данных ОБДС ---
-    const obdsSearch = document.getElementById('obdsUserSearch');
-    const obdsId = document.getElementById('obdsUserId');
-    function openObdsUser() {
-        const id = resolveUser(obdsSearch.value);
-        if (id && id !== obdsId.value) { obdsId.value = id; document.getElementById('obdsUserForm').submit(); }
+    // Выбор пользователя сверху открывает и его базу ОБДС: перезагружаем страницу с user_id
+    const loadedUser = '{{ obds_user.id|default:"" }}';
+    function openUser() {
+        const id = resolveUser(search.value);
+        if (id && id !== loadedUser) {
+            const q = new URLSearchParams({user_id: id, form: formSel.value});
+            window.location = '{% url "admin_documents" %}?' + q.toString();
+        }
     }
-    obdsSearch.addEventListener('change', openObdsUser);
-    obdsSearch.addEventListener('input', function () { if (byLabel[obdsSearch.value.trim()]) openObdsUser(); });
+    search.addEventListener('change', openUser);
+    search.addEventListener('input', function () { if (byLabel[search.value.trim()]) openUser(); });
+    // POST-формы базы ОБДС возвращают на ту же форму документа
+    document.querySelectorAll('#obds form[method=post]').forEach(function (f) {
+        f.addEventListener('submit', function () {
+            const h = document.createElement('input'); h.type = 'hidden'; h.name = 'form'; h.value = formSel.value; f.appendChild(h);
+        });
+    });
 
     document.querySelectorAll('.obds-edit').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -310,7 +309,7 @@
         });
     });
     document.querySelectorAll('.obds-replace input[type=file]').forEach(function (inp) {
-        inp.addEventListener('change', function () { if (inp.files.length) inp.form.submit(); });
+        inp.addEventListener('change', function () { if (inp.files.length) { inp.form.requestSubmit ? inp.form.requestSubmit() : inp.form.submit(); } });
     });
     document.querySelectorAll('.obds-delete').forEach(function (f) {
         f.addEventListener('submit', function (e) { if (!confirm('Удалить запись?')) e.preventDefault(); });

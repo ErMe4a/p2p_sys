@@ -4555,7 +4555,8 @@ def admin_documents(request):
 
     # --- База данных ОБДС (блок ниже формы документов) ---
     from .models import ObdsRecord
-    obds_user_id = (request.GET.get('obds_user') or '').strip()
+    # пользователь один на всю страницу — выбранный сверху (user_id); obds_user — старые ссылки
+    obds_user_id = (request.GET.get('user_id') or request.GET.get('obds_user') or '').strip()
     obds_user = User.objects.filter(id=obds_user_id).first() if obds_user_id.isdigit() else None
     obds_records = list(ObdsRecord.objects.filter(user=obds_user)) if obds_user else []
     rub = lambda v: f'{v:,.2f}'.replace(',', ' ').replace('.', ',')  # 15 000,50
@@ -4714,7 +4715,11 @@ def admin_obds(request):
     action = request.POST.get('action')
     user_id = (request.POST.get('obds_user') or '').strip()
     target = get_user_model().objects.filter(id=user_id).first() if user_id.isdigit() else None
-    back = reverse('admin_documents') + (f'?obds_user={target.id}' if target else '') + '#obds'
+    from urllib.parse import urlencode
+    back_params = {'form': (request.POST.get('form') or '').strip()}
+    if target:
+        back_params['user_id'] = target.id
+    back = reverse('admin_documents') + '?' + urlencode({k: v for k, v in back_params.items() if v}) + '#obds'
     if not target:
         messages.error(request, 'Выберите пользователя.', extra_tags='obds')
         return redirect(back)
