@@ -4526,11 +4526,16 @@ def admin_fns_documents(request):
 # Read-only: только читает профиль, ничего не пишет и никуда не отправляет.
 
 def _document_params_from_request(data):
-    # Дата документа — всегда день формирования (по МСК)
+    # Дата документа — всегда день формирования (по МСК). Доп. поля формы
+    # приходят как f_<имя> (у каждой формы свои, см. orders/documents FORMS).
+    from .documents import FORMS
+    form_key = (data.get('form') or '').strip()
+    form = FORMS.get(form_key)
     return {
-        'form': (data.get('form') or '').strip(),
+        'form': form_key,
         'user_id': (data.get('user_id') or '').strip(),
         'date': timezone.localdate(),
+        'fields': {f.name: (data.get(f'f_{f.name}') or '').strip() for f in (form.fields if form else [])},
     }
 
 
@@ -4548,6 +4553,12 @@ def admin_documents(request):
     return render(request, 'custom_admin/documents.html', {
         'users': User.objects.all().order_by('username'),
         'forms': FORMS.values(),
+        # поля каждой формы с текущими значениями (после ошибки поля не сбрасываются)
+        'form_fields': [
+            {'form': f.key, 'field': fld, 'value': params['fields'].get(fld.name, '') if f.key == params['form'] else ''}
+            for f in FORMS.values() for fld in f.fields
+        ],
+        'bank_names': list(BankDetail.objects.filter(is_deleted=False).order_by('name').values_list('name', flat=True)),
         'p': params,
     })
 
@@ -4560,7 +4571,9 @@ def admin_export_document(request):
     from .documents import DocumentError, build_document
 
     params = _document_params_from_request(request.GET)
-    back_url = reverse('admin_documents') + '?' + urlencode({k: params[k] for k in ('form', 'user_id')})
+    back_url = reverse('admin_documents') + '?' + urlencode(
+        {k: params[k] for k in ('form', 'user_id')} | {f'f_{k}': v for k, v in params['fields'].items()}
+    )
 
     target = get_user_model().objects.filter(id=params['user_id']).first() if params['user_id'].isdigit() else None
     if not target:

@@ -51,6 +51,19 @@
                 </select>
             </div>
 
+            {# Индивидуальные поля формы — показываются только для выбранной формы #}
+            {% for ff in form_fields %}
+                <div class="form-group" data-form="{{ ff.form }}">
+                    <label>{{ ff.field.label }}</label>
+                    <input class="form-control" type="text" name="f_{{ ff.field.name }}" value="{{ ff.value }}"
+                           placeholder="{{ ff.field.placeholder }}" autocomplete="off"
+                           {% if ff.field.suggest == 'banks' %}list="docBanksList"{% endif %}>
+                </div>
+            {% endfor %}
+            <datalist id="docBanksList">
+                {% for name in bank_names %}<option value="{{ name }}"></option>{% endfor %}
+            </datalist>
+
         </div>
 
         <div class="mb-3"></div>
@@ -81,6 +94,18 @@
         return !!id;
     }
     search.addEventListener('input', function () { sync(); hint.style.display = 'none'; });
+
+    // Показываем только поля выбранной формы; скрытые отключаем, чтобы не уходили в запрос
+    const formSel = document.getElementById('docForm');
+    function toggleFormFields() {
+        document.querySelectorAll('[data-form]').forEach(function (el) {
+            const on = el.getAttribute('data-form') === formSel.value;
+            el.style.display = on ? '' : 'none';
+            el.querySelectorAll('input, select').forEach(function (i) { i.disabled = !on; });
+        });
+    }
+    formSel.addEventListener('change', toggleFormFields);
+    toggleFormFields();
     search.form.addEventListener('submit', function (e) {
         if (!sync()) { e.preventDefault(); hint.style.display = ''; search.focus(); }
     });

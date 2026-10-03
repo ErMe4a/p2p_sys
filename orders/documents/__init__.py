@@ -98,6 +98,15 @@ def _fio_short(user):
 # ============================================================
 
 @dataclass
+class FormField:
+    """Дополнительное поле формы на странице (у каждой формы свои)."""
+    name: str
+    label: str
+    placeholder: str = ''
+    suggest: str = ''  # 'banks' — подсказки из каталога банков
+
+
+@dataclass
 class DocumentForm:
     key: str
     title: str
@@ -105,7 +114,7 @@ class DocumentForm:
     filename_prefix: str
     required_profile: list
     build_values: Callable  # (user, params) -> {'{{TOKEN}}': str}
-    validate_params: Callable = field(default=lambda params: [])
+    fields: list = field(default_factory=list)  # все поля обязательны
 
 
 def _cb_161fz_values(user, params):
@@ -126,6 +135,22 @@ def _cb_161fz_values(user, params):
     }
 
 
+def _obds_values(user, params):
+    female = user.gender == 'F'
+    return {
+        '{{BANK}}': params['fields']['bank'],
+        '{{FIO}}': _fio_full(user),
+        '{{FIO_SHORT}}': _fio_short(user),
+        '{{ADDRESS}}': user.registration_address.strip(),
+        '{{PHONE}}': user.phone.strip(),
+        '{{EMAIL}}': user.email.strip(),
+        '{{REQUEST}}': params['fields']['request_number'],
+        '{{DATE}}': params['date'].strftime('%d.%m.%Y'),
+        # был(а) внесен(а), совершал(а), готов(а)
+        '{{A}}': 'а' if female else '',
+    }
+
+
 FORMS = {
     'cb_161fz_primary': DocumentForm(
         key='cb_161fz_primary',
@@ -134,6 +159,18 @@ FORMS = {
         filename_prefix='Первичное_заявление_ЦБ_161-ФЗ',
         required_profile=['last_name', 'first_name', 'registration_address', 'phone', 'email', 'gender'],
         build_values=_cb_161fz_values,
+    ),
+    'obds_request': DocumentForm(
+        key='obds_request',
+        title='Запрос данных по ОБДС',
+        template='obds_request.docx',
+        filename_prefix='Запрос_данных_ОБДС',
+        required_profile=['last_name', 'first_name', 'registration_address', 'phone', 'email', 'gender'],
+        build_values=_obds_values,
+        fields=[
+            FormField('bank', 'Банк (кому)', 'Например: ПАО Сбербанк', suggest='banks'),
+            FormField('request_number', 'Номер запроса ЦБ', 'Например: REQ-0123456789'),
+        ],
     ),
 }
 
@@ -151,7 +188,10 @@ def build_document(form_key, user, params):
     missing = missing_profile_fields(user, form.required_profile)
     if missing:
         problems.append('В настройках пользователя не заполнено: ' + ', '.join(missing))
-    problems += form.validate_params(params)
+    values = params.get('fields') or {}
+    for f in form.fields:
+        if not (values.get(f.name) or '').strip():
+            problems.append(f'Не заполнено поле «{f.label}»')
     if problems:
         raise DocumentError(problems)
 
