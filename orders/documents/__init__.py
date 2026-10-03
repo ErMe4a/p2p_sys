@@ -68,7 +68,10 @@ def fill_docx(template_path, values):
         if not_found:
             raise RuntimeError(f'В шаблоне нет токенов: {", ".join(not_found)}')
         for token, value in values.items():
-            xml = xml.replace(token, escape(value or ''))
+            if isinstance(value, (list, tuple)):
+                xml = _repeat_paragraph(xml, token, value)
+            else:
+                xml = xml.replace(token, escape(value or ''))
         left = sorted(set(_TOKEN_RE.findall(xml)))
         if left:
             raise RuntimeError(f'В шаблоне остались незаполненные токены: {", ".join(left)}')
@@ -78,6 +81,50 @@ def fill_docx(template_path, values):
             for item in src.infolist():
                 data = xml.encode('utf-8') if item.filename == 'word/document.xml' else src.read(item.filename)
                 dst.writestr(item, data)
+    return buf.getvalue()
+
+
+_PARA_RE = re.compile(r'<w:p[ >](?:(?!<w:p[ >]).)*?</w:p>', re.S)
+
+
+def _repeat_paragraph(xml, token, items):
+    """
+    Абзац с токеном копируется на каждый элемент списка (например, строки
+    «Приложение №N: …»). Нумерация списка Word в копиях убирается — номер уже в
+    тексте, иначе выйдет «1. Приложение №1». Пустой список удаляет абзац.
+    """
+    for m in _PARA_RE.finditer(xml):
+        para = m.group(0)
+        if token in para:
+            plain = re.sub(r'<w:numPr>.*?</w:numPr>', '', para, flags=re.S)
+            copies = ''.join(plain.replace(token, escape(item)) for item in items)
+            return xml[:m.start()] + copies + xml[m.end():]
+    return xml
+
+
+def parse_req_numbers(raw):
+    """'req-1, REQ-2; REQ-1' -> ['REQ-1', 'REQ-2'] (порядок сохраняется, дубли убираются)."""
+    out = []
+    for part in re.split(r'[,;\s]+', raw or ''):
+        part = part.strip().upper()
+        if part and part not in out:
+            out.append(part)
+    return out
+
+
+def merge_pdfs(parts):
+    """Склеивает PDF (bytes) в один по порядку. Битый файл — ValueError с номером части."""
+    from pypdf import PdfReader, PdfWriter
+    writer = PdfWriter()
+    for i, data in enumerate(parts):
+        try:
+            reader = PdfReader(io.BytesIO(data))
+            for page in reader.pages:
+                writer.add_page(page)
+        except Exception as e:
+            raise ValueError(f'часть {i + 1}: {e}') from e
+    buf = io.BytesIO()
+    writer.write(buf)
     return buf.getvalue()
 
 
@@ -135,16 +182,26 @@ def _cb_161fz_values(user, params):
     }
 
 
+OBDS_APPENDIX_DEFAULT = 'Решение ЦБ от отказе в исключении данных из базы.'  # текст шаблона Максима
+
+
 def _obds_values(user, params):
     female = user.gender == 'F'
+    reqs = parse_req_numbers(params['fields']['request_number'])
+    appendices = params.get('appendices') or []  # [{'req': ...}, ...] — решения ЦБ, по порядку
     return {
+        '{{APPENDIX}}': (
+            [f'Приложение №{i}: Решение ЦБ об отказе в исключении данных из базы ({a["req"]})'
+             for i, a in enumerate(appendices, 1)]
+            or OBDS_APPENDIX_DEFAULT
+        ),
         '{{BANK}}': params['fields']['bank'],
         '{{FIO}}': _fio_full(user),
         '{{FIO_SHORT}}': _fio_short(user),
         '{{ADDRESS}}': user.registration_address.strip(),
         '{{PHONE}}': user.phone.strip(),
         '{{EMAIL}}': user.email.strip(),
-        '{{REQUEST}}': params['fields']['request_number'],
+        '{{REQUEST}}': ', '.join(reqs),
         '{{DATE}}': params['date'].strftime('%d.%m.%Y'),
         # был(а) внесен(а), совершал(а), готов(а)
         '{{A}}': 'а' if female else '',
@@ -169,7 +226,7 @@ FORMS = {
         build_values=_obds_values,
         fields=[
             FormField('bank', 'Банк (кому)', 'Например: ПАО Сбербанк', suggest='banks'),
-            FormField('request_number', 'Номер запроса ЦБ', 'Например: REQ-0123456789'),
+            FormField('request_number', 'Номера запросов ЦБ', 'REQ-…, REQ-… (через запятую)'),
         ],
     ),
 }

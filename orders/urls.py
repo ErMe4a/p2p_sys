@@ -48,4 +48,5 @@ urlpatterns = [
     path('admin-panel/documents/', views.admin_documents, name='admin_documents'),
     path('admin-panel/documents/export/', views.admin_export_document, name='admin_export_document'),
     path('admin-panel/documents/obds/', views.admin_obds, name='admin_obds'),
+    path('admin-panel/documents/obds/file/', views.admin_obds_file, name='admin_obds_file'),
 ]

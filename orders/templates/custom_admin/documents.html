@@ -12,8 +12,10 @@
     .doc-errors div + div { margin-top: 4px; }
     .obds-table { color: var(--text-main); font-size: 0.85rem; }
     .obds-table th { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+    .obds-section-title { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin: 6px 0 8px; text-transform: uppercase; letter-spacing: .03em; }
+    .obds-decision-form { display: grid; grid-template-columns: 200px minmax(200px, 1fr) auto; gap: 6px; align-items: center; max-width: 760px; }
     .obds-row-form { display: grid; grid-template-columns: repeat(6, minmax(110px, 1fr)) auto auto; gap: 6px; align-items: center; }
-    @media (max-width: 768px) { .doc-grid, .obds-row-form { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) { .doc-grid, .obds-row-form, .obds-decision-form { grid-template-columns: 1fr; } }
 </style>
 {% endblock %}
 
@@ -94,12 +96,53 @@
     </form>
 
     {% if obds_user %}
+        {# Решения ЦБ — по одному PDF на REQ, прикладываются к «Запросу данных по ОБДС» #}
+        <div class="obds-section-title">Решения ЦБ</div>
+        {% if obds_decisions %}
+            <table class="table table-sm obds-table mb-2">
+                <tbody>
+                    {% for d in obds_decisions %}
+                        <tr>
+                            <td style="width: 200px;">{{ d.req_number }}</td>
+                            <td><a href="{% url 'admin_obds_file' %}?kind=decision&id={{ d.id }}">📎 {{ d.original_name|default:"решение.pdf" }}</a></td>
+                            <td class="text-end text-nowrap">
+                                <form method="post" action="{% url 'admin_obds' %}" enctype="multipart/form-data" class="d-inline obds-replace">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="decision_upload">
+                                    <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                    <input type="hidden" name="req_number" value="{{ d.req_number }}">
+                                    <label class="btn btn-sm btn-outline-secondary mb-0" title="Заменить файл">🔄<input type="file" name="file" accept="application/pdf,.pdf" hidden></label>
+                                </form>
+                                <form method="post" action="{% url 'admin_obds' %}" class="d-inline obds-delete">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="decision_delete">
+                                    <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                    <input type="hidden" name="decision_id" value="{{ d.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Удалить">🗑</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+        <form method="post" action="{% url 'admin_obds' %}" enctype="multipart/form-data" class="obds-decision-form mb-4">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="decision_upload">
+            <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+            <input class="form-control form-control-sm" name="req_number" placeholder="REQ" list="obdsUserReqs" autocomplete="off">
+            <input class="form-control form-control-sm" type="file" name="file" accept="application/pdf,.pdf">
+            <button type="submit" class="btn btn-sm btn-outline-blue">⬆️ Загрузить решение</button>
+        </form>
+        <datalist id="obdsUserReqs">{% for r in obds_user_reqs %}<option value="{{ r }}"></option>{% endfor %}</datalist>
+
+        <div class="obds-section-title">Переводы</div>
         <div class="table-responsive">
             <table class="table table-sm obds-table">
                 <thead>
                     <tr>
                         <th>REQ</th><th>Идентификатор банка отправителя</th><th>Банк отправителя</th>
-                        <th>Идентификатор банка получателя</th><th>Банк получателя</th><th class="text-end">Сумма</th><th></th>
+                        <th>Идентификатор банка получателя</th><th>Банк получателя</th><th class="text-end">Сумма</th><th>PDF сделки</th><th></th>
                     </tr>
                 </thead>
                 <tbody>
@@ -108,6 +151,25 @@
                             <td>{{ r.req_number }}</td><td>{{ r.sender_bank_id }}</td><td>{{ r.sender_bank }}</td>
                             <td>{{ r.receiver_bank_id }}</td><td>{{ r.receiver_bank }}</td>
                             <td class="text-end text-nowrap">{{ r.amount_display }} ₽</td>
+                            <td class="text-nowrap">
+                                {% if r.attachment %}
+                                    <a href="{% url 'admin_obds_file' %}?kind=deal&id={{ r.id }}" title="{{ r.attachment_name }}">📎 скачать</a>
+                                    <form method="post" action="{% url 'admin_obds' %}" class="d-inline obds-delete">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="attach_delete">
+                                        <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                        <input type="hidden" name="record_id" value="{{ r.id }}">
+                                        <button type="submit" class="btn btn-sm btn-link p-0 text-danger" title="Удалить PDF">✕</button>
+                                    </form>
+                                {% endif %}
+                                <form method="post" action="{% url 'admin_obds' %}" enctype="multipart/form-data" class="d-inline obds-replace">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="attach_upload">
+                                    <input type="hidden" name="obds_user" value="{{ obds_user.id }}">
+                                    <input type="hidden" name="record_id" value="{{ r.id }}">
+                                    <label class="btn btn-sm btn-outline-secondary mb-0" title="{% if r.attachment %}Заменить PDF{% else %}Загрузить PDF{% endif %}">{% if r.attachment %}🔄{% else %}⬆️ PDF{% endif %}<input type="file" name="file" accept="application/pdf,.pdf" hidden></label>
+                                </form>
+                            </td>
                             <td class="text-end text-nowrap">
                                 <button type="button" class="btn btn-sm btn-outline-secondary obds-edit" title="Исправить">✏️</button>
                                 <form method="post" action="{% url 'admin_obds' %}" class="d-inline obds-delete">
@@ -120,7 +182,7 @@
                             </td>
                         </tr>
                         <tr class="obds-edit-row" data-id="{{ r.id }}" style="display:none;">
-                            <td colspan="7">
+                            <td colspan="8">
                                 <form method="post" action="{% url 'admin_obds' %}" class="obds-row-form">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="update">
@@ -138,12 +200,12 @@
                             </td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="7" class="text-muted">Записей пока нет.</td></tr>
+                        <tr><td colspan="8" class="text-muted">Записей пока нет.</td></tr>
                     {% endfor %}
                 </tbody>
                 {% if obds_records %}
                     <tfoot>
-                        <tr><th colspan="5" class="text-end">Итого</th><th class="text-end text-nowrap">{{ obds_total }} ₽</th><th></th></tr>
+                        <tr><th colspan="5" class="text-end">Итого</th><th class="text-end text-nowrap">{{ obds_total }} ₽</th><th></th><th></th></tr>
                     </tfoot>
                 {% endif %}
             </table>
@@ -200,8 +262,15 @@
     const hint = document.getElementById('docUserHint');
     const reqByUser = JSON.parse(document.getElementById('obdsReqByUser').textContent || '{}');
     const reqList = document.getElementById('docReqList');
+    // «Номера запросов ЦБ» заполняются всеми REQ пользователя, пока админ не вписал своё
+    const reqInput = document.querySelector('input[name="f_request_number"]');
+    let lastAuto = null;  // при загрузке страницы (в т.ч. после ошибки) введённое значение не трогаем
     function sync() {
         hidden.value = resolveUser(search.value);
+        if (reqInput && (reqInput.value.trim() === '' || reqInput.value === lastAuto)) {
+            lastAuto = (reqByUser[hidden.value] || []).join(', ');
+            reqInput.value = lastAuto;
+        }
         // подсказки «Номер запроса ЦБ» — REQ выбранного пользователя из базы ОБДС
         reqList.innerHTML = '';
         (reqByUser[hidden.value] || []).forEach(function (r) {
@@ -250,6 +319,9 @@
             row.style.display = 'none';
             document.querySelector('.obds-view[data-id="' + row.dataset.id + '"]').style.display = '';
         });
+    });
+    document.querySelectorAll('.obds-replace input[type=file]').forEach(function (inp) {
+        inp.addEventListener('change', function () { if (inp.files.length) inp.form.submit(); });
     });
     document.querySelectorAll('.obds-delete').forEach(function (f) {
         f.addEventListener('submit', function (e) { if (!confirm('Удалить запись?')) e.preventDefault(); });

@@ -304,6 +304,9 @@ class ObdsRecord(models.Model):
     receiver_bank_id = models.CharField(max_length=100, verbose_name="Идентификатор банка получателя")
     receiver_bank = models.CharField(max_length=255, verbose_name="Банк получателя")
     amount = models.DecimalField(max_digits=14, decimal_places=2, verbose_name="Сумма")
+    # PDF со скринами сделки — пока только хранение, в документы попадёт в следующих формах
+    attachment = models.FileField(upload_to='obds/deals/%Y/%m/', blank=True, verbose_name="PDF сделки")
+    attachment_name = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -312,6 +315,23 @@ class ObdsRecord(models.Model):
 
     def __str__(self):
         return f"{self.req_number}: {self.amount}"
+
+
+class ObdsDecision(models.Model):
+    """«Решение ЦБ» об отказе в исключении из ОБДС — один PDF на пару пользователь + REQ.
+    Прикладывается к «Запросу данных по ОБДС» как приложение."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='obds_decisions')
+    req_number = models.CharField(max_length=100, verbose_name="REQ")
+    file = models.FileField(upload_to='obds/decisions/%Y/%m/', verbose_name="Решение ЦБ (PDF)")
+    original_name = models.CharField(max_length=255, blank=True, default="")
+    uploaded_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['req_number']
+        unique_together = [('user', 'req_number')]
+
+    def __str__(self):
+        return f"Решение ЦБ {self.req_number}"
 
 
 class UserExpense(models.Model):

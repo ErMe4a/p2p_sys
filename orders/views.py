@@ -4558,14 +4558,21 @@ def admin_documents(request):
     rub = lambda v: f'{v:,.2f}'.replace(',', ' ').replace('.', ',')  # 15 000,50
     for r in obds_records:
         r.amount_display = rub(r.amount)
+    from .models import ObdsDecision
+    obds_decisions = list(ObdsDecision.objects.filter(user=obds_user)) if obds_user else []
+    # REQ пользователя — и из записей, и из решений (решение могли загрузить раньше переводов)
     req_by_user = {}
-    for uid, req in ObdsRecord.objects.values_list('user_id', 'req_number').distinct().order_by('req_number'):
+    pairs = set(ObdsRecord.objects.values_list('user_id', 'req_number')) | \
+        set(ObdsDecision.objects.values_list('user_id', 'req_number'))
+    for uid, req in sorted(pairs, key=lambda p: p[1]):
         req_by_user.setdefault(str(uid), []).append(req)
 
     return render(request, 'custom_admin/documents.html', {
         'users': User.objects.all().order_by('username'),
         'obds_user': obds_user,
         'obds_records': obds_records,
+        'obds_decisions': obds_decisions,
+        'obds_user_reqs': req_by_user.get(str(obds_user.id), []) if obds_user else [],
         'obds_total': rub(sum((r.amount for r in obds_records), Decimal('0'))),
         'obds_form': request.session.pop('obds_form', None) or {},
         'obds_req_by_user': req_by_user,
@@ -4603,6 +4610,97 @@ def _parse_obds_amount(raw):
     return value.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
+OBDS_MAX_FILE = 20 * 1024 * 1024
+
+
+def _obds_pdf_problem(f):
+    """Причина отказа в загрузке или None: только PDF до 20 МБ."""
+    if not f:
+        return 'Выберите PDF-файл.'
+    if not f.name.lower().endswith('.pdf'):
+        return 'Можно загрузить только PDF.'
+    if f.size > OBDS_MAX_FILE:
+        return 'Файл больше 20 МБ.'
+    head = f.read(5)
+    f.seek(0)
+    if head != b'%PDF-':
+        return 'Файл не похож на PDF.'
+    return None
+
+
+def _obds_file_action(request, action, target, back):
+    """Решения ЦБ (на REQ) и PDF сделок у записей: загрузка с заменой и удаление вместе с файлом."""
+    from .models import ObdsDecision, ObdsRecord
+
+    if action == 'decision_delete':
+        d = ObdsDecision.objects.filter(id=request.POST.get('decision_id'), user=target).first()
+        if d:
+            d.file.delete(save=False)
+            d.delete()
+        return redirect(back)
+
+    if action == 'attach_delete':
+        r = ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).first()
+        if r and r.attachment:
+            r.attachment.delete(save=False)
+            r.attachment_name = ''
+            r.save(update_fields=['attachment', 'attachment_name'])
+        return redirect(back)
+
+    f = request.FILES.get('file')
+    problem = _obds_pdf_problem(f)
+    if action == 'decision_upload':
+        req = (request.POST.get('req_number') or '').strip().upper()
+        if not req:
+            problem = problem or 'Укажите REQ, к которому относится решение.'
+        if problem:
+            messages.error(request, problem, extra_tags='obds')
+            return redirect(back)
+        d, _ = ObdsDecision.objects.get_or_create(user=target, req_number=req)
+        if d.file:
+            d.file.delete(save=False)
+        d.file.save(f.name, f, save=False)
+        d.original_name = f.name[:255]
+        d.save()
+        return redirect(back)
+
+    # attach_upload
+    r = ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).first()
+    if not r:
+        problem = problem or 'Запись не найдена.'
+    if problem:
+        messages.error(request, problem, extra_tags='obds')
+        return redirect(back)
+    if r.attachment:
+        r.attachment.delete(save=False)
+    r.attachment.save(f.name, f, save=False)
+    r.attachment_name = f.name[:255]
+    r.save(update_fields=['attachment', 'attachment_name'])
+    return redirect(back)
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_obds_file(request):
+    """Скачивание решения ЦБ или PDF сделки (только админ, без публичных ссылок)."""
+    from django.http import FileResponse, Http404
+    from .models import ObdsDecision, ObdsRecord
+
+    kind, obj_id = request.GET.get('kind'), request.GET.get('id')
+    f, name = None, ''
+    if kind == 'decision':
+        obj = ObdsDecision.objects.filter(id=obj_id).first()
+        if obj:
+            f, name = obj.file, obj.original_name
+    elif kind == 'deal':
+        obj = ObdsRecord.objects.filter(id=obj_id).first()
+        if obj:
+            f, name = obj.attachment, obj.attachment_name
+    if not f:
+        raise Http404
+    return FileResponse(f.open('rb'), as_attachment=True, filename=name or 'document.pdf')
+
+
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 @require_POST
@@ -4619,8 +4717,15 @@ def admin_obds(request):
         return redirect(back)
 
     if action == 'delete':
-        ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).delete()
+        record = ObdsRecord.objects.filter(id=request.POST.get('record_id'), user=target).first()
+        if record:
+            if record.attachment:
+                record.attachment.delete(save=False)
+            record.delete()
         return redirect(back)
+
+    if action in ('decision_upload', 'attach_upload', 'decision_delete', 'attach_delete'):
+        return _obds_file_action(request, action, target, back)
 
     data = {name: (request.POST.get(name) or '').strip() for name, _ in OBDS_FIELDS}
     data['req_number'] = data['req_number'].upper()
@@ -4671,6 +4776,23 @@ def admin_export_document(request):
         messages.error(request, 'Выберите пользователя.')
         return redirect(back_url)
 
+    # Приложения «Запроса данных по ОБДС»: решения ЦБ по REQ из поля формы, в порядке перечисления
+    appendices = []
+    if params['form'] == 'obds_request':
+        from .documents import parse_req_numbers
+        from .models import ObdsDecision
+        decisions = {d.req_number: d for d in ObdsDecision.objects.filter(user=target)}
+        try:
+            for req in parse_req_numbers(params['fields'].get('request_number', '')):
+                d = decisions.get(req)
+                if d and d.file:
+                    with d.file.open('rb') as fh:
+                        appendices.append({'req': req, 'data': fh.read()})
+        except Exception as e:
+            messages.error(request, f'Не удалось прочитать файл решения ЦБ: {e}')
+            return redirect(back_url)
+    params['appendices'] = appendices
+
     try:
         filename, data = build_document(params['form'], target, params)
     except DocumentError as e:
@@ -4680,17 +4802,33 @@ def admin_export_document(request):
 
     content_type = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     if request.GET.get('format') == 'pdf':
-        from .documents import docx_to_pdf
+        from .documents import docx_to_pdf, merge_pdfs
         try:
             data = docx_to_pdf(data)
         except Exception as e:
             messages.error(request, f'Не удалось сформировать PDF: {e}. Скачайте Word-версию.')
             return redirect(back_url)
+        if appendices:
+            try:
+                data = merge_pdfs([data] + [a['data'] for a in appendices])
+            except ValueError as e:
+                messages.error(request, f'Не удалось приложить решение ЦБ ({e}). Проверьте файл решения или скачайте Word.')
+                return redirect(back_url)
         filename = filename[:-len('.docx')] + '.pdf'
         content_type = 'application/pdf'
+    elif appendices:
+        # Word + приложения -> ZIP: обращение .docx и файлы решений с номерами приложений
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.writestr(filename, data)
+            for i, a in enumerate(appendices, 1):
+                z.writestr(f"Приложение_{i}_{a['req']}.pdf", a['data'])
+        data = buf.getvalue()
+        filename = filename[:-len('.docx')] + '.zip'
+        content_type = 'application/zip'
 
     response = HttpResponse(data, content_type=content_type)
-    ascii_name = filename if filename.isascii() else ('document.pdf' if filename.endswith('.pdf') else 'document.docx')
+    ascii_name = filename if filename.isascii() else 'document' + os.path.splitext(filename)[1]
     response['Content-Disposition'] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
     return response
 
