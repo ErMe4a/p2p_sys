@@ -4555,6 +4555,9 @@ def admin_documents(request):
     obds_user_id = (request.GET.get('obds_user') or '').strip()
     obds_user = User.objects.filter(id=obds_user_id).first() if obds_user_id.isdigit() else None
     obds_records = list(ObdsRecord.objects.filter(user=obds_user)) if obds_user else []
+    rub = lambda v: f'{v:,.2f}'.replace(',', ' ').replace('.', ',')  # 15 000,50
+    for r in obds_records:
+        r.amount_display = rub(r.amount)
     req_by_user = {}
     for uid, req in ObdsRecord.objects.values_list('user_id', 'req_number').distinct().order_by('req_number'):
         req_by_user.setdefault(str(uid), []).append(req)
@@ -4563,7 +4566,7 @@ def admin_documents(request):
         'users': User.objects.all().order_by('username'),
         'obds_user': obds_user,
         'obds_records': obds_records,
-        'obds_total': sum((r.amount for r in obds_records), Decimal('0')),
+        'obds_total': rub(sum((r.amount for r in obds_records), Decimal('0'))),
         'obds_form': request.session.pop('obds_form', None) or {},
         'obds_req_by_user': req_by_user,
         'forms': FORMS.values(),
