@@ -30,14 +30,17 @@
         <div class="doc-grid">
             <div class="form-group">
                 <label>Пользователь</label>
-                <select class="form-select" name="user_id" required>
-                    <option value="">— выберите пользователя —</option>
+                {# Поиск по логину или ФИО: печатаешь часть имени — браузер подсказывает совпадения #}
+                <input class="form-control" type="text" id="docUserSearch" list="docUsersList" autocomplete="off"
+                       placeholder="Начните вводить логин или фамилию…"
+                       value="{% for u in users %}{% if p.user_id == u.id|stringformat:'s' %}{{ u.username }}{% if u.last_name %} — {{ u.last_name }} {{ u.first_name }}{% endif %}{% endif %}{% endfor %}">
+                <datalist id="docUsersList">
                     {% for u in users %}
-                        <option value="{{ u.id }}" {% if p.user_id == u.id|stringformat:"s" %}selected{% endif %}>
-                            {{ u.username }}{% if u.last_name %} — {{ u.last_name }} {{ u.first_name }}{% endif %}
-                        </option>
+                        <option data-id="{{ u.id }}" value="{{ u.username }}{% if u.last_name %} — {{ u.last_name }} {{ u.first_name }}{% endif %}"></option>
                     {% endfor %}
-                </select>
+                </datalist>
+                <input type="hidden" name="user_id" id="docUserId" value="{{ p.user_id }}">
+                <div class="doc-hint" id="docUserHint" style="display:none;color:#f84960;">Выберите пользователя из подсказок.</div>
             </div>
             <div class="form-group">
                 <label>Форма документа</label>
@@ -58,4 +61,32 @@
         <button type="submit" class="btn btn-sm btn-outline-blue">📄 Сформировать</button>
     </form>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const search = document.getElementById('docUserSearch');
+    const hidden = document.getElementById('docUserId');
+    const hint = document.getElementById('docUserHint');
+    const byLabel = {};
+    document.querySelectorAll('#docUsersList option').forEach(function (o) { byLabel[o.value] = o.dataset.id; });
+
+    function sync() {
+        const v = search.value.trim();
+        // точное совпадение с подсказкой, либо ровно логин
+        let id = byLabel[v];
+        if (!id) {
+            const hit = Object.keys(byLabel).filter(function (k) { return k.split(' — ')[0] === v; });
+            if (hit.length === 1) id = byLabel[hit[0]];
+        }
+        hidden.value = id || '';
+        return !!id;
+    }
+    search.addEventListener('input', function () { sync(); hint.style.display = 'none'; });
+    search.form.addEventListener('submit', function (e) {
+        if (!sync()) { e.preventDefault(); hint.style.display = ''; search.focus(); }
+    });
+})();
+</script>
 {% endblock %}
