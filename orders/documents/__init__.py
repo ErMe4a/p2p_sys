@@ -23,19 +23,10 @@ TEMPLATES_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'doc_te
 
 _TOKEN_RE = re.compile(r'\{\{[A-Z_]+\}\}')
 
-# Ссылки на правила бирж (подставляются в форму по умолчанию, админ может
-# поправить). Сопоставление по имени биржи без учёта регистра.
-RULES_URLS = {
-    'bybit': 'https://www.bybit.com/app/terms-service/information',
-    'mexc': '',
-    'htx': '',
-    'gate': '',
-    'bingx': '',
-}
-
-
-def rules_url_for(exchange_name):
-    return RULES_URLS.get((exchange_name or '').strip().lower(), '')
+# Первичное заявление в ЦБ подаётся формально — биржа всегда Bybit (решение Максима),
+# дата — день формирования.
+CB_161FZ_EXCHANGE = 'Bybit'
+CB_161FZ_RULES_URL = 'https://www.bybit.com/app/terms-service/information'
 
 
 # Обязательные поля профиля: атрибут User -> русское название для сообщения админу
@@ -114,17 +105,6 @@ class DocumentForm:
     validate_params: Callable = field(default=lambda params: [])
 
 
-def _cb_161fz_validate(params):
-    problems = []
-    if not (params.get('exchange') or '').strip():
-        problems.append('Не выбрана биржа')
-    if not (params.get('rules_url') or '').strip():
-        problems.append('Нужна ссылка на правила биржи')
-    if not isinstance(params.get('date'), date):
-        problems.append('Некорректная дата заявления')
-    return problems
-
-
 def _cb_161fz_values(user, params):
     female = user.gender == 'F'
     return {
@@ -134,8 +114,8 @@ def _cb_161fz_values(user, params):
         '{{PHONE}}': user.phone.strip(),
         '{{EMAIL}}': user.email.strip(),
         '{{DATE}}': params['date'].strftime('%d.%m.%Y'),
-        '{{EXCHANGE}}': params['exchange'].strip(),
-        '{{RULES_URL}}': params['rules_url'].strip(),
+        '{{EXCHANGE}}': CB_161FZ_EXCHANGE,
+        '{{RULES_URL}}': CB_161FZ_RULES_URL,
         # зарегистрирован(а), принимал(а), исполнил(а)
         '{{A}}': 'а' if female else '',
         # удостоверился / удостоверилась
@@ -151,7 +131,6 @@ FORMS = {
         filename_prefix='Первичное_заявление_ЦБ_161-ФЗ',
         required_profile=['last_name', 'first_name', 'registration_address', 'phone', 'email', 'gender'],
         build_values=_cb_161fz_values,
-        validate_params=_cb_161fz_validate,
     ),
 }
 

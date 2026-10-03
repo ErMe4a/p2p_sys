@@ -7,7 +7,6 @@
     .form-control, .form-select { background: var(--bg-input) !important; border: 1px solid var(--border-color) !important; color: var(--text-main) !important; }
     .doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 18px; }
     .doc-grid .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 5px; }
-    .doc-grid .wide { grid-column: 1 / -1; }
     .doc-hint { font-size: 0.78rem; color: var(--text-muted); margin-top: 4px; }
     .doc-errors { border: 1px solid rgba(248, 73, 96, 0.4); background: rgba(248, 73, 96, 0.06); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; color: #f84960; font-size: 0.88rem; }
     .doc-errors div + div { margin-top: 4px; }
@@ -49,58 +48,14 @@
                 </select>
             </div>
 
-            {# Поля формы «Первичное заявление в ЦБ по 161-ФЗ» #}
-            <div class="form-group" data-form="cb_161fz_primary">
-                <label>Биржа</label>
-                <select class="form-select" name="exchange" id="docExchange">
-                    {% for name in exchanges %}
-                        <option value="{{ name }}" {% if p.exchange == name %}selected{% endif %}>{{ name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-group" data-form="cb_161fz_primary">
-                <label>Дата заявления</label>
-                <input class="form-control" type="date" name="date" value="{{ p.date_raw }}">
-            </div>
-            <div class="form-group wide" data-form="cb_161fz_primary">
-                <label>Ссылка на правила биржи</label>
-                <input class="form-control" type="url" name="rules_url" id="docRulesUrl" value="{{ p.rules_url }}" placeholder="https://…">
-                <div class="doc-hint">Подставляется при выборе биржи, если ссылка известна. Можно поправить вручную.</div>
-            </div>
         </div>
 
         <div class="doc-hint mb-3">
-            ФИО, адрес прописки, телефон, email и пол берутся из настроек пользователя.
+            ФИО, адрес прописки, телефон, email и пол берутся из настроек пользователя,
+            дата — день формирования.
             Если чего-то не хватает, файл не сформируется, и здесь появится список того, что нужно заполнить.
         </div>
         <button type="submit" class="btn btn-sm btn-outline-blue">📄 Сформировать</button>
     </form>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-(function () {
-    const rulesUrls = {{ rules_urls_json|safe }};
-    const exchange = document.getElementById('docExchange');
-    const rulesUrl = document.getElementById('docRulesUrl');
-    const formSel = document.getElementById('docForm');
-
-    if (exchange && rulesUrl) {
-        exchange.addEventListener('change', function () {
-            rulesUrl.value = rulesUrls[(exchange.value || '').trim().toLowerCase()] || '';
-        });
-    }
-
-    // Показываем только поля выбранной формы (на будущее, когда форм станет больше)
-    function toggleFormFields() {
-        document.querySelectorAll('[data-form]').forEach(function (el) {
-            const on = el.getAttribute('data-form') === formSel.value;
-            el.style.display = on ? '' : 'none';
-            el.querySelectorAll('input, select').forEach(function (i) { i.disabled = !on; });
-        });
-    }
-    if (formSel) { formSel.addEventListener('change', toggleFormFields); toggleFormFields(); }
-})();
-</script>
 {% endblock %}

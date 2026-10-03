@@ -4526,14 +4526,11 @@ def admin_fns_documents(request):
 # Read-only: только читает профиль, ничего не пишет и никуда не отправляет.
 
 def _document_params_from_request(data):
-    raw_date = (data.get('date') or '').strip()
+    # Дата документа — всегда день формирования (по МСК)
     return {
         'form': (data.get('form') or '').strip(),
         'user_id': (data.get('user_id') or '').strip(),
-        'exchange': (data.get('exchange') or '').strip(),
-        'rules_url': (data.get('rules_url') or '').strip(),
-        'date_raw': raw_date,
-        'date': parse_date(raw_date) if raw_date else timezone.localdate(),
+        'date': timezone.localdate(),
     }
 
 
@@ -4541,27 +4538,16 @@ def _document_params_from_request(data):
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
 def admin_documents(request):
     """Раздел «Документооборот»: выбор пользователя и формы документа."""
-    from .documents import FORMS, RULES_URLS
+    from .documents import FORMS
 
     User = get_user_model()
     params = _document_params_from_request(request.GET)
     if not params['form']:
         params['form'] = next(iter(FORMS))
-    if not params['date_raw']:
-        params['date_raw'] = timezone.localdate().strftime('%Y-%m-%d')
-    if not params['exchange'] and not params['rules_url']:
-        params['exchange'] = 'Bybit'
-        params['rules_url'] = RULES_URLS.get('bybit', '')
-
-    exchanges = list(Exchange.objects.filter(is_deleted=False).order_by('name').values_list('name', flat=True))
-    if params['exchange'] and params['exchange'] not in exchanges:
-        exchanges.insert(0, params['exchange'])
 
     return render(request, 'custom_admin/documents.html', {
         'users': User.objects.all().order_by('username'),
         'forms': FORMS.values(),
-        'exchanges': exchanges,
-        'rules_urls_json': _json.dumps(RULES_URLS),
         'p': params,
     })
 
@@ -4574,9 +4560,7 @@ def admin_export_document(request):
     from .documents import DocumentError, build_document
 
     params = _document_params_from_request(request.GET)
-    back_url = reverse('admin_documents') + '?' + urlencode({
-        k: params[k] for k in ('form', 'user_id', 'exchange', 'rules_url')
-    } | {'date': params['date_raw']})
+    back_url = reverse('admin_documents') + '?' + urlencode({k: params[k] for k in ('form', 'user_id')})
 
     target = get_user_model().objects.filter(id=params['user_id']).first() if params['user_id'].isdigit() else None
     if not target:
