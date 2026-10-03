@@ -17,6 +17,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from decimal import Decimal, ROUND_DOWN
@@ -538,6 +539,8 @@ def profile_settings(request):
         user.oktmo = (request.POST.get('oktmo') or '').strip()
         user.kod_no = (request.POST.get('kod_no') or '').strip()
         user.phone = (request.POST.get('phone') or '').strip()
+        raw_gender = (request.POST.get('gender') or '').strip()
+        user.gender = raw_gender if raw_gender in ('M', 'F') else ''
 
         # Реквизиты ИП, паспорт, банковские счета
         user.ogrnip = (request.POST.get('ogrnip') or '').strip()
@@ -4516,6 +4519,83 @@ def admin_fns_documents(request):
         'year': year,
         'documents': documents,
     })
+
+
+# --- ДОКУМЕНТООБОРОТ ---------------------------------------------------------------------------------
+# Формирование .docx от имени трейдера по шаблонам (orders/documents, orders/doc_templates).
+# Read-only: только читает профиль, ничего не пишет и никуда не отправляет.
+
+def _document_params_from_request(data):
+    raw_date = (data.get('date') or '').strip()
+    return {
+        'form': (data.get('form') or '').strip(),
+        'user_id': (data.get('user_id') or '').strip(),
+        'exchange': (data.get('exchange') or '').strip(),
+        'rules_url': (data.get('rules_url') or '').strip(),
+        'date_raw': raw_date,
+        'date': parse_date(raw_date) if raw_date else timezone.localdate(),
+    }
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_documents(request):
+    """Раздел «Документооборот»: выбор пользователя и формы документа."""
+    from .documents import FORMS, RULES_URLS
+
+    User = get_user_model()
+    params = _document_params_from_request(request.GET)
+    if not params['form']:
+        params['form'] = next(iter(FORMS))
+    if not params['date_raw']:
+        params['date_raw'] = timezone.localdate().strftime('%Y-%m-%d')
+    if not params['exchange'] and not params['rules_url']:
+        params['exchange'] = 'Bybit'
+        params['rules_url'] = RULES_URLS.get('bybit', '')
+
+    exchanges = list(Exchange.objects.filter(is_deleted=False).order_by('name').values_list('name', flat=True))
+    if params['exchange'] and params['exchange'] not in exchanges:
+        exchanges.insert(0, params['exchange'])
+
+    return render(request, 'custom_admin/documents.html', {
+        'users': User.objects.all().order_by('username'),
+        'forms': FORMS.values(),
+        'exchanges': exchanges,
+        'rules_urls_json': _json.dumps(RULES_URLS),
+        'p': params,
+    })
+
+
+@login_required(login_url='admin_login')
+@user_passes_test(lambda u: u.is_superuser, login_url='admin_login')
+def admin_export_document(request):
+    """Скачивание сформированного .docx. При нехватке данных — назад на страницу с сообщением."""
+    from urllib.parse import quote, urlencode
+    from .documents import DocumentError, build_document
+
+    params = _document_params_from_request(request.GET)
+    back_url = reverse('admin_documents') + '?' + urlencode({
+        k: params[k] for k in ('form', 'user_id', 'exchange', 'rules_url')
+    } | {'date': params['date_raw']})
+
+    target = get_user_model().objects.filter(id=params['user_id']).first() if params['user_id'].isdigit() else None
+    if not target:
+        messages.error(request, 'Выберите пользователя.')
+        return redirect(back_url)
+
+    try:
+        filename, data = build_document(params['form'], target, params)
+    except DocumentError as e:
+        for problem in e.problems:
+            messages.error(request, problem)
+        return redirect(back_url)
+
+    response = HttpResponse(
+        data, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+    ascii_name = filename if filename.isascii() else 'document.docx'
+    response['Content-Disposition'] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename)}"
+    return response
 
 @login_required(login_url='admin_login')
 @user_passes_test(lambda u: u.is_superuser, login_url='admin_login')

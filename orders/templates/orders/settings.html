@@ -156,12 +156,20 @@
                 <label class="field-label">Отчество</label>
                 <input type="text" name="middle_name" class="form-control" value="{{ user.middle_name|default:'' }}">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
+                <label class="field-label">Пол</label>
+                <select name="gender" class="form-select">
+                    <option value="" {% if not user.gender %}selected{% endif %}>не указан</option>
+                    <option value="M" {% if user.gender == 'M' %}selected{% endif %}>Мужской</option>
+                    <option value="F" {% if user.gender == 'F' %}selected{% endif %}>Женский</option>
+                </select>
+            </div>
+            <div class="col-md-4">
                 <label class="field-label">ИНН</label>
                 <input type="text" name="inn" class="form-control" maxlength="12"
                     placeholder="12 цифр" value="{{ user.inn|default:'' }}">
             </div>
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <label class="field-label">Тип налогообложения</label>
                 <select name="tax_type" class="form-select">
                     <option value="OSNO" {% if user.tax_type == 'OSNO' or user.tax_type == 'OCH' %}selected{% endif %}>ОСНО</option>

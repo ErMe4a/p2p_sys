@@ -45,4 +45,6 @@ urlpatterns = [
     path('admin-panel/export/nds/', views.export_nds, name='export_nds'),
     path('admin-panel/export/company-card/', views.admin_export_company_card, name='admin_export_company_card'),
     path('admin-panel/fns/', views.admin_fns_documents, name='admin_fns'),
+    path('admin-panel/documents/', views.admin_documents, name='admin_documents'),
+    path('admin-panel/documents/export/', views.admin_export_document, name='admin_export_document'),
 ]

@@ -34,6 +34,10 @@ class User(AbstractUser):
     kod_no = models.CharField(max_length=4,  blank=True, default="", verbose_name="Код налогового органа")
     # orders/models.py -> class User
     phone = models.CharField(max_length=15, blank=True, default="", verbose_name="Телефон")
+    # Пол — для согласования по роду в документах, формируемых от имени трейдера
+    # (раздел «Документооборот» в админке). Пусто = не указан.
+    GENDER_CHOICES = [('M', 'Мужской'), ('F', 'Женский')]
+    gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True, default="", verbose_name="Пол")
 
     # Реквизиты ИП и паспортные данные — по запросу Максима, для настроек
     # (используются людьми вручную, в расчёт чеков/налогов не участвуют).
