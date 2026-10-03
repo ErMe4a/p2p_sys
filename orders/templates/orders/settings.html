@@ -200,6 +200,8 @@
             <div class="col-md-6">
                 <label class="field-label">Телефон</label>
                 <input type="text" name="phone" class="form-control" maxlength="15"
+                    inputmode="numeric" pattern="[0-9]*" title="Только цифры, без «+», пробелов и скобок"
+                    oninput="this.value = this.value.replace(/\D/g, '')"
                     placeholder="79855601686" value="{{ user.phone|default:'' }}">
             </div>
             <div class="col-12">

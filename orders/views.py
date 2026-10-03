@@ -3,6 +3,7 @@ import concurrent.futures
 import io
 import json
 import os
+import re
 import zipfile
 from datetime import datetime, date, time, timezone as dt_timezone, timedelta
 import json as _json
@@ -538,7 +539,9 @@ def profile_settings(request):
         user.middle_name = (request.POST.get('middle_name') or '').strip()
         user.oktmo = (request.POST.get('oktmo') or '').strip()
         user.kod_no = (request.POST.get('kod_no') or '').strip()
-        user.phone = (request.POST.get('phone') or '').strip()
+        # только цифры: «+», пробелы, скобки и дефисы отбрасываются (их ставят по привычке,
+        # а в отчётности ФНС телефон должен быть цифрами — 79855601686)
+        user.phone = re.sub(r'\D', '', request.POST.get('phone') or '')
         raw_gender = (request.POST.get('gender') or '').strip()
         user.gender = raw_gender if raw_gender in ('M', 'F') else ''
 
