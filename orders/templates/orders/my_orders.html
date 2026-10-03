@@ -279,10 +279,6 @@
             </div>
         </div>
 
-        <div id="cryptoReceiptNote" class="alert alert-warning mt-3 mb-0" style="display: none; font-size: 13px;">
-            Чеки по ETH пока не пробиваются: ордер сохранится, но чек по нему создан не будет.
-        </div>
-
         <div id="emailInputWrapper" class="mt-3" style="display: none;">
             <label class="form-label">Email для чека (Сгенерирован автоматически, можно изменить)</label>
             <input type="email" id="receiptContact" name="receipt_contact" class="form-control" placeholder="email@gmail.com">
@@ -607,15 +603,6 @@
     }
 
     document.getElementById('checkDocs').addEventListener('change', syncReceiptUI);
-
-    // Предупреждение: чеки по BTC/ETH временно закрыты (см. receipt_service.RECEIPT_BLOCKED_CURRENCIES)
-    function syncCryptoReceiptNote() {
-        const cur  = document.getElementById('main_currency').value;
-        const note = document.getElementById('cryptoReceiptNote');
-        note.style.display = (cur === 'ETH') ? 'block' : 'none';
-    }
-    document.getElementById('main_currency').addEventListener('change', syncCryptoReceiptNote);
-    syncCryptoReceiptNote();
 
     // Курс × Количество должно примерно совпадать со Стоимостью — без этой
     // проверки лишний ноль в Количестве (100 -> 1000 и т.п.) проходит
